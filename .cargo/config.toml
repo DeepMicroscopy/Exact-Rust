@@ -1,0 +1,4 @@
+# Developer machine (conda ffmpeg, install names are @rpath/...): let binaries find libav*. A missing directory is
+# harmless elsewhere; with Homebrew/apt ffmpeg this is not needed.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,/opt/miniconda3/envs/env311/lib"]

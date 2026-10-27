@@ -1,0 +1,35 @@
+[package]
+name = "exact-api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+exact-core.workspace = true
+exact-db.workspace = true
+exact-auth.workspace = true
+exact-wsi.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+chrono.workspace = true
+chrono-tz.workspace = true
+form_urlencoded.workspace = true
+base64 = "0.22"
+uuid = "1"
+nalgebra = { version = "0.33", default-features = false, features = ["std"] }
+percent-encoding = "2"
+subtle = "2"
+axum.workspace = true
+tower-http.workspace = true
+sqlx.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+moka.workspace = true
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tokio-util = { version = "0.7", features = ["io"] }
+rand = "0.8"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

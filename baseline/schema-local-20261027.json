@@ -1,0 +1,1612 @@
+{
+  "administration_product": {
+    "creator_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "description": {
+      "data_type": "text",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "team_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    }
+  },
+  "administration_product_imagesets": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "imageset_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "product_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "annotations_annotation": {
+    "_blurred": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "_concealed": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "annotation_type_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "deleted": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "description": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "last_edit_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "last_editor_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "meta_data": {
+      "data_type": "jsonb",
+      "nullable": true
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "unique_identifier": {
+      "data_type": "uuid",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "vector": {
+      "data_type": "jsonb",
+      "nullable": true
+    }
+  },
+  "annotations_annotationmediafile": {
+    "annotation_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "file": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "media_file_type": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "annotations_annotationtype": {
+    "active": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "area_hit_test": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "closed": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "color_code": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "default_height": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "default_width": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "enable_blurred": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "enable_concealed": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_file": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "multi_frame": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "node_count": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "product_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "size_unit": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "sort_order": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "vector_type": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "annotations_annotationversion": {
+    "annotation_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "annotation_type_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "deleted": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "vector": {
+      "data_type": "jsonb",
+      "nullable": true
+    },
+    "version_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "annotations_export": {
+    "annotation_count": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "export_text": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "filename": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "format_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_set_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": true
+    }
+  },
+  "annotations_exportformat": {
+    "annotation_format": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "base_format": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_aggregation": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "image_format": {
+      "data_type": "text",
+      "nullable": true
+    },
+    "include_blurred": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "include_concealed": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "last_change_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "min_verifications": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "name_format": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "not_in_image_format": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "public": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "team_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "vector_format": {
+      "data_type": "text",
+      "nullable": false
+    }
+  },
+  "annotations_exportformat_annotations_types": {
+    "annotationtype_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "exportformat_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "annotations_logimageaction": {
+    "action": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "ip": {
+      "data_type": "inet",
+      "nullable": true
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": true
+    }
+  },
+  "annotations_segmentationtile": {
+    "annotation_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "data": {
+      "data_type": "bytea",
+      "nullable": false
+    },
+    "frame": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "level": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "tile_x": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "tile_y": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "annotations_verification": {
+    "annotation_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "verified": {
+      "data_type": "boolean",
+      "nullable": false
+    }
+  },
+  "auth_group": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "auth_group_permissions": {
+    "group_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "permission_id": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "auth_permission": {
+    "codename": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "content_type_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "authtoken_token": {
+    "created": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "key": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "django_admin_log": {
+    "action_flag": {
+      "data_type": "smallint",
+      "nullable": false
+    },
+    "action_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "change_message": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "content_type_id": {
+      "data_type": "integer",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "object_id": {
+      "data_type": "text",
+      "nullable": true
+    },
+    "object_repr": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "django_content_type": {
+    "app_label": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "model": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "django_migrations": {
+    "app": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "applied": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "django_session": {
+    "expire_date": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "session_data": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "session_key": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "images_auxiliaryfile": {
+    "associated_to_image_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "creator_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "description": {
+      "data_type": "text",
+      "nullable": true
+    },
+    "filesize": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_set_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "location": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    }
+  },
+  "images_framedescription": {
+    "Image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "description": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "file_path": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "frame_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "frame_type": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "images_image": {
+    "channels": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "checksum": {
+      "data_type": "bytea",
+      "nullable": false
+    },
+    "creator_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "crop_frame": {
+      "data_type": "integer",
+      "nullable": true
+    },
+    "crop_source_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "crop_x": {
+      "data_type": "integer",
+      "nullable": true
+    },
+    "crop_y": {
+      "data_type": "integer",
+      "nullable": true
+    },
+    "defaultFrame": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "depth": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "filename": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "frames": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "height": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_set_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_type": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "mpp": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "objectivePower": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "width": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "images_imageregistration": {
+    "file": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "registration_error": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "registration_points": {
+      "data_type": "jsonb",
+      "nullable": true
+    },
+    "runtime": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "source_image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "target_image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "transformation_matrix": {
+      "data_type": "jsonb",
+      "nullable": true
+    }
+  },
+  "images_imageset": {
+    "collaboration_type": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "creator_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "description": {
+      "data_type": "text",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_lock": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "location": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "main_annotation_type_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "path": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "priority": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "public": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "public_collaboration": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "team_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "zip_state": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "images_imageset_pinned_by": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "imageset_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "images_pyramidregistration": {
+    "algorithm": {
+      "data_type": "smallint",
+      "nullable": false
+    },
+    "file_mtime": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "file_size": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "offsets": {
+      "data_type": "jsonb",
+      "nullable": false
+    },
+    "updated": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    }
+  },
+  "images_screeningmode": {
+    "current_index": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "screening_tiles": {
+      "data_type": "jsonb",
+      "nullable": true
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "x_resolution": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "x_steps": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "y_resolution": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "y_steps": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "images_settag": {
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "images_settag_imagesets": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "imageset_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "settag_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "images_setversion": {
+    "file": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    }
+  },
+  "images_setversion_imagesets": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "imageset_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "setversion_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "passkeys_userpasskey": {
+    "added_on": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "credential_id": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "enabled": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "last_used": {
+      "data_type": "timestamp with time zone",
+      "nullable": true
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "platform": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "token": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "processing_plugin": {
+    "abouturl": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "author": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "contact": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "icon": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "package": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "processing_plugin_products": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "plugin_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "product_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "processing_pluginjob": {
+    "attached_worker": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "created_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "creator_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "error_detail": {
+      "data_type": "text",
+      "nullable": true
+    },
+    "error_message": {
+      "data_type": "text",
+      "nullable": true
+    },
+    "eta_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "plugin_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "processing_complete": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "updated_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    }
+  },
+  "processing_pluginresult": {
+    "completed_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "created_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "default_alpha": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "job_id": {
+      "data_type": "integer",
+      "nullable": true
+    },
+    "plugin_id": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "processing_pluginresultannotation": {
+    "annotation_type_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "description": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "meta_data": {
+      "data_type": "jsonb",
+      "nullable": true
+    },
+    "pluginresultentry_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "score": {
+      "data_type": "double precision",
+      "nullable": true
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "unique_identifier": {
+      "data_type": "uuid",
+      "nullable": false
+    },
+    "vector": {
+      "data_type": "jsonb",
+      "nullable": true
+    }
+  },
+  "processing_pluginresultbitmap": {
+    "bitmap": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "channels": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "default_alpha": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "default_threshold": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "frame": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "location_rect": {
+      "data_type": "jsonb",
+      "nullable": true
+    },
+    "meta_data": {
+      "data_type": "jsonb",
+      "nullable": true
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "pluginresultentry_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "scale_max": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "scale_min": {
+      "data_type": "double precision",
+      "nullable": false
+    }
+  },
+  "processing_pluginresultentry": {
+    "created_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "default_threshold": {
+      "data_type": "double precision",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "pluginresult_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "visible": {
+      "data_type": "boolean",
+      "nullable": false
+    }
+  },
+  "tables_tabledataset": {
+    "created_at": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "creator_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "description": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_set_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "updated_at": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    }
+  },
+  "tables_tableversion": {
+    "col_count": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "comment": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "created_at": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "created_by_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "data": {
+      "data_type": "bytea",
+      "nullable": true
+    },
+    "dataset_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "is_current": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "patch": {
+      "data_type": "bytea",
+      "nullable": true
+    },
+    "row_count": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "version_number": {
+      "data_type": "integer",
+      "nullable": false
+    }
+  },
+  "tables_tableviewsettings": {
+    "dataset_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "settings_json": {
+      "data_type": "jsonb",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "tagger_messages_globalmessage": {
+    "message_ptr_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "staff_only": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "team_admins_only": {
+      "data_type": "boolean",
+      "nullable": false
+    }
+  },
+  "tagger_messages_message": {
+    "content": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "creation_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "creator_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "expire_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "start_time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "title": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "tagger_messages_message_read_by": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "message_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "tagger_messages_teammessage": {
+    "admins_only": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "message_ptr_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "team_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "tools_tool": {
+    "creation_date": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "creator_id": {
+      "data_type": "bigint",
+      "nullable": true
+    },
+    "description": {
+      "data_type": "text",
+      "nullable": false
+    },
+    "filename": {
+      "data_type": "character varying",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "public": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "team_id": {
+      "data_type": "bigint",
+      "nullable": true
+    }
+  },
+  "tools_toolvote": {
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "positive": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "time": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "tool_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": true
+    }
+  },
+  "users_personalaccesstoken": {
+    "created_at": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "expires_at": {
+      "data_type": "timestamp with time zone",
+      "nullable": true
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "last_used_at": {
+      "data_type": "timestamp with time zone",
+      "nullable": true
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "prefix": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "read_only": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "revoked_at": {
+      "data_type": "timestamp with time zone",
+      "nullable": true
+    },
+    "token_hash": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "users_personalaccesstoken_teams": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "personalaccesstoken_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "team_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "users_team": {
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "website": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "users_teammembership": {
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "is_admin": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "team_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "users_user": {
+    "date_joined": {
+      "data_type": "timestamp with time zone",
+      "nullable": false
+    },
+    "email": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "first_name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "is_active": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "is_staff": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "is_superuser": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "last_login": {
+      "data_type": "timestamp with time zone",
+      "nullable": true
+    },
+    "last_name": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "password": {
+      "data_type": "character varying",
+      "nullable": false
+    },
+    "points": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "username": {
+      "data_type": "character varying",
+      "nullable": false
+    }
+  },
+  "users_user_groups": {
+    "group_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "users_user_user_permissions": {
+    "id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "permission_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  },
+  "users_userpreferences": {
+    "frontend": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "is_site_admin": {
+      "data_type": "boolean",
+      "nullable": false
+    },
+    "user_id": {
+      "data_type": "bigint",
+      "nullable": false
+    }
+  }
+}

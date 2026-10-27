@@ -1,0 +1,18 @@
+backups/
+*.dump
+*.sql
+reference/.venv/
+reference/instance/
+reference/*.log
+target/
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+.DS_Store
+*.log
+__pycache__/
+/cache/
+.claude/
+# the migrations of the additive tables are SQL files
+!crates/exact-db/migrations/*.sql
+tests/conformance/goldens/django/resource_cases.json

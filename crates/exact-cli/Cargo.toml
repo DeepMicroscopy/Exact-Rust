@@ -1,0 +1,17 @@
+[package]
+name = "exact-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "exact-cli"
+path = "src/main.rs"
+
+[dependencies]
+exact-core.workspace = true
+exact-db.workspace = true
+exact-wsi.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+serde_json.workspace = true

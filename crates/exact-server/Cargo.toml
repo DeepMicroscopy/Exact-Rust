@@ -1,0 +1,18 @@
+[package]
+name = "exact-server"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "exact-server"
+path = "src/main.rs"
+
+[dependencies]
+exact-core.workspace = true
+exact-db.workspace = true
+exact-api.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

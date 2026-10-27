@@ -1,0 +1,14 @@
+{
+ "rp_id": "localhost",
+ "origin": "http://localhost:8001",
+ "credential_id": "fIYSVTZ1adkAofAH3E6Rub6CGd4vPhKdDKUGKCUtS9I",
+ "private_key_pem": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgtvvIJh+VAc7o0dbY\n39PfbwsTWXk4Bqki2Rl2CLMTJq+hRANCAAQljwJbYgw6/Brmx9OsA6x0d7ag+XMy\nH5zm8x4vzr8P/Id//JqSeLF6Koyq/+aIXBNVAOZOoLAD6cLV3F9PRf4r\n-----END PRIVATE KEY-----\n",
+ "username": "rt_member",
+ "row": {
+  "name": "software test key",
+  "platform": "Key",
+  "credential_id": "fIYSVTZ1adkAofAH3E6Rub6CGd4vPhKdDKUGKCUtS9I",
+  "token": "AAAAAAAAAAAAAAAAAAAAAAAgfIYSVTZ1adkAofAH3E6Rub6CGd4vPhKdDKUGKCUtS9KlAQIDJiABIVggJY8CW2IMOvwa5sfTrAOsdHe2oPlzMh-c5vMeL86_D_wiWCCHf_yaknixeiqMqv_miFwTVQDmTqCwA-nC1dxfT0X-Kw",
+  "enabled": true
+ }
+}

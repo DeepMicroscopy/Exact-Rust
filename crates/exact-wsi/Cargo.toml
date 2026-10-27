@@ -1,0 +1,22 @@
+[package]
+name = "exact-wsi"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+exact-core.workspace = true
+libloading = "0.8"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff"] }
+moka.workspace = true
+tracing.workspace = true
+flate2 = "1"
+serde_json.workspace = true
+ffmpeg-next = { version = "7", optional = true }
+weezl = "0.2.1"
+quick-xml = "0.42.0"
+fast_image_resize = "6.1.0"
+
+[features]
+default = ["video"]
+# MP4/AVI/MOV decoding through the system libav* libraries (ffmpeg >= 5); build without it: --no-default-features
+video = ["dep:ffmpeg-next"]

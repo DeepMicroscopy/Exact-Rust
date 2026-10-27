@@ -1,0 +1,1259 @@
+{
+ "legacy/annotation_load/41": {
+  "body": {
+   "detail": "permission for reading this image set missing."
+  },
+  "params": {
+   "image_id": 41
+  },
+  "path": "/annotations/api/annotation/load/",
+  "status": 403
+ },
+ "legacy/annotation_load/42": {
+  "body": {
+   "detail": "permission for reading this image set missing."
+  },
+  "params": {
+   "image_id": 42
+  },
+  "path": "/annotations/api/annotation/load/",
+  "status": 403
+ },
+ "legacy/annotation_load/90": {
+  "body": {
+   "detail": "permission for reading this image set missing."
+  },
+  "params": {
+   "image_id": 90
+  },
+  "path": "/annotations/api/annotation/load/",
+  "status": 403
+ },
+ "legacy/imageset_load/1": {
+  "body": {
+   "detail": "permission for reading this image set missing."
+  },
+  "params": {
+   "image_set_id": 1
+  },
+  "path": "/images/api/imageset/load/",
+  "status": 403
+ },
+ "legacy/imageset_load/2": {
+  "body": {
+   "detail": "permission for reading this image set missing."
+  },
+  "params": {
+   "image_set_id": 2
+  },
+  "path": "/images/api/imageset/load/",
+  "status": 403
+ },
+ "legacy/imageset_load/3": {
+  "body": {
+   "detail": "permission for reading this image set missing."
+  },
+  "params": {
+   "image_set_id": 3
+  },
+  "path": "/images/api/imageset/load/",
+  "status": 403
+ },
+ "legacy/list_imagesets": {
+  "body": [],
+  "params": {},
+  "path": "/images/api/list_imagesets/",
+  "status": 200
+ },
+ "legacy/loadannotationtypes": {
+  "body": {
+   "annotation_types": [
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#ff0000",
+     "default_height": 1200.0,
+     "default_width": 800.0,
+     "enable_blurred": false,
+     "enable_concealed": false,
+     "id": 1,
+     "multi_frame": false,
+     "name": "Annotation",
+     "node_count": 0,
+     "product": 1,
+     "size_unit": "px",
+     "sort_order": 0,
+     "vector_type": 1
+    },
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#FF6600",
+     "default_height": 50.0,
+     "default_width": 50.0,
+     "enable_blurred": true,
+     "enable_concealed": true,
+     "id": 2,
+     "multi_frame": false,
+     "name": "TestSegmentation",
+     "node_count": 0,
+     "product": 2,
+     "size_unit": "px",
+     "sort_order": 0,
+     "vector_type": 8
+    },
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#FF0000",
+     "default_height": 50.0,
+     "default_width": 50.0,
+     "enable_blurred": false,
+     "enable_concealed": false,
+     "id": 3,
+     "multi_frame": false,
+     "name": "Simple annotation BB",
+     "node_count": 0,
+     "product": 3,
+     "size_unit": "px",
+     "sort_order": 0,
+     "vector_type": 1
+    },
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#008000",
+     "default_height": 50.0,
+     "default_width": 50.0,
+     "enable_blurred": false,
+     "enable_concealed": false,
+     "id": 4,
+     "multi_frame": false,
+     "name": "Another annotation  poly green",
+     "node_count": 0,
+     "product": 3,
+     "size_unit": "px",
+     "sort_order": 0,
+     "vector_type": 5
+    },
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#77bb41",
+     "default_height": 1.5,
+     "default_width": 1.5,
+     "enable_blurred": true,
+     "enable_concealed": true,
+     "id": 5,
+     "multi_frame": false,
+     "name": "2.25mm bbox",
+     "node_count": 0,
+     "product": 1,
+     "size_unit": "mm",
+     "sort_order": 0,
+     "vector_type": 6
+    },
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#fffc41",
+     "default_height": 1.0,
+     "default_width": 3.0,
+     "enable_blurred": true,
+     "enable_concealed": true,
+     "id": 6,
+     "multi_frame": false,
+     "name": "3mm bbox",
+     "node_count": 0,
+     "product": 1,
+     "size_unit": "mm",
+     "sort_order": 0,
+     "vector_type": 6
+    },
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#77bb41",
+     "default_height": 1.5,
+     "default_width": 1.5,
+     "enable_blurred": true,
+     "enable_concealed": true,
+     "id": 7,
+     "multi_frame": false,
+     "name": "2.25mm bbox",
+     "node_count": 0,
+     "product": 4,
+     "size_unit": "mm",
+     "sort_order": 0,
+     "vector_type": 6
+    },
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#ff0000",
+     "default_height": 1200.0,
+     "default_width": 800.0,
+     "enable_blurred": false,
+     "enable_concealed": true,
+     "id": 8,
+     "multi_frame": false,
+     "name": "Annotation",
+     "node_count": 0,
+     "product": 4,
+     "size_unit": "px",
+     "sort_order": 0,
+     "vector_type": 1
+    },
+    {
+     "area_hit_test": true,
+     "closed": true,
+     "color_code": "#fffc41",
+     "default_height": 1.0,
+     "default_width": 3.0,
+     "enable_blurred": true,
+     "enable_concealed": true,
+     "id": 9,
+     "multi_frame": false,
+     "name": "3mm bbox",
+     "node_count": 0,
+     "product": 4,
+     "size_unit": "mm",
+     "sort_order": 0,
+     "vector_type": 6
+    }
+   ]
+  },
+  "params": {},
+  "path": "/annotations/api/annotation/loadannotationtypes/",
+  "status": 200
+ },
+ "legacy/timesync": {
+  "body": {},
+  "params": {},
+  "path": "/timesync/",
+  "status": 200
+ },
+ "v1/administration/products/detail": {
+  "body": {
+   "detail": "No Product matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/administration/products/1/",
+  "status": 404
+ },
+ "v1/administration/products/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/administration/products/",
+  "status": 200
+ },
+ "v1/annotations/annotation_media_files/detail": {
+  "body": {
+   "detail": "No AnnotationMediaFile matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/annotations/annotation_media_files/1/",
+  "status": 404
+ },
+ "v1/annotations/annotation_media_files/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/annotations/annotation_media_files/",
+  "status": 200
+ },
+ "v1/annotations/annotation_types/detail": {
+  "body": {
+   "detail": "No AnnotationType matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/annotations/annotation_types/1/",
+  "status": 404
+ },
+ "v1/annotations/annotation_types/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/annotations/annotation_types/",
+  "status": 200
+ },
+ "v1/annotations/annotation_versions/detail": {
+  "body": {
+   "detail": "No AnnotationVersion matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/annotations/annotation_versions/1/",
+  "status": 404
+ },
+ "v1/annotations/annotation_versions/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/annotations/annotation_versions/",
+  "status": 200
+ },
+ "v1/annotations/annotations/detail": {
+  "body": {
+   "detail": "No Annotation matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/annotations/annotations/1/",
+  "status": 404
+ },
+ "v1/annotations/annotations/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/annotations/annotations/",
+  "status": 200
+ },
+ "v1/annotations/log_image_actions/detail": {
+  "body": {
+   "detail": "No LogImageAction matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/annotations/log_image_actions/2021/",
+  "status": 404
+ },
+ "v1/annotations/log_image_actions/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/annotations/log_image_actions/",
+  "status": 200
+ },
+ "v1/annotations/verifications/detail": {
+  "body": {
+   "detail": "No Verification matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/annotations/verifications/1/",
+  "status": 404
+ },
+ "v1/annotations/verifications/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/annotations/verifications/",
+  "status": 200
+ },
+ "v1/images/41/slide_information": {
+  "body": {
+   "id": "41",
+   "level_dimensions": [
+    [
+     4000,
+     4000
+    ],
+    [
+     2000,
+     2000
+    ],
+    [
+     1000,
+     1000
+    ],
+    [
+     500,
+     500
+    ],
+    [
+     250,
+     250
+    ]
+   ],
+   "level_downsamples": [
+    1.0,
+    2.0,
+    4.0,
+    8.0,
+    16.0
+   ],
+   "level_tiles": [
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     4
+    ],
+    [
+     8,
+     8
+    ],
+    [
+     16,
+     16
+    ]
+   ],
+   "levels": 5
+  },
+  "params": {},
+  "path": "/api/v1/images/images/41/slide_information/",
+  "status": 200
+ },
+ "v1/images/42/slide_information": {
+  "body": {
+   "id": "42",
+   "level_dimensions": [
+    [
+     6000,
+     4000
+    ],
+    [
+     3000,
+     2000
+    ],
+    [
+     1500,
+     1000
+    ],
+    [
+     750,
+     500
+    ],
+    [
+     375,
+     250
+    ],
+    [
+     187,
+     125
+    ]
+   ],
+   "level_downsamples": [
+    1.0,
+    2.0,
+    4.0,
+    8.0,
+    16.0,
+    32.0428
+   ],
+   "level_tiles": [
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     3,
+     2
+    ],
+    [
+     6,
+     4
+    ],
+    [
+     12,
+     8
+    ],
+    [
+     24,
+     16
+    ]
+   ],
+   "levels": 6
+  },
+  "params": {},
+  "path": "/api/v1/images/images/42/slide_information/",
+  "status": 200
+ },
+ "v1/images/90/slide_information": {
+  "body": {
+   "id": "90",
+   "level_dimensions": [
+    [
+     786,
+     623
+    ]
+   ],
+   "level_downsamples": [
+    1.0
+   ],
+   "level_tiles": [
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     3
+    ]
+   ],
+   "levels": 1
+  },
+  "params": {},
+  "path": "/api/v1/images/images/90/slide_information/",
+  "status": 200
+ },
+ "v1/images/image_sets/detail": {
+  "body": {
+   "detail": "No ImageSet matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/images/image_sets/1/",
+  "status": 404
+ },
+ "v1/images/image_sets/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/images/image_sets/",
+  "status": 200
+ },
+ "v1/images/images/detail": {
+  "body": {
+   "detail": "No Image matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/images/images/90/",
+  "status": 404
+ },
+ "v1/images/images/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/images/images/",
+  "status": 200
+ },
+ "v1/images/registration/detail": {
+  "body": {
+   "detail": "No ImageRegistration matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/images/registration/2/",
+  "status": 404
+ },
+ "v1/images/registration/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/images/registration/",
+  "status": 200
+ },
+ "v1/images/screening_modes/detail": {
+  "body": {
+   "detail": "No ScreeningMode matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/images/screening_modes/1/",
+  "status": 404
+ },
+ "v1/images/screening_modes/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/images/screening_modes/",
+  "status": 200
+ },
+ "v1/images/set_tags/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/images/set_tags/",
+  "status": 200
+ },
+ "v1/images/set_versions/detail": {
+  "body": {
+   "detail": "No SetVersion matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/images/set_versions/1/",
+  "status": 404
+ },
+ "v1/images/set_versions/list": {
+  "body": {
+   "count": 0,
+   "next": null,
+   "previous": null,
+   "results": []
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/images/set_versions/",
+  "status": 200
+ },
+ "v1/processing/pluginjobs/detail": {
+  "body": {
+   "attached_worker": null,
+   "creator": null,
+   "error_detail": "trace",
+   "error_message": "boom",
+   "id": 3,
+   "image": 6,
+   "plugin": 1,
+   "processing_complete": 0.0,
+   "result": null
+  },
+  "params": {},
+  "path": "/api/v1/processing/pluginjobs/3/",
+  "status": 200
+ },
+ "v1/processing/pluginjobs/list": {
+  "body": {
+   "count": 3,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "attached_worker": null,
+     "creator": 3,
+     "error_detail": null,
+     "error_message": null,
+     "id": 1,
+     "image": 2,
+     "plugin": 1,
+     "processing_complete": 100.0,
+     "result": 1
+    },
+    {
+     "attached_worker": "worker-a",
+     "creator": 3,
+     "error_detail": null,
+     "error_message": null,
+     "id": 2,
+     "image": 6,
+     "plugin": 1,
+     "processing_complete": 35.5,
+     "result": null
+    },
+    {
+     "attached_worker": null,
+     "creator": null,
+     "error_detail": "trace",
+     "error_message": "boom",
+     "id": 3,
+     "image": 6,
+     "plugin": 1,
+     "processing_complete": 0.0,
+     "result": null
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/processing/pluginjobs/",
+  "status": 200
+ },
+ "v1/processing/pluginresultannotations/detail": {
+  "body": {
+   "annotation_type": 1,
+   "generated": true,
+   "id": 3,
+   "image": 2,
+   "meta_data": {
+    "i": 2
+   },
+   "plugin": 1,
+   "pluginresultentry": 1,
+   "score": 0.7,
+   "unique_identifier": "0157b208-d6f9-5756-aa55-79cca03558a4",
+   "vector": {
+    "x1": 12,
+    "x2": 32,
+    "y1": 22,
+    "y2": 42
+   }
+  },
+  "params": {},
+  "path": "/api/v1/processing/pluginresultannotations/3/",
+  "status": 200
+ },
+ "v1/processing/pluginresultannotations/list": {
+  "body": {
+   "count": 3,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "annotation_type": 1,
+     "generated": true,
+     "id": 1,
+     "image": 2,
+     "meta_data": {
+      "i": 0
+     },
+     "plugin": 1,
+     "pluginresultentry": 1,
+     "score": 0.5,
+     "unique_identifier": "d5472f7b-625f-5d9d-b75d-12e41a5c2d88",
+     "vector": {
+      "x1": 10,
+      "x2": 30,
+      "y1": 20,
+      "y2": 40
+     }
+    },
+    {
+     "annotation_type": 1,
+     "generated": true,
+     "id": 2,
+     "image": 2,
+     "meta_data": {
+      "i": 1
+     },
+     "plugin": 1,
+     "pluginresultentry": 1,
+     "score": 0.6,
+     "unique_identifier": "ff4a4b05-a38d-50ac-884d-487dc053d1bc",
+     "vector": {
+      "x1": 11,
+      "x2": 31,
+      "y1": 21,
+      "y2": 41
+     }
+    },
+    {
+     "annotation_type": 1,
+     "generated": true,
+     "id": 3,
+     "image": 2,
+     "meta_data": {
+      "i": 2
+     },
+     "plugin": 1,
+     "pluginresultentry": 1,
+     "score": 0.7,
+     "unique_identifier": "0157b208-d6f9-5756-aa55-79cca03558a4",
+     "vector": {
+      "x1": 12,
+      "x2": 32,
+      "y1": 22,
+      "y2": 42
+     }
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/processing/pluginresultannotations/",
+  "status": 200
+ },
+ "v1/processing/pluginresultbitmaps/detail": {
+  "body": {
+   "bitmap": "/media/plugins/bitmaps/heat.png",
+   "channels": 1,
+   "default_alpha": 0.7,
+   "default_threshold": 0.1,
+   "frame": 1,
+   "id": 1,
+   "image": 2,
+   "location_rect": {
+    "h": 100,
+    "w": 100,
+    "x": 0,
+    "y": 0
+   },
+   "meta_data": {
+    "k": "v"
+   },
+   "name": "heat",
+   "plugin": 1,
+   "pluginresultentry": 2,
+   "scale_max": 1.0,
+   "scale_min": 0.0
+  },
+  "params": {},
+  "path": "/api/v1/processing/pluginresultbitmaps/1/",
+  "status": 200
+ },
+ "v1/processing/pluginresultbitmaps/list": {
+  "body": {
+   "count": 1,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "bitmap": "/media/plugins/bitmaps/heat.png",
+     "channels": 1,
+     "default_alpha": 0.7,
+     "default_threshold": 0.1,
+     "frame": 1,
+     "id": 1,
+     "image": 2,
+     "location_rect": {
+      "h": 100,
+      "w": 100,
+      "x": 0,
+      "y": 0
+     },
+     "meta_data": {
+      "k": "v"
+     },
+     "name": "heat",
+     "plugin": 1,
+     "pluginresultentry": 2,
+     "scale_max": 1.0,
+     "scale_min": 0.0
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/processing/pluginresultbitmaps/",
+  "status": 200
+ },
+ "v1/processing/pluginresultentrys/detail": {
+  "body": {
+   "annotation_results": [],
+   "bitmap_results": [
+    1
+   ],
+   "default_threshold": 0.0,
+   "id": 2,
+   "name": "Heatmap",
+   "pluginresult": 1,
+   "visible": false
+  },
+  "params": {},
+  "path": "/api/v1/processing/pluginresultentrys/2/",
+  "status": 200
+ },
+ "v1/processing/pluginresultentrys/list": {
+  "body": {
+   "count": 2,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "annotation_results": [
+      1,
+      2,
+      3
+     ],
+     "bitmap_results": [],
+     "default_threshold": 0.4,
+     "id": 1,
+     "name": "Mitotic figures",
+     "pluginresult": 1,
+     "visible": true
+    },
+    {
+     "annotation_results": [],
+     "bitmap_results": [
+      1
+     ],
+     "default_threshold": 0.0,
+     "id": 2,
+     "name": "Heatmap",
+     "pluginresult": 1,
+     "visible": false
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/processing/pluginresultentrys/",
+  "status": 200
+ },
+ "v1/processing/pluginresults/detail": {
+  "body": {
+   "default_alpha": 0.5,
+   "entries": [
+    1,
+    2
+   ],
+   "id": 1,
+   "image": 2,
+   "job": 1,
+   "plugin": 1
+  },
+  "params": {},
+  "path": "/api/v1/processing/pluginresults/1/",
+  "status": 200
+ },
+ "v1/processing/pluginresults/list": {
+  "body": {
+   "count": 1,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "default_alpha": 0.5,
+     "entries": [
+      1,
+      2
+     ],
+     "id": 1,
+     "image": 2,
+     "job": 1,
+     "plugin": 1
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/processing/pluginresults/",
+  "status": 200
+ },
+ "v1/processing/plugins/detail": {
+  "body": {
+   "abouturl": "/",
+   "author": "Test",
+   "contact": "test@example.invalid",
+   "icon": "/media/plugins/icon.png",
+   "id": 1,
+   "name": "MIDOG test plugin",
+   "package": "org.test.midog",
+   "products": [
+    1
+   ],
+   "results": [
+    1
+   ]
+  },
+  "params": {},
+  "path": "/api/v1/processing/plugins/1/",
+  "status": 200
+ },
+ "v1/processing/plugins/list": {
+  "body": {
+   "count": 2,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "abouturl": "/",
+     "author": "Test",
+     "contact": "test@example.invalid",
+     "icon": "/media/plugins/icon.png",
+     "id": 1,
+     "name": "MIDOG test plugin",
+     "package": "org.test.midog",
+     "products": [
+      1
+     ],
+     "results": [
+      1
+     ]
+    },
+    {
+     "abouturl": "/o",
+     "author": "Test",
+     "contact": "o@example.invalid",
+     "icon": "/media/plugins/other.png",
+     "id": 2,
+     "name": "Another plugin",
+     "package": "org.test.other",
+     "products": [],
+     "results": []
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/processing/plugins/",
+  "status": 200
+ },
+ "v1/users/team_membership/detail": {
+  "body": {
+   "detail": "No TeamMembership matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/users/team_membership/1/",
+  "status": 404
+ },
+ "v1/users/team_membership/list": {
+  "body": {
+   "count": 2,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "id": 8,
+     "is_admin": true,
+     "team": 3,
+     "user": 1
+    },
+    {
+     "id": 11,
+     "is_admin": false,
+     "team": 3,
+     "user": 6
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/users/team_membership/",
+  "status": 200
+ },
+ "v1/users/teams/detail": {
+  "body": {
+   "detail": "No Team matches the given query."
+  },
+  "params": {},
+  "path": "/api/v1/users/teams/1/",
+  "status": 404
+ },
+ "v1/users/teams/list": {
+  "body": {
+   "count": 1,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "id": 3,
+     "image_sets": [],
+     "members": [
+      1,
+      6
+     ],
+     "memberships": [
+      8,
+      11
+     ],
+     "name": "New Team only me",
+     "product_set": []
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/users/teams/",
+  "status": 200
+ },
+ "v1/users/users/detail": {
+  "body": {
+   "id": 1,
+   "is_active": true,
+   "is_staff": true,
+   "is_superuser": true,
+   "team_set": [
+    1,
+    2,
+    3
+   ],
+   "username": "aubreville"
+  },
+  "params": {},
+  "path": "/api/v1/users/users/1/",
+  "status": 200
+ },
+ "v1/users/users/list": {
+  "body": {
+   "count": 2,
+   "next": null,
+   "previous": null,
+   "results": [
+    {
+     "id": 1,
+     "is_active": true,
+     "is_staff": true,
+     "is_superuser": true,
+     "team_set": [
+      1,
+      2,
+      3
+     ],
+     "username": "aubreville"
+    },
+    {
+     "id": 6,
+     "is_active": true,
+     "is_staff": false,
+     "is_superuser": false,
+     "team_set": [
+      3
+     ],
+     "username": "rt_outsider"
+    }
+   ]
+  },
+  "params": {
+   "limit": 1000000
+  },
+  "path": "/api/v1/users/users/",
+  "status": 200
+ }
+}
