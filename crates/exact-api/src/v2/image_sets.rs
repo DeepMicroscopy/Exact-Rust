@@ -384,7 +384,7 @@ pub async fn patch_h(
             }
         },
     };
-    let main_type = d.get("main_annotation_type").map(|v| id_of(v));
+    let main_type = d.get("main_annotation_type").map(id_of);
     if let Some(Some(t)) = main_type {
         let ok: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM annotations_annotationtype WHERE id = $1)",
