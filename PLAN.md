@@ -507,3 +507,5 @@ frame in the middle for z-stacks/volumes); unreadable files are removed again. N
 multi-page TIFF, HDF5 to pyramidal TIFF with pyvips; the Rust readers read them natively). Tests: `tests/conformance/test_v2_upload.py`.
 Not done yet: HDF5 overlay, iSyntax (dropped), MKT/NIfTI-specific frame directories (not needed), image lock/zip state side effects.
 Old-UI shortcut inventory: `docs/old-ui-shortcuts.md` (extracted from the Django JS; lists three existing quirks of the old UI).
+
+UI decision: the old viewer's heatmap is not ported (flawed implementation); Ctrl+Z is undo only.

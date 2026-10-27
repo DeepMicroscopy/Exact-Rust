@@ -135,3 +135,5 @@ Page-level (templates):
 | Drag handle (mousedown/move/up) | viewer page (v3) | Resize panel (handle at v3:938-956) - exact panel UNCLEAR, see source | v3:938-956 |
 | Click backdrop | viewer page (v3) | Close drawers | v3:861 |
 | Click pill "x" | index | Clear search box | idx:1005 |
+
+**Decision (2026-10-27):** the heatmap (toolbar button, key 91 and the Z fall-through to it) is dropped in the new UI; its implementation was flawed. Ctrl+Z stays as undo only.
