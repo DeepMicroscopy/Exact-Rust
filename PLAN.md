@@ -519,3 +519,14 @@ catalog's foreign keys with an explicit SET_NULL list (Django's FKs have no ON D
 net (a missing child would fail the commit). Tests: `tests/conformance/test_v2_image_sets.py`.
 Still open in 5.2: tags/products of sets, move image, legacy GET image delete, annotation types / products admin endpoints
 (`administration/api/...`), media-file upload, processing claim.
+
+### 5q. Phase 5.2: tags, products, annotation types (2026-10-27)
+Legacy (exact-sync, old UI): `images/api/imageset/{tag,product}/{add,delete}/` with Django's messages and status codes,
+`administration/api/annotation_type/{create,delete}/` (create keeps Django's `sort_order` <- `enable_concealed` quirk; delete: superuser, and
+only if unused). `administration/api/products/create/` is not ported: Django has no URL for it (exact-sync's `create_product` already gets
+404 there). v2: `POST /api/v2/image-sets/{id}/tags`, `DELETE .../tags/{name}` (unused tags disappear, except `test`),
+`PUT|DELETE .../products/{pid}`, `/api/v2/annotation-types` and `/api/v2/products` (POST, PATCH, DELETE; Django model permissions;
+types in use cannot be deleted or change their vector type -> 409/400; products can copy the types of another product with `copy_product`).
+Tests: `tests/conformance/test_v2_catalog.py`.
+Still open in 5.2: move image, legacy GET image delete, annotation media-file upload, REST v1 writes for the other resources, processing
+claim, registration worker, QueueRunner v2.

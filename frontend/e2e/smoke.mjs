@@ -109,6 +109,18 @@ try {
   const afterKey = await page.locator(".zslider-current").innerText();
   check(afterKey.includes("7 / 16") || afterKey.includes("8 / 16"), `z-stack: Page Up steps to the next plane (${afterKey.replace(/\n/g, " ")})`);
 
+  // jumping along the stack keeps the zoom and position (a jump beyond the preloaded planes must not reset the view)
+  await page.evaluate(() => { const v = window.__viewer.viewport; v.zoomTo(v.getHomeZoom() * 3, undefined, true); const P = v.getCenter().constructor; v.panTo(new P(0.3, 0.2 * v.getHomeBounds().height), true); });
+  await page.waitForTimeout(400);
+  const view0 = await page.evaluate(() => { const v = window.__viewer.viewport; return { z: v.getZoom(true), c: v.getCenter(true) }; });
+  await page.locator(".zslider input").fill("14");
+  await page.waitForTimeout(1500);
+  await page.locator(".zslider input").fill("1");
+  await page.waitForTimeout(1500);
+  const view1 = await page.evaluate(() => { const v = window.__viewer.viewport; return { z: v.getZoom(true), c: v.getCenter(true) }; });
+  check(Math.abs(view1.z - view0.z) < 1e-6 && Math.abs(view1.c.x - view0.c.x) < 1e-6 && Math.abs(view1.c.y - view0.c.y) < 1e-6,
+    `z-stack: zoom and position are kept when jumping along the stack (${view0.z.toFixed(3)} -> ${view1.z.toFixed(3)})`);
+
   // video: horizontal slider at the bottom, no vertical one
   await openImage(69);
   await waitPainted("video renders");

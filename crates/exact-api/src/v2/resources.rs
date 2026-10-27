@@ -3,7 +3,7 @@
 //! Differences to v1 (PLAN.md §2a): keyset (cursor) pagination ordered by id, RFC 3339 UTC timestamps,
 //! snake_case field names, no trailing slashes, processing data scoped to the viewer's teams.
 
-use super::{annotation_writes, image_sets};
+use super::{annotation_writes, catalog, image_sets};
 use crate::{
     auth::{authenticate, require_model_perm},
     compat::{
@@ -77,6 +77,26 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/images/{id}",
             get(images_detail).delete(image_sets::delete_image_h),
+        )
+        .route(
+            "/api/v2/annotation-types",
+            get(types_list).post(catalog::type_create_h),
+        )
+        .route(
+            "/api/v2/annotation-types/{id}",
+            get(types_detail)
+                .patch(catalog::type_patch_h)
+                .delete(catalog::type_delete_h),
+        )
+        .route(
+            "/api/v2/products",
+            get(products_list).post(catalog::product_create_h),
+        )
+        .route(
+            "/api/v2/products/{id}",
+            get(products_detail)
+                .patch(catalog::product_patch_h)
+                .delete(catalog::product_delete_h),
         )
         .route("/api/v2/{resource}", get(list_h))
         .route("/api/v2/{resource}/{id}", get(detail_h))
@@ -241,4 +261,30 @@ async fn images_detail(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     detail_h(s, headers, uri, Path(("images".into(), id))).await
+}
+
+async fn types_list(s: State<AppState>, headers: HeaderMap, uri: Uri) -> ApiResult<Json<Value>> {
+    list_h(s, headers, uri, Path("annotation-types".into())).await
+}
+
+async fn types_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("annotation-types".into(), id))).await
+}
+
+async fn products_list(s: State<AppState>, headers: HeaderMap, uri: Uri) -> ApiResult<Json<Value>> {
+    list_h(s, headers, uri, Path("products".into())).await
+}
+
+async fn products_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("products".into(), id))).await
 }

@@ -2,6 +2,7 @@
 //! resources follow in Phase 3.
 
 pub mod annotation_writes;
+pub mod catalog;
 pub mod image_sets;
 mod invitations;
 pub mod passkeys;
@@ -30,6 +31,7 @@ pub fn routes() -> Router<AppState> {
         .merge(invitations::routes())
         .merge(resources::routes())
         .merge(annotation_writes::routes())
+        .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))
         .route("/api/v2/auth/stop-impersonating", post(stop_impersonating))
         .route("/api/v2/admin/users/{id}/impersonate", post(impersonate))

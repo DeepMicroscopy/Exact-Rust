@@ -108,6 +108,8 @@ export function ViewerPage() {
       maxZoomPixelRatio: 4,
       gestureSettingsMouse: { clickToZoom: false },
       immediateRender: false,
+      // moving along a stack must keep the zoom and position; the view is reset explicitly when an image is opened
+      preserveViewport: true,
     });
     viewerRef.current = viewer;
     (window as unknown as { __viewer?: OpenSeadragon.Viewer }).__viewer = viewer; // used by the e2e tests

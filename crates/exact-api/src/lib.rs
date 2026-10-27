@@ -73,6 +73,7 @@ pub fn router(state: AppState) -> Router {
         .merge(repair::routes())
         .merge(upload::routes())
         .merge(v2::image_sets::legacy_routes())
+        .merge(v2::catalog::legacy_routes())
         .merge(v2::routes())
         .with_state(state);
     // the single-page app: static files, every other path falls back to index.html (client-side routing)

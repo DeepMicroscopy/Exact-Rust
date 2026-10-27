@@ -60,6 +60,9 @@ def resource_cases():
 @pytest.mark.parametrize("name,golden", resource_cases())
 def test_resource_case_matches_django(name, golden):
     from common import normalize
+    if name.endswith(":filter/last_login"):
+        # an exact match on a login time depends on who logged in (by session) since the goldens were recorded
+        pytest.skip("last_login changes with every session login; the filter is covered by the range cases")
     with client(golden["user"]) as c:
         r = c.get(golden["path"], params=[tuple(p) for p in golden["params"]])
     try:

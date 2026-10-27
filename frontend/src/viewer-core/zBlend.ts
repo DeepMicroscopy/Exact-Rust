@@ -58,13 +58,24 @@ export class ZBlender {
     const wanted = this.wanted();
     // nearest planes first, so that the visible ones are requested before the preloaded ones
     for (const f of [...wanted].sort((a, b) => Math.abs(a - this.pos) - Math.abs(b - this.pos))) this.ensure(f);
+    this.prune();
+    this.applyOpacity();
+  }
+
+  /**
+   * Drops the planes that are out of range, but only once a plane in range is there: an empty world makes OpenSeadragon
+   * treat the next plane as the first image and reset the view to the whole image, which must not happen when the user
+   * jumps along the stack at a zoomed-in position.
+   */
+  private prune(): void {
+    const wanted = this.wanted();
+    if (!wanted.some((f) => this.items.has(f))) return;
     for (const [f, item] of this.items) {
       if (!wanted.includes(f)) {
         this.viewer.world.removeItem(item);
         this.items.delete(f);
       }
     }
-    this.applyOpacity();
   }
 
   private ensure(frame: number): void {
@@ -86,6 +97,7 @@ export class ZBlender {
             this.items.set(frame, e.item);
             // higher planes above lower planes
             [...this.items.keys()].sort((a, b) => a - b).forEach((f, i) => this.viewer.world.setItemIndex(this.items.get(f)!, i));
+            this.prune();
             this.applyOpacity();
             if (!this.ready) {
               this.ready = true;

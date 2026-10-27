@@ -16,6 +16,10 @@ const SET_NULL: &[(&str, &str)] = &[
     ("images_auxiliaryfile", "creator_id"),
     ("annotations_annotation", "user_id"),
     ("annotations_annotation", "last_editor_id"),
+    ("images_imageset", "main_annotation_type_id"),
+    ("annotations_annotationtype", "product_id"),
+    ("administration_product", "creator_id"),
+    ("administration_product", "team_id"),
 ];
 
 /// Deletes the rows `ids` of `table` (primary key `id`) and everything that depends on them. Returns the number of rows
