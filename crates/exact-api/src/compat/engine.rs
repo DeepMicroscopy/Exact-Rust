@@ -870,7 +870,7 @@ pub fn snake(s: &str) -> String {
     o
 }
 
-fn snake_keys(v: Value) -> Value {
+pub fn snake_keys(v: Value) -> Value {
     match v {
         Value::Object(m) => Value::Object(
             m.into_iter()

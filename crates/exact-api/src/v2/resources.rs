@@ -3,6 +3,7 @@
 //! Differences to v1 (PLAN.md §2a): keyset (cursor) pagination ordered by id, RFC 3339 UTC timestamps,
 //! snake_case field names, no trailing slashes, processing data scoped to the viewer's teams.
 
+use super::annotation_writes;
 use crate::{
     auth::{authenticate, require_model_perm},
     compat::{
@@ -53,6 +54,16 @@ pub const RESOURCES: &[(&str, &str)] = &[
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/v2/annotations",
+            get(annotations_list).post(annotation_writes::create_h),
+        )
+        .route(
+            "/api/v2/annotations/{id}",
+            get(annotations_detail)
+                .patch(annotation_writes::patch_h)
+                .delete(annotation_writes::delete_h),
+        )
         .route("/api/v2/{resource}", get(list_h))
         .route("/api/v2/{resource}/{id}", get(detail_h))
 }
@@ -173,4 +184,21 @@ async fn detail_h(
         .pop()
         .map(Json)
         .ok_or_else(|| ApiError::not_found("Not found."))
+}
+
+async fn annotations_list(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> ApiResult<Json<Value>> {
+    list_h(s, headers, uri, Path("annotations".into())).await
+}
+
+async fn annotations_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("annotations".into(), id))).await
 }

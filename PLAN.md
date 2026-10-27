@@ -488,3 +488,11 @@ context (nothing selected, selection by vector type, drawing); a one-click mode 
 the predefined size; all old shortcuts kept; annotation on desktop and tablet (pointer/touch events, large hit targets), viewing also
 on phones. Order: collect the old shortcut list and write one-page workflows -> v2 annotation write endpoints -> annotation layer
 (selection, handles, undo/redo) -> contextual toolbox -> side panel -> responsive layout.
+
+### 5n. Phase 5.2: v2 annotation writes (2026-10-27)
+`/api/v2/annotations` POST (idempotent by `unique_identifier`, global annotation once per image/type, vector validated, verified by
+creator), PATCH (partial, conditional via `expected_last_edit_time` -> 409 with the current state, type change only within the same
+vector family), DELETE (soft; `?hard=true` removes, 409 when versions exist; undo = `PATCH {"deleted": false}`), POST `{id}/verify`.
+Authority is the image-set permission, not Django model permissions; invisible annotations answer 404. Tests:
+`tests/conformance/test_v2_annotation_writes.py` (18, part of `make verify`). Next in 5.2: image / image-set writes, processing
+claim, upload pipeline; batch endpoint for the new viewer if the one-click mode needs it.
