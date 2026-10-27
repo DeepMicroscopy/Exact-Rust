@@ -137,3 +137,5 @@ Page-level (templates):
 | Click pill "x" | index | Clear search box | idx:1005 |
 
 **Decision (2026-10-27):** the heatmap (toolbar button, key 91 and the Z fall-through to it) is dropped in the new UI; its implementation was flawed. Ctrl+Z stays as undo only.
+
+**Decision (2026-10-27):** the R binding (finish annotation; Enter and V remain) and the F binding (verify image) are dropped, so OpenSeadragon's own key handling is switched off and no key collides any more. Rotate and flip are not offered.

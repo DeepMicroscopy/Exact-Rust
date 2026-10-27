@@ -186,7 +186,7 @@ fn at_json(r: &sqlx::postgres::PgRow, off: usize) -> Value {
 const AT_COLS: &str = "id, closed, name, vector_type, color_code, multi_frame, area_hit_test";
 
 /// `serialize_imageset` of `images/serializers.py`
-async fn serialize_imagesets(s: &AppState, ids: &[i64]) -> ApiResult<Vec<Value>> {
+pub(crate) async fn serialize_imagesets(s: &AppState, ids: &[i64]) -> ApiResult<Vec<Value>> {
     let sets = sqlx::query("SELECT s.id, s.name, s.location, s.description, s.team_id, t.name, s.main_annotation_type_id FROM images_imageset s LEFT JOIN users_team t ON t.id = s.team_id WHERE s.id = ANY($1)")
         .bind(ids)
         .fetch_all(&s.pool)

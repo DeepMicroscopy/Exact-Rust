@@ -3,7 +3,7 @@
 //! Differences to v1 (PLAN.md §2a): keyset (cursor) pagination ordered by id, RFC 3339 UTC timestamps,
 //! snake_case field names, no trailing slashes, processing data scoped to the viewer's teams.
 
-use super::annotation_writes;
+use super::{annotation_writes, image_sets};
 use crate::{
     auth::{authenticate, require_model_perm},
     compat::{
@@ -63,6 +63,20 @@ pub fn routes() -> Router<AppState> {
             get(annotations_detail)
                 .patch(annotation_writes::patch_h)
                 .delete(annotation_writes::delete_h),
+        )
+        .route(
+            "/api/v2/image-sets",
+            get(image_sets_list).post(image_sets::create_h),
+        )
+        .route(
+            "/api/v2/image-sets/{id}",
+            get(image_sets_detail)
+                .patch(image_sets::patch_h)
+                .delete(image_sets::delete_h),
+        )
+        .route(
+            "/api/v2/images/{id}",
+            get(images_detail).delete(image_sets::delete_image_h),
         )
         .route("/api/v2/{resource}", get(list_h))
         .route("/api/v2/{resource}/{id}", get(detail_h))
@@ -201,4 +215,30 @@ async fn annotations_detail(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     detail_h(s, headers, uri, Path(("annotations".into(), id))).await
+}
+
+async fn image_sets_list(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> ApiResult<Json<Value>> {
+    list_h(s, headers, uri, Path("image-sets".into())).await
+}
+
+async fn image_sets_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("image-sets".into(), id))).await
+}
+
+async fn images_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("images".into(), id))).await
 }

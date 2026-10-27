@@ -2,6 +2,7 @@
 //! resources follow in Phase 3.
 
 pub mod annotation_writes;
+pub mod image_sets;
 mod invitations;
 pub mod passkeys;
 pub mod resources;

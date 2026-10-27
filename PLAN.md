@@ -509,3 +509,13 @@ Not done yet: HDF5 overlay, iSyntax (dropped), MKT/NIfTI-specific frame director
 Old-UI shortcut inventory: `docs/old-ui-shortcuts.md` (extracted from the Django JS; lists three existing quirks of the old UI).
 
 UI decision: the old viewer's heatmap is not ported (flawed implementation); Ctrl+Z is undo only.
+
+### 5p. Phase 5.2: image sets and image deletion (2026-10-27)
+v2: `POST /api/v2/image-sets` (team member; folder `<SQL_DATABASE>_<team>_<id>`, mode 0777, products optional), `PATCH` (`edit_set`;
+name unique per team), `DELETE` (`delete_set`; cascades and removes the folder), `DELETE /api/v2/images/{id}` (`delete_images`, set
+unlocked; removes the files unless another image of the set still uses them). exact-sync: `POST /images/api/imageset/create/`
+(`team: {"id"}`, `products: [{"id"}]`; answers `serialize_imageset`). `cascade.rs` reproduces Django's `on_delete=CASCADE` from the
+catalog's foreign keys with an explicit SET_NULL list (Django's FKs have no ON DELETE clause); the deferred FK constraints are the safety
+net (a missing child would fail the commit). Tests: `tests/conformance/test_v2_image_sets.py`.
+Still open in 5.2: tags/products of sets, move image, legacy GET image delete, annotation types / products admin endpoints
+(`administration/api/...`), media-file upload, processing claim.

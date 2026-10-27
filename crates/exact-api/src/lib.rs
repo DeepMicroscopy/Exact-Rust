@@ -14,6 +14,7 @@ use tower_http::{
 };
 
 pub mod auth;
+pub mod cascade;
 pub mod compat;
 pub mod error;
 pub mod page;
@@ -35,6 +36,8 @@ pub struct AppState {
     pub slides: slides::SlideState,
     pub static_dir: Option<std::path::PathBuf>,
     pub repairs: repair::Progress,
+    /// `SQL_DATABASE`: part of the image set folder names (`<db>_<team>_<set>`), as in Django.
+    pub db_name: String,
 }
 
 impl AppState {
@@ -53,6 +56,7 @@ impl AppState {
             slides: slides::SlideState::new(cfg.image_path.clone(), cfg.cache_dir.clone()),
             static_dir: cfg.static_dir.clone(),
             repairs: Default::default(),
+            db_name: cfg.db_name.clone(),
         })
     }
 }
@@ -68,6 +72,7 @@ pub fn router(state: AppState) -> Router {
         .merge(slides::routes())
         .merge(repair::routes())
         .merge(upload::routes())
+        .merge(v2::image_sets::legacy_routes())
         .merge(v2::routes())
         .with_state(state);
     // the single-page app: static files, every other path falls back to index.html (client-side routing)
@@ -141,6 +146,7 @@ mod tests {
             slides: slides::SlideState::new("./images".into(), "./cache".into()),
             static_dir: None,
             repairs: Default::default(),
+            db_name: "exact".into(),
         })
     }
 

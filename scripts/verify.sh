@@ -30,7 +30,7 @@ EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_conformance.py 2>&1 | grep
 step "Rust: exact-sync interface (read-only)"
 EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_exact_sync.py 2>&1 | grep -E "^FAILED|passed|failed" | cut -c1-200
 step "Rust: v2 auth, passkeys, invitations (mutating)"
-EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_v2_auth.py test_v2_passkeys.py test_v2_invitations.py test_v2_resources.py test_v2_annotation_writes.py test_v2_upload.py 2>&1 | grep -E "^FAILED|passed|failed" | cut -c1-200
+EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_v2_auth.py test_v2_passkeys.py test_v2_invitations.py test_v2_resources.py test_v2_annotation_writes.py test_v2_upload.py test_v2_image_sets.py 2>&1 | grep -E "^FAILED|passed|failed" | cut -c1-200
 cd "$ROOT"; pkill -f "target/debug/exact-server"; pkill -f "manage.py runserver"
 step "schema sync: shared tables, both creation orders"
 PGBIN="${PGBIN:-/Applications/Postgres.app/Contents/Versions/latest/bin}" scripts/check-schema-sync.sh 2>&1 | grep -E "^(ok|FAIL)" || fail=1
