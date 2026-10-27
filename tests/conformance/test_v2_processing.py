@@ -112,3 +112,67 @@ def test_other_generic_resources():
     reg = c.post("/api/v2/registrations", json={"source_image": IMAGE, "target_image": 6, "registration_error": 1.5, "transformation_matrix": [[1, 0, 0], [0, 1, 0]]})
     assert reg.status_code == 201 and reg.json()["registration_error"] == 1.5
     assert c.delete(f"/api/v2/registrations/{reg.json()['id']}").status_code == 204
+
+
+# --- file fields -------------------------------------------------------------------------------------------------
+
+def tiny_png(color=(10, 20, 30)):
+    import io
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (8, 8), color).save(b, "PNG")
+    return b.getvalue()
+
+
+def test_bitmap_upload_multipart_is_stored_and_served(plugin):
+    c = client()
+    job = c.post("/api/v2/plugin-jobs", json={"plugin": plugin["id"], "image": IMAGE}).json()
+    res = c.post("/api/v2/plugin-results", json={"plugin": plugin["id"], "image": IMAGE, "job": job["id"]}).json()
+    entry = c.post("/api/v2/plugin-result-entries", json={"pluginresult": res["id"], "name": "heat"}).json()
+    data = tiny_png()
+    r = c.post("/api/v2/plugin-result-bitmaps", data={"pluginresultentry": entry["id"], "image": IMAGE, "name": "b", "channels": "3", "location_rect": '{"x": 1, "y": 2, "w": 8, "h": 8}', "scale_max": "2.5"},
+               files={"bitmap": ("my map.png", data)})
+    assert r.status_code == 201, r.text
+    b = r.json()
+    assert b["channels"] == 3 and b["scale_max"] == 2.5 and b["location_rect"] == {"x": 1, "y": 2, "w": 8, "h": 8} and b["plugin"] == plugin["id"]
+    assert f"/plugins/{plugin['name']}_{plugin['id']}/{IMAGE}/my_map" in b["bitmap"]
+    served = httpx.get(b["bitmap"].replace("http://127.0.0.1:8002", BASE))
+    assert served.status_code == 200 and served.content == data
+    # same name again: never overwritten
+    r2 = c.post("/api/v2/plugin-result-bitmaps", data={"pluginresultentry": entry["id"], "image": IMAGE, "name": "b"}, files={"bitmap": ("my map.png", tiny_png((1, 1, 1)))})
+    assert r2.status_code == 201 and r2.json()["bitmap"] != b["bitmap"]
+    # defaults and the required file
+    assert r2.json()["channels"] == 1 and r2.json()["location_rect"] == {"x": 0, "y": 0, "w": 10000, "h": 10000}
+    missing = c.post("/api/v2/plugin-result-bitmaps", data={"pluginresultentry": entry["id"], "image": IMAGE, "name": "b"})
+    assert missing.status_code == 400 and "bitmap" in missing.json()["errors"]
+    c.delete(f"/api/v2/plugin-results/{res['id']}")
+    c.delete(f"/api/v2/plugin-jobs/{job['id']}")
+
+
+def test_plugin_icon_upload_and_v1_multipart(plugin):
+    c = client()
+    r = c.patch(f"/api/v2/plugins/{plugin['id']}", files={"icon": ("icon.png", tiny_png())})
+    assert r.status_code == 200 and r.json()["icon"].endswith(".png") and f"/plugins/{plugin['name']}_{plugin['id']}/icon" in r.json()["icon"]
+    v1 = c.post("/api/v1/processing/plugins/", data={"name": f"v1-{uuid.uuid4().hex[:6]}"}, files={"icon": ("i.png", tiny_png())})
+    assert v1.status_code == 201 and v1.json()["icon"].startswith("http://")
+    c.delete(f"/api/v2/plugins/{v1.json()['id']}")
+
+
+def test_annotation_media_files_v2_and_legacy():
+    c = client("rt_member")
+    ann = c.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": 1, "vector": {"x1": 1, "y1": 1, "x2": 9, "y2": 9}}).json()
+    up = c.post(f"/api/v2/annotations/{ann['id']}/media-files", data={"media_file_type": "3"}, files=[("a", ("clip.mp4", b"video-bytes")), ("b", ("note.png", tiny_png()))])
+    assert up.status_code == 201 and [m["name"] for m in up.json()] == ["clip.mp4", "note.png"] and up.json()[0]["media_file_type"] == 3
+    served = httpx.get(up.json()[0]["file"].replace("http://127.0.0.1:8002", BASE))
+    assert served.status_code == 200 and served.content == b"video-bytes"
+    again = c.post(f"/api/v2/annotations/{ann['id']}/media-files", files={"a": ("clip.mp4", b"x")})
+    assert again.status_code == 201 and again.json() == []  # same name: skipped
+    got = c.get(f"/api/v2/annotations/{ann['id']}", params={"expand": "uploaded_media_files"}).json()
+    assert len(got["uploaded_media_files"]) == 2
+    legacy = c.post(f"/annotations/api/annotation/mediafile/upload/{ann['id']}/2/", files={"f": ("l.png", tiny_png())})
+    assert legacy.status_code == 200 and legacy.json()[0]["name"] == "l.png" and legacy.json()[0]["media_file_type"] == 2
+    assert c.delete(f"/api/v2/annotation-media-files/{up.json()[0]['id']}").status_code == 204
+    assert httpx.get(up.json()[0]["file"].replace("http://127.0.0.1:8002", BASE)).status_code == 404
+    assert client("rt_outsider").post(f"/api/v2/annotations/{ann['id']}/media-files", files={"a": ("z.png", b"z")}).status_code == 404
+    assert c.post(f"/api/v2/annotations/{ann['id']}/media-files", data={"x": "y"}).status_code == 400
+    c.delete(f"/api/v2/annotations/{ann['id']}", params={"hard": "true"})

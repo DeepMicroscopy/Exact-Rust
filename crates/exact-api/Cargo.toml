@@ -28,6 +28,8 @@ moka.workspace = true
 sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tokio-util = { version = "0.7", features = ["io"] }
+multer = "3"
+futures-util = "0.3"
 rand = "0.8"
 
 [dev-dependencies]

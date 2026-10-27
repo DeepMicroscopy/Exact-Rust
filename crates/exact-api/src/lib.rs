@@ -17,6 +17,7 @@ pub mod auth;
 pub mod cascade;
 pub mod compat;
 pub mod error;
+pub mod media;
 pub mod page;
 pub mod repair;
 pub mod slides;
@@ -38,6 +39,8 @@ pub struct AppState {
     pub repairs: repair::Progress,
     /// `SQL_DATABASE`: part of the image set folder names (`<db>_<team>_<set>`), as in Django.
     pub db_name: String,
+    /// `MEDIA_ROOT`: uploaded files of file fields, served at `/media/`.
+    pub media_root: std::path::PathBuf,
 }
 
 impl AppState {
@@ -57,12 +60,14 @@ impl AppState {
             static_dir: cfg.static_dir.clone(),
             repairs: Default::default(),
             db_name: cfg.db_name.clone(),
+            media_root: cfg.media_root.clone(),
         })
     }
 }
 
 pub fn router(state: AppState) -> Router {
     let static_dir = state.static_dir.clone();
+    let media_root = state.media_root.clone();
     let r = Router::new()
         .route("/health", get(health))
         .route("/api/version", get(version))
@@ -74,8 +79,13 @@ pub fn router(state: AppState) -> Router {
         .merge(upload::routes())
         .merge(v2::image_sets::legacy_routes())
         .merge(v2::catalog::legacy_routes())
+        .merge(v2::annotation_media::legacy_routes())
         .merge(v2::routes())
+        // request bodies with files (bitmaps, media files) are larger than axum's default 2 MB
+        .layer(axum::extract::DefaultBodyLimit::max(1 << 30))
         .with_state(state);
+    // uploaded files (file fields); public like Django's `/media/`
+    let r = r.nest_service("/media", tower_http::services::ServeDir::new(media_root));
     // the single-page app: static files, every other path falls back to index.html (client-side routing)
     let r = match static_dir {
         Some(dir) => {
@@ -148,6 +158,7 @@ mod tests {
             static_dir: None,
             repairs: Default::default(),
             db_name: "exact".into(),
+            media_root: "./media".into(),
         })
     }
 

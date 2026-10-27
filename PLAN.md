@@ -545,3 +545,13 @@ job goes to exactly one worker. Django's workers read the list and then PATCH `a
 Tests: `tests/conformance/test_v2_processing.py`.
 Still open in 5.2: move image, annotation media-file upload, bitmap/icon uploads, writes for users/teams/memberships (admin), registration
 worker, QueueRunner v2.
+
+### 5s. Phase 5.2: file uploads and media (2026-10-27)
+`media.rs`: storage like Django's `FileSystemStorage` under `MEDIA_ROOT` (valid file names, an existing file is never overwritten:
+`name_<7 chars>.ext`), body parsing for multipart / urlencoded / JSON (`Payload`), and `/media/` is served (public, like Django's). Body limit
+raised to 1 GiB for the API routes. File fields in the generic writer: `PluginResultBitmap.bitmap` (required, `plugins/<plugin>_<id>/<image>/`),
+`Plugin.icon`; JSON fields arrive as JSON text in form bodies. Annotation media files: legacy
+`annotations/api/annotation/mediafile/upload/{annotation}/{type}/` (a file name the annotation has already is skipped), `POST
+/api/v2/annotations/{id}/media-files`, `DELETE /api/v2/annotation-media-files/{id}` (removes the file); needs `edit_annotation`.
+Not done: `ImageRegistration.file`, `AnnotationType.image_file`, streaming of very large bodies (bodies are held in memory).
+Open in 5.2: move image, admin writes for users/teams/memberships, registration worker, QueueRunner v2.

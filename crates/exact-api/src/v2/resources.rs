@@ -99,6 +99,10 @@ pub fn routes() -> Router<AppState> {
                 .delete(catalog::product_delete_h),
         )
         .route(
+            "/api/v2/annotation-media-files/{id}",
+            get(media_files_detail).delete(super::annotation_media::delete_h),
+        )
+        .route(
             "/api/v2/plugin-jobs/claim",
             axum::routing::post(super::processing::claim_h),
         )
@@ -373,8 +377,17 @@ async fn generic_delete(
         spec,
         w,
         Some(id),
-        &[],
+        &axum::body::Bytes::new(),
         true,
     )
     .await
+}
+
+async fn media_files_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("annotation-media-files".into(), id))).await
 }

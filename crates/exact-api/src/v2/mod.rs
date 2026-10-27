@@ -1,6 +1,7 @@
 //! `/api/v2`: the clean API. Phase 2 provides session authentication for the new UI;
 //! resources follow in Phase 3.
 
+pub mod annotation_media;
 pub mod annotation_writes;
 pub mod catalog;
 pub mod image_sets;
@@ -32,6 +33,7 @@ pub fn routes() -> Router<AppState> {
         .merge(invitations::routes())
         .merge(resources::routes())
         .merge(annotation_writes::routes())
+        .merge(annotation_media::v2_routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))
         .route("/api/v2/auth/stop-impersonating", post(stop_impersonating))

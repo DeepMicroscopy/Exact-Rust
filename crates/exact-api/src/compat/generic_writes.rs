@@ -14,6 +14,7 @@ use super::{
     perms::set_perms_of_image,
     specs,
 };
+use crate::media::{self, Payload, Upload};
 use crate::{
     auth::{require_model_perm, Principal},
     cascade,
@@ -85,7 +86,7 @@ pub const WRITABLE: &[W] = &[
     },
     W {
         spec: "Plugin",
-        readonly: &["results", "products", "icon"],
+        readonly: &["results", "products"],
         required: &["name"],
         defaults: &[
             ("author", "''"),
@@ -93,6 +94,24 @@ pub const WRITABLE: &[W] = &[
             ("package", "''"),
             ("abouturl", "''"),
             ("icon", "''"),
+        ],
+    },
+    W {
+        spec: "PluginResultBitmap",
+        readonly: &["plugin"],
+        required: &["pluginresultentry", "image", "name"],
+        defaults: &[
+            ("scale_min", "0"),
+            ("scale_max", "1"),
+            ("default_threshold", "0"),
+            ("default_alpha", "1"),
+            ("channels", "1"),
+            ("frame", "1"),
+            (
+                "location_rect",
+                "'{\"x\": 0, \"y\": 0, \"w\": 10000, \"h\": 10000}'::jsonb",
+            ),
+            ("bitmap", "''"),
         ],
     },
     W {
@@ -137,6 +156,12 @@ pub const WRITABLE: &[W] = &[
         required: &["annotation"],
         defaults: &[("time", "now()"), ("verified", "false")],
     },
+];
+
+/// `(resource, field, required)`: file fields that can be uploaded (multipart) with the resource.
+const FILE_FIELDS: &[(&str, &str, bool)] = &[
+    ("Plugin", "icon", false),
+    ("PluginResultBitmap", "bitmap", true),
 ];
 
 pub fn writable(spec: &super::engine::Spec) -> Option<&'static W> {
@@ -303,6 +328,14 @@ async fn convert(s: &AppState, p: &Principal, kind: K, v: &Value) -> Result<Val,
     }
 }
 
+/// Form bodies carry JSON fields as text.
+fn form_value(form: bool, kind: K, v: &Value) -> Value {
+    match (form, kind, v) {
+        (true, K::Json, Value::String(t)) => serde_json::from_str(t).unwrap_or_else(|_| v.clone()),
+        _ => v.clone(),
+    }
+}
+
 fn push_val(qb: &mut QueryBuilder<'_, Postgres>, v: &Val) {
     match v {
         Val::Null => qb.push("NULL"),
@@ -322,10 +355,11 @@ async fn parse(
     s: &AppState,
     p: &Principal,
     w: &W,
-    d: &Map<String, Value>,
+    payload: &Payload,
     partial: bool,
     v2: bool,
 ) -> ApiResult<Vec<(&'static str, Val)>> {
+    let (d, files) = (&payload.fields, &payload.files);
     let spec = specs::by_name(w.spec);
     let mut errors = Errors {
         v2,
@@ -342,7 +376,7 @@ async fn parse(
             f.name.to_string()
         };
         match d.get(&key) {
-            Some(v) => match convert(s, p, f.kind, v).await {
+            Some(v) => match convert(s, p, f.kind, &form_value(payload.form, f.kind, v)).await {
                 Ok(Val::Null) if w.required.contains(&f.name) => {
                     errors.add(f.name, "This field may not be null.")
                 }
@@ -353,6 +387,12 @@ async fn parse(
                 errors.add(f.name, "This field is required.")
             }
             None => {}
+        }
+    }
+    for (spec_name, field, required) in FILE_FIELDS {
+        if *spec_name == w.spec && *required && !partial && !files.iter().any(|f| f.field == *field)
+        {
+            errors.add(field, "No file was submitted.");
         }
     }
     errors.into_result()?;
@@ -388,34 +428,16 @@ async fn serialized(
     Ok(if v2 { snake_keys(v) } else { v })
 }
 
-fn body_object(body: &[u8]) -> ApiResult<Map<String, Value>> {
-    if body.is_empty() {
-        return Ok(Map::new());
-    }
-    match serde_json::from_slice::<Value>(body) {
-        Ok(Value::Object(m)) => Ok(m),
-        Ok(other) => Err(ApiError {
-            status: StatusCode::BAD_REQUEST,
-            body: json!({"non_field_errors": [format!("Invalid data. Expected a dictionary, but got {}.", kind_name(&other))]}),
-        }),
-        Err(e) => Err(ApiError::detail(
-            StatusCode::BAD_REQUEST,
-            format!("JSON parse error - {e}"),
-        )),
-    }
-}
-
 pub async fn create(
     s: &AppState,
     p: &Principal,
     headers: &HeaderMap,
     spec: &'static super::engine::Spec,
     w: &W,
-    body: &[u8],
+    payload: Payload,
     v2: bool,
 ) -> ApiResult<Response> {
-    let d = body_object(body)?;
-    let cols = parse(s, p, w, &d, false, v2).await?;
+    let cols = parse(s, p, w, &payload, false, v2).await?;
     let mut names: Vec<&str> = cols.iter().map(|(c, _)| *c).collect();
     for (c, _) in w.defaults {
         if !names.contains(c) {
@@ -442,16 +464,112 @@ pub async fn create(
         }
     }
     qb.push(") RETURNING id::bigint");
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
     let id: i64 = qb
         .build_query_scalar()
-        .fetch_one(&s.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(db_err)?;
+    let stored = store_files(s, &mut tx, spec, w, id, &payload.files).await;
+    match stored {
+        Ok(_) => tx.commit().await.map_err(db_err)?,
+        Err((e, paths)) => {
+            for p in paths {
+                media::remove(s, &p).await;
+            }
+            return Err(e);
+        }
+    }
     Ok((
         StatusCode::CREATED,
         Json(serialized(s, p, headers, spec, id, v2).await?),
     )
         .into_response())
+}
+
+/// Stores the uploaded files of the resource's file fields and sets the columns. On failure returns the files written so far.
+async fn store_files(
+    s: &AppState,
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    spec: &super::engine::Spec,
+    w: &W,
+    id: i64,
+    files: &[Upload],
+) -> Result<(), (ApiError, Vec<String>)> {
+    let mut written = vec![];
+    for (spec_name, field, _) in FILE_FIELDS {
+        if *spec_name != w.spec {
+            continue;
+        }
+        let Some(up) = files.iter().find(|f| f.field == *field) else {
+            continue;
+        };
+        let col = spec
+            .fields
+            .iter()
+            .find(|f| f.name == *field)
+            .map(|f| f.col)
+            .unwrap_or("");
+        let result: ApiResult<String> = async {
+            let dir = upload_dir(tx, w.spec, id).await?;
+            media::store(s, &dir, &up.filename, &up.data).await
+        }
+        .await;
+        match result {
+            Ok(rel) => {
+                written.push(rel.clone());
+                let r = sqlx::query(&format!(
+                    "UPDATE {} SET {col} = $2 WHERE id = $1",
+                    spec.table
+                ))
+                .bind(id)
+                .bind(&rel)
+                .execute(&mut **tx)
+                .await
+                .map_err(db_err);
+                if let Err(e) = r {
+                    return Err((e, written));
+                }
+            }
+            Err(e) => return Err((e, written)),
+        }
+    }
+    Ok(())
+}
+
+/// Storage directory like the Django `upload_to` functions (`plugins/<name>_<id>/...`).
+async fn upload_dir(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    spec: &str,
+    id: i64,
+) -> ApiResult<String> {
+    match spec {
+        "Plugin" => {
+            let name: String =
+                sqlx::query_scalar("SELECT name FROM processing_plugin WHERE id = $1")
+                    .bind(id as i32)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(db_err)?;
+            Ok(format!("plugins/{}_{id}", media::valid_name(&name)))
+        }
+        _ => {
+            let (name, plugin, image): (String, i32, i64) = sqlx::query_as(
+                "SELECT p.name, p.id, b.image_id FROM processing_pluginresultbitmap b \
+                 JOIN processing_pluginresultentry e ON e.id = b.pluginresultentry_id \
+                 JOIN processing_pluginresult r ON r.id = e.pluginresult_id \
+                 JOIN processing_plugin p ON p.id = r.plugin_id WHERE b.id = $1",
+            )
+            .bind(id as i32)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(db_err)?;
+            Ok(format!(
+                "plugins/{}_{plugin}/{image}",
+                media::valid_name(&name)
+            ))
+        }
+    }
 }
 
 /// The row has to be visible to the caller (the resource's scope), else 404.
@@ -487,13 +605,13 @@ pub async fn update(
     spec: &'static super::engine::Spec,
     w: &W,
     id: i64,
-    body: &[u8],
+    payload: Payload,
     partial: bool,
     v2: bool,
 ) -> ApiResult<Response> {
     visible(s, p, headers, spec, id, v2).await?;
-    let d = body_object(body)?;
-    let cols = parse(s, p, w, &d, partial, v2).await?;
+    let cols = parse(s, p, w, &payload, partial, v2).await?;
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
     if !cols.is_empty() {
         let mut qb = QueryBuilder::<Postgres>::new(format!("UPDATE {} SET ", spec.table));
         for (i, (c, v)) in cols.iter().enumerate() {
@@ -504,7 +622,16 @@ pub async fn update(
             push_val(&mut qb, v);
         }
         qb.push(" WHERE id = ").push_bind(id);
-        qb.build().execute(&s.pool).await.map_err(db_err)?;
+        qb.build().execute(&mut *tx).await.map_err(db_err)?;
+    }
+    match store_files(s, &mut tx, spec, w, id, &payload.files).await {
+        Ok(_) => tx.commit().await.map_err(db_err)?,
+        Err((e, paths)) => {
+            for p in paths {
+                media::remove(s, &p).await;
+            }
+            return Err(e);
+        }
     }
     Ok(Json(serialized(s, p, headers, spec, id, v2).await?).into_response())
 }
@@ -534,14 +661,19 @@ pub async fn handle(
     spec: &'static super::engine::Spec,
     w: &W,
     id: Option<i64>,
-    body: &[u8],
+    body: &axum::body::Bytes,
     v2: bool,
 ) -> ApiResult<Response> {
     let p = require_model_perm(s, principal, method, spec.perm.0, spec.perm.1).await?;
+    let payload = || media::parse_body(headers, body);
     match (id, method) {
-        (None, &Method::POST) => create(s, &p, headers, spec, w, body, v2).await,
-        (Some(id), &Method::PUT) => update(s, &p, headers, spec, w, id, body, false, v2).await,
-        (Some(id), &Method::PATCH) => update(s, &p, headers, spec, w, id, body, true, v2).await,
+        (None, &Method::POST) => create(s, &p, headers, spec, w, payload().await?, v2).await,
+        (Some(id), &Method::PUT) => {
+            update(s, &p, headers, spec, w, id, payload().await?, false, v2).await
+        }
+        (Some(id), &Method::PATCH) => {
+            update(s, &p, headers, spec, w, id, payload().await?, true, v2).await
+        }
         (Some(id), &Method::DELETE) => delete(s, &p, headers, spec, id, v2).await,
         _ => Err(ApiError::detail(
             StatusCode::METHOD_NOT_ALLOWED,

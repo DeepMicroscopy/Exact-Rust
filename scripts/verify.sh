@@ -20,7 +20,7 @@ step "restore scratch DB"
 make -s restore >/dev/null 2>&1 || { echo "restore failed"; exit 1; }
 cargo build -q -p exact-server
 (reference/run-django.sh runserver 127.0.0.1:8001 --noreload > reference/instance/django.log 2>&1 &)
-(EXACT_CACHE_DIR=$PWD/reference/instance/cache SLIDEIO_PYTHON=$PWD/reference/.venv/bin/python SLIDEIO_HELPER=$PWD/helpers/slideio_helper.py IMAGE_PATH=$PWD/reference/instance/images EXACT_LISTEN=127.0.0.1:8002 ./target/debug/exact-server > reference/instance/rust.log 2>&1 &)
+(MEDIA_ROOT=$PWD/reference/instance/media EXACT_CACHE_DIR=$PWD/reference/instance/cache SLIDEIO_PYTHON=$PWD/reference/.venv/bin/python SLIDEIO_HELPER=$PWD/helpers/slideio_helper.py IMAGE_PATH=$PWD/reference/instance/images EXACT_LISTEN=127.0.0.1:8002 ./target/debug/exact-server > reference/instance/rust.log 2>&1 &)
 for p in 8001 8002; do for i in $(seq 1 30); do curl -s -m 2 -o /dev/null "http://127.0.0.1:$p/timesync/" && break; sleep 1; done; done
 cd tests/conformance
 step "Django reference (self-check: goldens vs Django)"
