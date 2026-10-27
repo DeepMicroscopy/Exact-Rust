@@ -496,3 +496,14 @@ vector family), DELETE (soft; `?hard=true` removes, 409 when versions exist; und
 Authority is the image-set permission, not Django model permissions; invisible annotations answer 404. Tests:
 `tests/conformance/test_v2_annotation_writes.py` (18, part of `make verify`). Next in 5.2: image / image-set writes, processing
 claim, upload pipeline; batch endpoint for the new viewer if the one-click mode needs it.
+
+### 5o. Phase 5.2: image upload (2026-10-27)
+`POST /images/image/upload/{set}/` (exact-sync, old UI; answers `{"files": [...]}` like Django, error texts included) and
+`POST /api/v2/image-sets/{id}/images` (`{"items": [...]}`), multipart, any number of files, streamed to disk (no body limit) while
+hashing (SHA-512, as Django). Needs `edit_set` and an unlocked set. ZIPs are unpacked (path traversal safe; `.mrxs`/`.vms`/`.vsi`
+rule as in Django, entries checksummed over their first 10000 bytes), documents become auxiliary files, everything else goes through
+the slide readers (width/height, mpp, objective power, frames + `images_framedescription` rows with the reader's labels, default
+frame in the middle for z-stacks/volumes); unreadable files are removed again. No format conversion on upload (Django converted CZI,
+multi-page TIFF, HDF5 to pyramidal TIFF with pyvips; the Rust readers read them natively). Tests: `tests/conformance/test_v2_upload.py`.
+Not done yet: HDF5 overlay, iSyntax (dropped), MKT/NIfTI-specific frame directories (not needed), image lock/zip state side effects.
+Old-UI shortcut inventory: `docs/old-ui-shortcuts.md` (extracted from the Django JS; lists three existing quirks of the old UI).

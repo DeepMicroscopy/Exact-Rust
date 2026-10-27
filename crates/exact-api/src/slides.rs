@@ -52,6 +52,11 @@ impl SlideState {
         }
     }
 
+    /// The image folder (`IMAGE_PATH`).
+    pub fn root(&self) -> &std::path::Path {
+        &self.root
+    }
+
     /// Opens (or fetches from the cache) the slide at `path`. Blocking.
     pub fn open_slide(&self, path: &str) -> exact_wsi::Result<Arc<dyn exact_wsi::Slide>> {
         self.slides.get(path)

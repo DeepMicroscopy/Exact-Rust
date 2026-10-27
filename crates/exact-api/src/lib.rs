@@ -19,6 +19,7 @@ pub mod error;
 pub mod page;
 pub mod repair;
 pub mod slides;
+pub mod upload;
 pub mod v2;
 
 #[derive(Clone)]
@@ -66,6 +67,7 @@ pub fn router(state: AppState) -> Router {
         .merge(compat::routes())
         .merge(slides::routes())
         .merge(repair::routes())
+        .merge(upload::routes())
         .merge(v2::routes())
         .with_state(state);
     // the single-page app: static files, every other path falls back to index.html (client-side routing)
