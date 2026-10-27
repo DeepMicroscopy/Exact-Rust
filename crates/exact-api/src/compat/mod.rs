@@ -3,6 +3,7 @@
 
 pub mod computed;
 pub mod engine;
+pub mod generic_writes;
 pub mod legacy;
 pub mod perms;
 pub mod rest_writes;
@@ -106,6 +107,34 @@ async fn rest_write(
     body: &[u8],
 ) -> Option<Response> {
     let spec = specs::find(group, name)?;
+    if let Some(w) = generic_writes::writable(spec) {
+        let allow = if pk.is_some() {
+            DETAIL_ALLOW
+        } else {
+            LIST_ALLOW
+        };
+        let id = match pk {
+            None => None,
+            Some(pk) => match pk.parse::<i64>() {
+                Ok(i) => Some(i),
+                Err(_) => {
+                    return Some(with_allow(
+                        ApiError::not_found("Not found.").into_response(),
+                        allow,
+                    ))
+                }
+            },
+        };
+        let r = async {
+            let principal = authenticate(s, headers, method).await?;
+            generic_writes::handle(s, principal, headers, method, spec, w, id, body, false).await
+        }
+        .await;
+        return Some(match r {
+            Ok(r) => with_allow(r, allow),
+            Err(e) => with_allow(e.into_response(), allow),
+        });
+    }
     if !rest_writes::is_annotation(spec) {
         return None;
     }

@@ -530,3 +530,18 @@ types in use cannot be deleted or change their vector type -> 409/400; products 
 Tests: `tests/conformance/test_v2_catalog.py`.
 Still open in 5.2: move image, legacy GET image delete, annotation media-file upload, REST v1 writes for the other resources, processing
 claim, registration worker, QueueRunner v2.
+
+### 5r. Phase 5.2: processing and other plain-table writes, atomic job claim (2026-10-27)
+`compat/generic_writes.rs`: one implementation of POST/PUT/PATCH/DELETE for the resources that are plain tables, serving v1 (DRF-shaped
+errors, v1 representation) and v2 (`{"detail","errors"}`, snake_case, UTC): Plugin, PluginJob, PluginResult, PluginResultEntry,
+PluginResultAnnotation, ImageRegistration, ScreeningMode, SetTag, LogImageAction, Verification. Columns come from the resource `Spec`;
+Django's defaults / `auto_now_add` are listed per resource (the tables have no column defaults). Django model permissions per method,
+referenced images must be readable by the caller, existing rows must be inside the caller's scope (v2: processing data is scoped to
+the teams of the image), deletes cascade like Django (`cascade.rs`, `PluginResult.job` SET_NULL). Not covered: file fields
+(`PluginResultBitmap.bitmap`, `Plugin.icon`, `ImageRegistration.file`; need multipart) and M2M fields.
+`POST /api/v2/plugin-jobs/claim {"worker", "plugin"?}`: one statement picks the oldest free job (no worker, not finished, no error, in the
+caller's teams) and marks it, `FOR UPDATE SKIP LOCKED`; 200 with the job or 204. The test claims 6 jobs from 10 concurrent workers: every
+job goes to exactly one worker. Django's workers read the list and then PATCH `attached_worker`, which can hand a job out twice.
+Tests: `tests/conformance/test_v2_processing.py`.
+Still open in 5.2: move image, annotation media-file upload, bitmap/icon uploads, writes for users/teams/memberships (admin), registration
+worker, QueueRunner v2.

@@ -104,3 +104,20 @@ pub async fn perms(s: &AppState, p: &Principal, set: &SetRow) -> ApiResult<Perms
     }
     Ok(out)
 }
+
+/// Permissions in the image set of an image (none if the image does not exist).
+pub async fn set_perms_of_image(s: &AppState, p: &Principal, image_id: i64) -> ApiResult<Perms> {
+    let set: Option<i64> =
+        sqlx::query_scalar("SELECT image_set_id FROM images_image WHERE id = $1")
+            .bind(image_id)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?;
+    match set {
+        Some(set) => match set_row(s, set).await? {
+            Some(row) => perms(s, p, &row).await,
+            None => Ok(Perms::default()),
+        },
+        None => Ok(Perms::default()),
+    }
+}

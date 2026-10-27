@@ -98,8 +98,15 @@ pub fn routes() -> Router<AppState> {
                 .patch(catalog::product_patch_h)
                 .delete(catalog::product_delete_h),
         )
-        .route("/api/v2/{resource}", get(list_h))
-        .route("/api/v2/{resource}/{id}", get(detail_h))
+        .route(
+            "/api/v2/plugin-jobs/claim",
+            axum::routing::post(super::processing::claim_h),
+        )
+        .route("/api/v2/{resource}", get(list_h).post(generic_create))
+        .route(
+            "/api/v2/{resource}/{id}",
+            get(detail_h).patch(generic_patch).delete(generic_delete),
+        )
 }
 
 fn spec_of(resource: &str) -> ApiResult<&'static crate::compat::engine::Spec> {
@@ -287,4 +294,87 @@ async fn products_detail(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     detail_h(s, headers, uri, Path(("products".into(), id))).await
+}
+
+fn writable_spec(
+    resource: &str,
+) -> ApiResult<(
+    &'static crate::compat::engine::Spec,
+    &'static crate::compat::generic_writes::W,
+)> {
+    let spec = spec_of(resource)?;
+    let w = crate::compat::generic_writes::writable(spec).ok_or_else(|| {
+        ApiError::detail(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "This resource is read-only.",
+        )
+    })?;
+    Ok((spec, w))
+}
+
+async fn generic_create(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(resource): Path<String>,
+    body: axum::body::Bytes,
+) -> ApiResult<axum::response::Response> {
+    let (spec, w) = writable_spec(&resource)?;
+    let p = authenticate(&s, &headers, &Method::POST).await?;
+    crate::compat::generic_writes::handle(
+        &s,
+        p,
+        &headers,
+        &Method::POST,
+        spec,
+        w,
+        None,
+        &body,
+        true,
+    )
+    .await
+}
+
+async fn generic_patch(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path((resource, id)): Path<(String, String)>,
+    body: axum::body::Bytes,
+) -> ApiResult<axum::response::Response> {
+    let (spec, w) = writable_spec(&resource)?;
+    let id: i64 = id.parse().map_err(|_| ApiError::not_found("Not found."))?;
+    let p = authenticate(&s, &headers, &Method::PATCH).await?;
+    crate::compat::generic_writes::handle(
+        &s,
+        p,
+        &headers,
+        &Method::PATCH,
+        spec,
+        w,
+        Some(id),
+        &body,
+        true,
+    )
+    .await
+}
+
+async fn generic_delete(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path((resource, id)): Path<(String, String)>,
+) -> ApiResult<axum::response::Response> {
+    let (spec, w) = writable_spec(&resource)?;
+    let id: i64 = id.parse().map_err(|_| ApiError::not_found("Not found."))?;
+    let p = authenticate(&s, &headers, &Method::DELETE).await?;
+    crate::compat::generic_writes::handle(
+        &s,
+        p,
+        &headers,
+        &Method::DELETE,
+        spec,
+        w,
+        Some(id),
+        &[],
+        true,
+    )
+    .await
 }

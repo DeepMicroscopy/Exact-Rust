@@ -6,6 +6,7 @@ pub mod catalog;
 pub mod image_sets;
 mod invitations;
 pub mod passkeys;
+pub mod processing;
 pub mod resources;
 
 use crate::{

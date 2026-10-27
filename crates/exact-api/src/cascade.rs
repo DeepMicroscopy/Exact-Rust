@@ -17,6 +17,11 @@ const SET_NULL: &[(&str, &str)] = &[
     ("annotations_annotation", "user_id"),
     ("annotations_annotation", "last_editor_id"),
     ("images_imageset", "main_annotation_type_id"),
+    ("processing_pluginresult", "job_id"),
+    ("processing_pluginjob", "creator_id"),
+    ("images_screeningmode", "user_id"),
+    ("annotations_verification", "user_id"),
+    ("annotations_logimageaction", "user_id"),
     ("annotations_annotationtype", "product_id"),
     ("administration_product", "creator_id"),
     ("administration_product", "team_id"),
@@ -66,12 +71,13 @@ fn delete_inner<'a>(
                 .map_err(db_err)?;
                 continue;
             }
-            let child_ids: Vec<i64> =
-                sqlx::query_scalar(&format!("SELECT id FROM {child} WHERE {quoted} = ANY($1)"))
-                    .bind(ids)
-                    .fetch_all(&mut **tx)
-                    .await
-                    .map_err(db_err)?;
+            let child_ids: Vec<i64> = sqlx::query_scalar(&format!(
+                "SELECT id::bigint FROM {child} WHERE {quoted} = ANY($1)"
+            ))
+            .bind(ids)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(db_err)?;
             if child == table {
                 // self reference (none of the cascading ones today): do not loop on the rows being deleted
                 let rest: Vec<i64> = child_ids.into_iter().filter(|i| !ids.contains(i)).collect();
