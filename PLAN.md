@@ -464,3 +464,19 @@ Plan:
 5. Then Phases 2–5 toward the beta exit criteria.
 
 *Caveat: Phase 0 was a structural survey (file sizes, models, routes, settings, dependencies). Per-field model details, serializer shapes and exact permission rules have not been read yet; they are the first task of Phases 2–3.*
+
+### 5l. Phase 5, slice 1: annotation writes (2026-10-27)
+Done, verified against real Django by the mutation-parity harness (`scripts/mutation-parity.sh`, `tests/mutations/`): two
+copies of the same database, one served by Django (:8001), one by Rust (:8002), identical scripted writes, responses and the
+resulting rows of `annotations_annotation` / `annotations_verification` compared.
+- Legacy JSON endpoints used by exact-sync and the old UI: `annotations/api/annotation/{create,update,delete,verify,blurred_concealed}/`
+  (`compat/writes.rs`, permission model in `compat/perms.rs` = `ImageSet.get_perms`, vector validation in `compat/vector.rs`
+  = `AnnotationType.validate_vector` incl. its int-identity quirk for lines).
+- REST v1 `/api/v1/annotations/annotations/`: POST (single, with idempotent update by `unique_identifier`; list = bulk), PUT, PATCH,
+  DELETE, `multiple_delete`, `count` (`compat/rest_writes.rs`), DRF-shaped validation errors.
+- Deliberate differences: the image-set permission (`annotate` / `edit_annotation` / `delete_annotation`) is enforced on REST writes
+  (Django only checks the model permission, so any authenticated user with `add_annotation` could write into foreign teams' sets);
+  annotations that have versions answer 409 on deletion (Django 500); a missing `unique_identifier` creates the annotation (Django 500);
+  bad time strings answer 400 (Django 500); `"true"`/`"false"` strings for Django-BooleanField inputs that Django 500s on are accepted.
+- Still open in Phase 5: v2 write endpoints for annotations, image / image set writes, processing writes with atomic claim,
+  registration worker, QueueRunner v2, upload pipeline.

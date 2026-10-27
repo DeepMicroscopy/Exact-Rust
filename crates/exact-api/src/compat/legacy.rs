@@ -32,6 +32,31 @@ macro_rules! allow {
     };
 }
 
+fn write_routes() -> Router<AppState> {
+    use super::writes as w;
+    Router::new()
+        .route(
+            "/annotations/api/annotation/create/",
+            axum::routing::post(w::create_annotation).layer(allow!("OPTIONS, POST")),
+        )
+        .route(
+            "/annotations/api/annotation/update/",
+            axum::routing::post(w::update_annotation).layer(allow!("OPTIONS, POST")),
+        )
+        .route(
+            "/annotations/api/annotation/verify/",
+            axum::routing::post(w::verify_annotation).layer(allow!("OPTIONS, POST")),
+        )
+        .route(
+            "/annotations/api/annotation/blurred_concealed/",
+            axum::routing::post(w::blurred_concealed).layer(allow!("OPTIONS, POST")),
+        )
+        .route(
+            "/annotations/api/annotation/delete/",
+            axum::routing::delete(w::delete_annotation).layer(allow!("OPTIONS, DELETE")),
+        )
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -56,17 +81,18 @@ pub fn routes() -> Router<AppState> {
             "/annotations/api/annotation/loadannotationtypes/",
             get(load_annotation_types).layer(allow!("OPTIONS, GET")),
         )
+        .merge(write_routes())
         .route(
             "/users/api/team/filter/",
             get(filter_teams).layer(allow!("OPTIONS, GET")),
         )
 }
 
-fn parse_error() -> ApiError {
+pub(super) fn parse_error() -> ApiError {
     ApiError::detail(StatusCode::BAD_REQUEST, "Malformed request.")
 }
 
-fn forbidden_set() -> ApiError {
+pub(super) fn forbidden_set() -> ApiError {
     ApiError::detail(
         StatusCode::FORBIDDEN,
         "permission for reading this image set missing.",
@@ -86,7 +112,24 @@ fn ctx<'a>(s: &'a AppState, p: &Principal, headers: &HeaderMap) -> Ctx<'a> {
     }
 }
 
-async fn login(s: &AppState, headers: &HeaderMap) -> ApiResult<Principal> {
+/// Authentication of a write endpoint: the method matters for CSRF (sessions) and read-only tokens.
+pub(super) async fn login_write(
+    s: &AppState,
+    headers: &HeaderMap,
+    method: &Method,
+) -> ApiResult<Principal> {
+    require_user(authenticate(s, headers, method).await?)
+}
+
+pub(super) fn not_found_msg(model: &str) -> ApiError {
+    ApiError::not_found(format!("No {model} matches the given query."))
+}
+
+pub(super) fn rest_ctx<'a>(s: &'a AppState, p: &Principal, headers: &HeaderMap) -> Ctx<'a> {
+    ctx(s, p, headers)
+}
+
+pub(super) async fn login(s: &AppState, headers: &HeaderMap) -> ApiResult<Principal> {
     require_user(authenticate(s, headers, &Method::GET).await?)
 }
 
@@ -210,7 +253,7 @@ async fn serialize_imagesets(s: &AppState, ids: &[i64]) -> ApiResult<Vec<Value>>
     Ok(ids.iter().filter_map(|i| by_id.remove(i)).collect())
 }
 
-fn body_json(body: &Bytes) -> Map<String, Value> {
+pub(super) fn body_json(body: &Bytes) -> Map<String, Value> {
     serde_json::from_slice::<Value>(body)
         .ok()
         .and_then(|v| {
@@ -426,7 +469,7 @@ async fn load_annotations(
 }
 
 /// `serialize_annotation` of `annotations/serializers.py`
-async fn serialize_annotations(s: &AppState, ids: &[i64]) -> ApiResult<Vec<Value>> {
+pub(super) async fn serialize_annotations(s: &AppState, ids: &[i64]) -> ApiResult<Vec<Value>> {
     let rows = sqlx::query(
         "SELECT a.id, a.vector, a.last_edit_time, a.deleted, a.description, a.unique_identifier::text, a.meta_data, a.annotation_type_id, a.image_id, i.name,
                 a.last_editor_id, le.username, a.user_id, u.username

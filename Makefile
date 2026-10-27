@@ -1,7 +1,7 @@
 # Dev workflow for the Phase 1 test environment (local scratch DB `exact_rust_test`, never the live `exact`).
 PY := reference/.venv/bin/python
 
-.PHONY: enroll-passkey migrate restore seed django rust test conformance sync-tests record-goldens sweep
+.PHONY: mutation-parity enroll-passkey migrate restore seed django rust test conformance sync-tests record-goldens sweep
 restore:         ## recreate exact_rust_test from the newest dump, seed test users, create Rust tables
 	scripts/restore-backup.sh && reference/seed-users.sh && $(MAKE) migrate
 migrate:         ## additive Rust tables in the scratch DB only
@@ -33,3 +33,6 @@ e2e-repair:     ## browser test of the one-time image repair on a scratch copy (
 	scripts/e2e-repair.sh
 schema-sync:    ## shared tables must have the same structure whichever side (EXACT/Django or this port) creates them
 	scripts/check-schema-sync.sh
+
+mutation-parity: ## same scripted writes against Django and Rust on two DB copies, compare (scripts/mutation-parity.sh)
+	scripts/mutation-parity.sh
