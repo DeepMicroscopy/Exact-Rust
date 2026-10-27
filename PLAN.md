@@ -555,3 +555,11 @@ raised to 1 GiB for the API routes. File fields in the generic writer: `PluginRe
 /api/v2/annotations/{id}/media-files`, `DELETE /api/v2/annotation-media-files/{id}` (removes the file); needs `edit_annotation`.
 Not done: `ImageRegistration.file`, `AnnotationType.image_file`, streaming of very large bodies (bodies are held in memory).
 Open in 5.2: move image, admin writes for users/teams/memberships, registration worker, QueueRunner v2.
+
+### 5t. Phase 5.2: move image (2026-10-27)
+`POST /api/v2/images/{id}/move {"image_set"}` and legacy `POST /images/api/image/move/{image}/{set}/`, `GET /images/api/image/move-targets/`;
+port of `exact/images/move.py` with its checks and messages (same set 400, server generated 400, `delete_images` in the source / `edit_set` in
+the target and no locks 403, name clash 409, annotation types used by non-deleted annotations must be offered by the target's products 409,
+file name clash in the target 409; sets of other teams 404). Files (original, converted file, thumbnails, frame / MRXS folder) move first, the row
+and `zip_state` after; on failure the files go back. Symlinked copies in other sets are re-pointed. Tests: `test_v2_move_image.py`.
+Open in 5.2: admin writes for users/teams/memberships, registration worker, QueueRunner v2.

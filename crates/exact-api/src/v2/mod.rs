@@ -6,6 +6,7 @@ pub mod annotation_writes;
 pub mod catalog;
 pub mod image_sets;
 mod invitations;
+pub mod move_image;
 pub mod passkeys;
 pub mod processing;
 pub mod resources;
@@ -34,6 +35,7 @@ pub fn routes() -> Router<AppState> {
         .merge(resources::routes())
         .merge(annotation_writes::routes())
         .merge(annotation_media::v2_routes())
+        .merge(move_image::v2_routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))
         .route("/api/v2/auth/stop-impersonating", post(stop_impersonating))

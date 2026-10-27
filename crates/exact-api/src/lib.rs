@@ -80,6 +80,7 @@ pub fn router(state: AppState) -> Router {
         .merge(v2::image_sets::legacy_routes())
         .merge(v2::catalog::legacy_routes())
         .merge(v2::annotation_media::legacy_routes())
+        .merge(v2::move_image::legacy_routes())
         .merge(v2::routes())
         // request bodies with files (bitmaps, media files) are larger than axum's default 2 MB
         .layer(axum::extract::DefaultBodyLimit::max(1 << 30))
