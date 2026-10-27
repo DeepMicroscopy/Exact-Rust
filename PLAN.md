@@ -480,3 +480,11 @@ resulting rows of `annotations_annotation` / `annotations_verification` compared
   bad time strings answer 400 (Django 500); `"true"`/`"false"` strings for Django-BooleanField inputs that Django 500s on are accepted.
 - Still open in Phase 5: v2 write endpoints for annotations, image / image set writes, processing writes with atomic claim,
   registration worker, QueueRunner v2, upload pipeline.
+
+### 5m. UI direction (agreed 2026-10-27)
+A better UI, not a Lightroom v2 clone; users are mainly pathologists. Requirements: click-to-select annotations, and a selected
+annotation is editable in place (move, resize for variable-size types, add area / edit nodes for polygons); the toolbox follows the
+context (nothing selected, selection by vector type, drawing); a one-click mode where each debounced click creates an annotation of
+the predefined size; all old shortcuts kept; annotation on desktop and tablet (pointer/touch events, large hit targets), viewing also
+on phones. Order: collect the old shortcut list and write one-page workflows -> v2 annotation write endpoints -> annotation layer
+(selection, handles, undo/redo) -> contextual toolbox -> side panel -> responsive layout.
