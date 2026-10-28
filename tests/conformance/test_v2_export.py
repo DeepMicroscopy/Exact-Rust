@@ -50,3 +50,25 @@ def test_export_formats_and_exports():
         assert c.post(f"/api/v2/image-sets/{SET}/exports", json={"format": 999999}).status_code == 400
     finally:
         assert c.delete(f"/api/v2/export-formats/{fid}").status_code == 204
+
+
+def test_export_format_get_and_patch():
+    c = client()
+    types = [t["id"] for t in all_items(c, "/api/v2/annotation-types?limit=1000&fields=id")]
+    fid = c.post("/api/v2/export-formats", json={"name": "e2e fmt a", "team": 1, "annotation_types": types[:2]}).json()["id"]
+    other = c.post("/api/v2/export-formats", json={"name": "e2e fmt b", "team": 1}).json()["id"]
+    try:
+        f = c.get(f"/api/v2/export-formats/{fid}").json()
+        assert f["name"] == "e2e fmt a" and f["annotation_types"] == sorted(types[:2]) and f["image_format"] is None
+        r = c.patch(f"/api/v2/export-formats/{fid}", json={"name": "e2e fmt a2", "annotation_format": "%%type", "image_aggregation": True, "image_format": "%%annotations", "annotation_types": types[:1], "public": True})
+        assert r.status_code == 200, r.text
+        g = r.json()
+        assert (g["name"], g["annotation_format"], g["image_aggregation"], g["public"], g["annotation_types"]) == ("e2e fmt a2", "%%type", True, True, types[:1])
+        assert c.patch(f"/api/v2/export-formats/{fid}", json={"name": "e2e fmt b"}).status_code == 400
+        assert c.patch(f"/api/v2/export-formats/{fid}", json={"include_blurred": "yes"}).status_code == 400
+        o = client("rt_outsider")
+        assert o.patch(f"/api/v2/export-formats/{fid}", json={"name": "x"}).status_code == 403
+        assert client("rt_outsider").get(f"/api/v2/export-formats/{other}").status_code == 404  # private, not their team
+    finally:
+        for i in (fid, other):
+            c.delete(f"/api/v2/export-formats/{i}")

@@ -163,7 +163,7 @@ export function ManualRegistration({ source, target, names, review = false, onCl
   const [saved, setSaved] = useState<Registration | null>(null);
   const [inverse, setInverse] = useState(true);
   const [stage, setStage] = useState<"pick" | "check">(review ? "check" : "pick");
-  const existing = useQuery({ queryKey: ["registration-exists", source, target], queryFn: async () => (await api<Page<Registration>>(`/api/v2/registrations?source_image=${source}&target_image=${target}`)).items[0] ?? null });
+  const existing = useQuery({ queryKey: ["registration-exists", source, target], staleTime: 0, queryFn: async () => (await api<Page<Registration>>(`/api/v2/registrations?source_image=${source}&target_image=${target}`)).items[0] ?? null });
 
   // the points of the registration that exists: they are shown and can be changed
   const loadedPoints = useRef(false);

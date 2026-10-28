@@ -44,7 +44,12 @@ pub fn v2_routes() -> Router<AppState> {
             "/api/v2/export-formats",
             axum::routing::post(format_create_h),
         )
-        .route("/api/v2/export-formats/{id}", delete(format_delete_h))
+        .route(
+            "/api/v2/export-formats/{id}",
+            get(format_get_h)
+                .patch(format_patch_h)
+                .delete(format_delete_h),
+        )
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -978,6 +983,187 @@ async fn format_create_h(
     }
     tx.commit().await.map_err(db_err)?;
     Ok((StatusCode::CREATED, Json(json!({"id": id, "name": name}))).into_response())
+}
+
+const TEXT_FIELDS: [&str; 6] = [
+    "base_format",
+    "image_format",
+    "annotation_format",
+    "vector_format",
+    "not_in_image_format",
+    "name_format",
+];
+
+async fn format_json(s: &AppState, id: i64) -> ApiResult<Value> {
+    let r = sqlx::query(
+        "SELECT id, name, team_id, public, image_aggregation, include_blurred, include_concealed, base_format, image_format, annotation_format, vector_format, not_in_image_format, name_format \
+         FROM annotations_exportformat WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(db_err)?
+    .ok_or_else(not_found)?;
+    let types: Vec<i64> = sqlx::query_scalar("SELECT annotationtype_id FROM annotations_exportformat_annotations_types WHERE exportformat_id = $1 ORDER BY 1")
+        .bind(id)
+        .fetch_all(&s.pool)
+        .await
+        .map_err(db_err)?;
+    Ok(json!({
+        "id": r.get::<i64,_>(0), "name": r.get::<String,_>(1), "team": r.get::<i64,_>(2), "public": r.get::<bool,_>(3),
+        "image_aggregation": r.get::<bool,_>(4), "include_blurred": r.get::<bool,_>(5), "include_concealed": r.get::<bool,_>(6),
+        "base_format": r.get::<String,_>(7), "image_format": r.get::<Option<String>,_>(8), "annotation_format": r.get::<String,_>(9),
+        "vector_format": r.get::<String,_>(10), "not_in_image_format": r.get::<String,_>(11), "name_format": r.get::<String,_>(12),
+        "annotation_types": types,
+    }))
+}
+
+/// `GET /api/v2/export-formats/{id}`: public formats and those of the user's teams.
+async fn format_get_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let f = format_json(&s, id).await?;
+    let team = f["team"].as_i64().unwrap_or(0);
+    if !f["public"].as_bool().unwrap_or(false) && !member_of(&s, p.user.id, team).await? {
+        return Err(not_found());
+    }
+    Ok(Json(f).into_response())
+}
+
+/// `PATCH /api/v2/export-formats/{id}`: any of the fields of the creation (members of the team; a new `team` needs membership too).
+async fn format_patch_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::PATCH).await?)?;
+    let cur = format_json(&s, id).await?;
+    if !member_of(&s, p.user.id, cur["team"].as_i64().unwrap_or(0)).await? {
+        return Err(ApiError::detail(
+            StatusCode::FORBIDDEN,
+            "permission for managing export formats missing.",
+        ));
+    }
+    let d = match serde_json::from_slice::<Value>(&body) {
+        Ok(Value::Object(m)) => m,
+        _ => {
+            return Err(ApiError::detail(
+                StatusCode::BAD_REQUEST,
+                "Expected a JSON object.",
+            ))
+        }
+    };
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
+    if let Some(v) = d.get("name") {
+        let name = v.as_str().unwrap_or("");
+        if name.is_empty() || name.chars().count() > 20 {
+            return Err(field_err(
+                "name",
+                "A name of 1 to 20 characters is required.",
+            ));
+        }
+        let taken: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM annotations_exportformat WHERE name = $1 AND id <> $2)",
+        )
+        .bind(name)
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db_err)?;
+        if taken {
+            return Err(field_err(
+                "name",
+                "The name is already in use by an export format.",
+            ));
+        }
+        sqlx::query("UPDATE annotations_exportformat SET name = $2 WHERE id = $1")
+            .bind(id)
+            .bind(name)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+    }
+    if let Some(team) = d.get("team").and_then(Value::as_i64) {
+        if !member_of(&s, p.user.id, team).await? {
+            return Err(ApiError::detail(
+                StatusCode::FORBIDDEN,
+                "permission for managing export formats missing.",
+            ));
+        }
+        sqlx::query("UPDATE annotations_exportformat SET team_id = $2 WHERE id = $1")
+            .bind(id)
+            .bind(team)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+    }
+    for k in TEXT_FIELDS {
+        if let Some(v) = d.get(k) {
+            let t = match v {
+                Value::String(t) => Some(t.as_str()),
+                Value::Null if k == "image_format" => None,
+                _ => return Err(field_err(k, "A text is required.")),
+            };
+            // the column names are the fixed ones above
+            sqlx::query(&format!(
+                "UPDATE annotations_exportformat SET {k} = $2 WHERE id = $1"
+            ))
+            .bind(id)
+            .bind(t)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        }
+    }
+    for k in [
+        "public",
+        "image_aggregation",
+        "include_blurred",
+        "include_concealed",
+    ] {
+        if let Some(v) = d.get(k) {
+            let b = v
+                .as_bool()
+                .ok_or_else(|| field_err(k, "true or false is required."))?;
+            sqlx::query(&format!(
+                "UPDATE annotations_exportformat SET {k} = $2 WHERE id = $1"
+            ))
+            .bind(id)
+            .bind(b)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        }
+    }
+    if let Some(Value::Array(a)) = d.get("annotation_types") {
+        sqlx::query(
+            "DELETE FROM annotations_exportformat_annotations_types WHERE exportformat_id = $1",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+        for t in a.iter().filter_map(Value::as_i64) {
+            sqlx::query("INSERT INTO annotations_exportformat_annotations_types (exportformat_id, annotationtype_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+                .bind(id)
+                .bind(t)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
+        }
+    }
+    // exports made with the old version become "deprecated" (as in Django)
+    sqlx::query("UPDATE annotations_exportformat SET last_change_time = now() WHERE id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    tx.commit().await.map_err(db_err)?;
+    Ok(Json(format_json(&s, id).await?).into_response())
 }
 
 async fn format_delete_h(

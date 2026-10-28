@@ -333,3 +333,12 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .reg-check-osd { flex: 1; min-height: 0; background: #111; border: 2px solid var(--border); border-radius: 8px; position: relative; }
 .osd.osd-hidden { visibility: hidden; }
 .viewer-error { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; }
+.export-new { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0; }
+.type-pick { border: 1px solid var(--border); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 10px; margin: 6px 0; max-height: 140px; overflow: auto; }
+.type-pick legend { font-size: 12px; opacity: 0.7; padding: 0 4px; }
+.modal textarea { width: 100%; box-sizing: border-box; background: var(--panel, transparent); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
+.help dt { font-weight: 600; font-size: 12px; margin-top: 6px; }
+.help dd { margin: 0; opacity: 0.85; }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
+import { ExportFormatEditor } from "./ExportFormatEditor";
 import { Modal } from "./Modal";
 
 interface Format {
@@ -26,6 +27,15 @@ export function ExportDialog({ setId, canCreate, canDelete, onClose }: { setId: 
   const [format, setFormat] = useState<number | null>(null);
   const chosen = format ?? formats.data?.items[0]?.id ?? null;
   const [error, setError] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ id: number | null } | null>(null);
+  const removeFormat = useMutation({
+    mutationFn: (id: number) => api(`/api/v2/export-formats/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      setFormat(null);
+      void qc.invalidateQueries({ queryKey: ["export-formats", setId] });
+    },
+    onError: (e) => setError(e instanceof ApiError || e instanceof Error ? e.message : String(e)),
+  });
   const create = useMutation({
     mutationFn: () => api<{ id: number }>(`/api/v2/image-sets/${setId}/exports`, { json: { format: chosen } }),
     onSuccess: () => {
@@ -59,6 +69,19 @@ export function ExportDialog({ setId, canCreate, canDelete, onClose }: { setId: 
           <button className="btn primary" disabled={chosen == null || create.isPending} onClick={() => create.mutate()}>
             {create.isPending ? "Exporting…" : "Create export"}
           </button>
+          <button className="btn" onClick={() => setEditor({ id: null })}>
+            New format…
+          </button>
+          {chosen != null && (
+            <>
+              <button className="btn ghost" onClick={() => setEditor({ id: chosen })}>
+                Edit format…
+              </button>
+              <button className="btn ghost" onClick={() => window.confirm("Delete this export format? Earlier exports stay.") && removeFormat.mutate(chosen)}>
+                Delete format
+              </button>
+            </>
+          )}
         </div>
       )}
       {error && <p className="error">{error}</p>}
@@ -88,6 +111,16 @@ export function ExportDialog({ setId, canCreate, canDelete, onClose }: { setId: 
           ))}
         </tbody>
       </table>
+      {editor && (
+        <ExportFormatEditor
+          formatId={editor.id}
+          onClose={() => setEditor(null)}
+          onSaved={(id) => {
+            setFormat(id);
+            void qc.invalidateQueries({ queryKey: ["export-formats", setId] });
+          }}
+        />
+      )}
       <div className="modal-actions">
         <button className="btn ghost" onClick={onClose}>
           Close

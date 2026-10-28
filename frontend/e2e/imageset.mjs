@@ -265,7 +265,11 @@ try {
   const saved = await page.locator('[data-testid="manual-saved"]').innerText();
   const err = Number(/error ([\d.]+)/.exec(saved)?.[1]);
   check(err < 3, `the manual registration is saved with a small error (${saved})`);
-  await page.waitForSelector('[data-testid="reg-check"] canvas');
+  await page.waitForSelector('[data-testid="reg-check"] canvas', { timeout: 8000 }).catch(async (e) => {
+    await page.screenshot({ path: "/tmp/shots/reg-check-fail.png" });
+    console.log("DEBUG", await page.evaluate(() => JSON.stringify({ el: document.querySelector('[data-testid="reg-check"]')?.getBoundingClientRect(), err: document.querySelector(".reg-check-bar")?.innerText, items: window.__reg_check?.world.getItemCount() })));
+    throw e;
+  });
   await waitFor(() => page.evaluate(() => window.__reg_check?.world.getItemCount() >= 2), "after saving, the source is laid over the target for checking");
   await waitFor(async () => (await page.locator('[data-testid="check-loading"]').count()) === 0, "...and its loading indicator goes away");
   await page.locator(".reg-full .btn", { hasText: "Edit the points" }).click();
@@ -275,7 +279,11 @@ try {
   const regs = (await apiCall(root, "GET", `/api/v2/registrations?source_image=${i1.id}&target_image=${i2.id}`)).body.items;
   check(regs.length === 1 && Math.abs(regs[0].transformation_matrix.t_00 - 0.5) < 0.02 && Math.abs(regs[0].transformation_matrix.t_02 - 20) < 8, "the stored matrix has the picked scale and shift");
   await page.locator(".reg", { hasText: "img-1" }).first().locator(".btn", { hasText: "Review" }).click();
-  await page.waitForSelector('[data-testid="reg-check"] canvas');
+  await page.waitForSelector('[data-testid="reg-check"] canvas', { timeout: 8000 }).catch(async (e) => {
+    await page.screenshot({ path: "/tmp/shots/review-fail.png" });
+    console.log("DEBUG", await page.evaluate(() => JSON.stringify({ html: document.querySelector(".reg-full")?.innerText.slice(0, 400), items: window.__reg_check?.world.getItemCount() })));
+    throw e;
+  });
   check((await page.locator('[data-testid="manual-saved"]').count()) === 0, "a registration can be reviewed from the list");
   await page.locator(".reg-full .btn", { hasText: "Edit the points" }).click();
   await waitFor(async () => (await page.locator(".reg-pairs .chip").count()) === 3, "a manual registration shows its stored points when reopened");
@@ -310,15 +318,29 @@ try {
   await page.waitForSelector(".tabs");
   await page.locator(".tile", { hasText: "img-1" }).locator("input[type=checkbox]").check({ force: true });
   // ---------------------------------------------------------------------------------------- export
-  const fmt = (await apiCall(root, "POST", "/api/v2/export-formats", { name: `e2e ${String(Date.now()).slice(-8)}`, team: 1, public: true, base_format: "set %%imageset%%content" })).body;
   await page.locator(".toolbar .btn", { hasText: "Export" }).click();
+  await page.locator(".modal .btn", { hasText: "New format" }).click();
+  await page.waitForSelector('input[aria-label="Format name"]');
+  const fname = `e2e ${String(Date.now()).slice(-8)}`;
+  await page.fill('input[aria-label="Format name"]', fname);
+  check(await page.locator('.modal button.primary', { hasText: "Save format" }).isDisabled(), "a format needs an annotation type");
+  await page.locator(".type-pick label").first().click();
+  await page.fill('textarea[aria-label="Per annotation"]', "%%imagename;%%type;%%width");
+  await page.locator('.modal button.primary', { hasText: "Save format" }).click();
   await page.waitForSelector('select[aria-label="Export format"]');
-  await page.selectOption('select[aria-label="Export format"]', String(fmt.id));
+  check((await page.locator('select[aria-label="Export format"] option:checked').innerText()).includes(fname), "a format made in the editor is offered and chosen");
   await page.locator(".modal .btn.primary", { hasText: "Create export" }).click();
   await waitFor(async () => (await page.locator('[data-testid="exports"] a').count()) === 1, "an export is created and listed");
   check((await page.locator('[data-testid="exports"] a').getAttribute("href")).includes("/download"), "...with a download link");
-  await page.locator(".modal .btn", { hasText: "Close" }).first().click();
-  await apiCall(root, "DELETE", `/api/v2/export-formats/${fmt.id}`);
+  await page.locator(".modal .btn", { hasText: "Edit format" }).click();
+  await page.waitForSelector('textarea[aria-label="Per annotation"]');
+  check((await page.inputValue('textarea[aria-label="Per annotation"]')) === "%%imagename;%%type;%%width", "the editor shows the stored format");
+  await page.locator('.modal button.primary', { hasText: "Save format" }).click();
+  await page.waitForSelector('select[aria-label="Export format"]');
+  await page.locator(".modal .btn", { hasText: "Delete format" }).click();
+  await waitFor(async () => (await page.locator('select[aria-label="Export format"] option', { hasText: fname }).count()) === 0, "a format can be deleted");
+  await page.locator(".modal .btn", { hasText: "Close" }).last().click();
+
   // ---------------------------------------------------------------------------------------- move
   await page.locator(".tabs button", { hasText: "Images" }).click();
   await page.locator(".toolbar .btn", { hasText: "Clear" }).click(); // the two images of the registration are still selected
