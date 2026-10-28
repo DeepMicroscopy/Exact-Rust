@@ -1,3 +1,4 @@
+import { pen, usePen } from "../viewer-core/pen";
 import { Dropdown, type DropdownItem } from "./Dropdown";
 import type { BrushMode, PolyOp } from "../viewer-core/editor";
 import { formatArea, formatLength, measureShape } from "../viewer-core/measure";
@@ -86,6 +87,7 @@ const swatch = (c?: string) => <span className="swatch" style={{ background: c }
  * and delete. Large touch targets; on narrow screens the row wraps.
  */
 export function Toolbox(p: ToolboxProps) {
+  const penState = usePen();
   const sel = p.selected;
   const current = p.palette.find((e) => e.id === p.currentTypeId);
   const draw = p.drawing ? current : undefined;
@@ -311,6 +313,11 @@ export function Toolbox(p: ToolboxProps) {
       )}
 
       <div className="tool-group right">
+        {penState.seen && (
+          <button className={`btn ghost pen-only ${penState.only ? "active" : ""}`} onClick={() => pen.setOnly(!penState.only)} aria-pressed={penState.only} aria-label="Pen only" title={penState.only ? "The pen draws and edits, fingers move and zoom the image. Click to let fingers draw too." : "Fingers draw too. Click to let only the pen draw and edit."}>
+            ✎ {penState.only ? "Pen only" : "Pen + touch"}
+          </button>
+        )}
         <button className="btn ghost" onClick={p.on.undo} disabled={!p.canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
           ↶
         </button>

@@ -159,6 +159,20 @@ try {
   await admin.keyboard.press("c");
   await admin.keyboard.press("c");
   check(JSON.stringify(await on()) === '["Select"]', "C twice toggles annotating off again");
+  // pen: hovering is detected, and once a pen was used fingers no longer draw
+  check((await admin.locator(".pen-only").count()) === 0, "no pen switch before a pen was seen");
+  const hoverAt = await screenOf(admin, 1000, 1100);
+  await admin.evaluate(({ x, y }) => window.__viewer.canvas.dispatchEvent(new PointerEvent("pointermove", { pointerType: "pen", pressure: 0, buttons: 0, clientX: x, clientY: y, bubbles: true })), hoverAt);
+  await waitFor(() => admin.evaluate(() => window.__editor.penAt !== null), "a hovering pen is detected");
+  check((await admin.locator(".pen-only").innerText()).includes("Pen only"), "the pen switch appears once a pen was seen");
+  await admin.evaluate(({ x, y }) => window.__viewer.canvas.dispatchEvent(new PointerEvent("pointermove", { pointerType: "pen", pressure: 0.5, buttons: 1, clientX: x, clientY: y, bubbles: true })), hoverAt);
+  check(await admin.evaluate(() => window.__editor.penAt === null), "a pen that touches is no longer hovering");
+  await admin.evaluate(({ x, y }) => window.__viewer.canvas.dispatchEvent(new PointerEvent("pointermove", { pointerType: "pen", pressure: 0, buttons: 0, clientX: x, clientY: y, bubbles: true })), hoverAt);
+  await admin.evaluate(() => window.__viewer.canvas.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "pen" })));
+  check(await admin.evaluate(() => window.__editor.penAt === null), "a pen leaving the screen ends the hover");
+  await admin.locator(".pen-only").click();
+  check((await admin.locator(".pen-only").innerText()).includes("Pen + touch"), "the pen switch can let fingers draw too");
+  await admin.locator(".pen-only").click();
   const inside = await screenOf(admin, 1000, 1100);
   await admin.mouse.click(inside.x, inside.y);
   await waitFor(() => admin.evaluate((id) => window.__editor.selectedId === id, box.id), "clicking the box selects it");

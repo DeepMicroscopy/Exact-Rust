@@ -1,3 +1,4 @@
+import { pen } from "./pen";
 import OpenSeadragon from "openseadragon";
 import type { Command } from "./history";
 import { wandSelect, type MaskSet, type ToolState } from "./segmentation";
@@ -23,7 +24,7 @@ export class SegmentationTool {
       viewer.addHandler(name as keyof OpenSeadragon.ViewerEventMap, h);
       this.cleanup.push(() => viewer.removeHandler(name as keyof OpenSeadragon.ViewerEventMap, h));
     };
-    type Ev = { position: OpenSeadragon.Point; preventDefaultAction: boolean; originalEvent?: MouseEvent };
+    type Ev = { position: OpenSeadragon.Point; preventDefaultAction: boolean; originalEvent?: MouseEvent; pointerType?: string };
     on("canvas-press", (e: Ev) => this.press(e));
     on("canvas-drag", (e: Ev) => this.drag(e));
     on("canvas-release", () => void this.release());
@@ -78,8 +79,8 @@ export class SegmentationTool {
     return Math.max(0.5, this.state.size / 2);
   }
 
-  private press(e: { position: OpenSeadragon.Point; preventDefaultAction: boolean; originalEvent?: MouseEvent }): void {
-    if (!this.live()) return;
+  private press(e: { position: OpenSeadragon.Point; preventDefaultAction: boolean; originalEvent?: MouseEvent; pointerType?: string }): void {
+    if (!this.live() || pen.ignores(e.pointerType)) return; // fingers move the image once a pen is in use
     const layer = this.masks.editable;
     const p = this.toImage(e.position);
     if (!layer || !p) return;

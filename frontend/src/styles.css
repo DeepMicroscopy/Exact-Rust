@@ -357,3 +357,4 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .stat-name { white-space: nowrap; width: 1%; }
 .stat-value { white-space: nowrap; width: 1%; text-align: right; color: var(--muted); }
 .stat-bar span { display: block; height: 10px; border-radius: 5px; min-width: 2px; }
+.pen-only.active { color: var(--purple); }

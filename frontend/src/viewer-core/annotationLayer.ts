@@ -20,6 +20,8 @@ export interface Overlay {
   /** further pieces a brush stroke or an operation would leave */
   extra: { rings: Pt[][]; color: string } | null;
   touch: boolean;
+  /** where a pen hovers above the screen (image pixels) */
+  pen: Pt | null;
   /** the annotations selected together (two or more) */
   group: number[];
   /** replace the committed shapes with the same ids while a group is dragged */
@@ -28,7 +30,7 @@ export interface Overlay {
   marquee: Box | null;
 }
 
-export const EMPTY_OVERLAY: Overlay = { selectedId: null, selectedVertex: null, preview: null, handles: [], draft: null, ghost: null, label: null, brush: null, extra: null, touch: false, group: [], previews: [], marquee: null };
+export const EMPTY_OVERLAY: Overlay = { selectedId: null, selectedVertex: null, preview: null, handles: [], draft: null, ghost: null, label: null, brush: null, extra: null, touch: false, pen: null, group: [], previews: [], marquee: null };
 
 /** Canvas on top of an OpenSeadragon viewer: draws annotations (culled to the viewport) and the editor's overlay. */
 export class AnnotationLayer {
@@ -256,6 +258,23 @@ export class AnnotationLayer {
       ctx.fill();
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+
+    if (o.pen) {
+      // the tip of a hovering pen: a small ring with a dot, readable on light and dark
+      const [cx, cy] = toPx(o.pen[0], o.pen[1]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.stroke();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#fff";
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
     }
 
     if (o.label) {

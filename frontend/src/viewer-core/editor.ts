@@ -1,3 +1,4 @@
+import { isHovering, pen } from "./pen";
 import OpenSeadragon from "openseadragon";
 import { AnnotationLayer, EMPTY_OVERLAY, type Overlay } from "./annotationLayer";
 import {
@@ -131,6 +132,9 @@ export class AnnotationEditor {
   /** touch: a tap adds or removes an annotation, a drag draws a rubber band (instead of Ctrl / Shift) */
   multiMode = false;
   private previews: Shape[] = [];
+  /** where a pen hovers above the screen (image pixels), null when it does not */
+  private penAt: Pt | null = null;
+  private penHover = false;
   /** the segmentation tool owns the pointer */
   suspended = false;
   private session: Session | null = null;
@@ -173,8 +177,22 @@ export class AnnotationEditor {
     });
     const el = viewer.canvas as HTMLElement;
     const move = (ev: PointerEvent) => this.pointerMoved(ev);
+    const gone = () => {
+      if (this.penAt) {
+        this.penAt = null;
+        this.penHover = false;
+        this.refresh();
+      }
+    };
+    const noteDown = (ev: PointerEvent) => pen.note(ev);
     el.addEventListener("pointermove", move);
-    this.cleanup.push(() => el.removeEventListener("pointermove", move));
+    el.addEventListener("pointerdown", noteDown, true);
+    el.addEventListener("pointerleave", gone);
+    this.cleanup.push(() => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerdown", noteDown, true);
+      el.removeEventListener("pointerleave", gone);
+    });
     // right click, and a long press on touch screens, open the menu of the annotation under the pointer
     const ctx = (ev: MouseEvent) => {
       ev.preventDefault();
@@ -426,7 +444,7 @@ export class AnnotationEditor {
   // ---- pointer events ------------------------------------------------------------------------------------------
 
   private press(e: Ev): void {
-    if (this.suspended) return;
+    if (this.suspended || pen.ignores(e.pointerType)) return; // fingers move the image once a pen is in use
     this.touch = this.isTouch(e);
     this.consumedPress = false;
     const p = this.toImage(e.position);
@@ -607,6 +625,7 @@ export class AnnotationEditor {
       return;
     }
     if (e.quick === false) return;
+    if (pen.ignores(e.pointerType) && this.tool.kind !== "select") return; // a finger may still tap to select
     const p = this.toImage(e.position);
     if (!p) return;
     if (this.tool.kind === "op") {
@@ -657,11 +676,18 @@ export class AnnotationEditor {
   }
 
   private pointerMoved(ev: PointerEvent): void {
+    pen.note(ev);
     this.touch = ev.pointerType === "touch";
+    const hovering = isHovering(ev);
+    if (hovering !== this.penHover) {
+      this.penHover = hovering;
+      this.refresh();
+    }
     const el = this.viewer.canvas as HTMLElement;
     const r = el.getBoundingClientRect();
     const p = this.toImage(new OpenSeadragon.Point(ev.clientX - r.left, ev.clientY - r.top));
     this.hover = p;
+    this.penAt = hovering ? p : null;
     this.mods = { shift: ev.shiftKey, alt: ev.altKey };
     let cursor = "";
     if (this.tool.kind === "draw") cursor = "crosshair";
@@ -675,7 +701,7 @@ export class AnnotationEditor {
       else if (hitShape(this.host.shapes(), p, t)) cursor = "pointer";
     }
     el.style.cursor = cursor;
-    if (this.tool.kind === "draw" && !this.session) this.refresh();
+    if ((this.tool.kind === "draw" && !this.session) || hovering) this.refresh();
   }
 
   // ---- actions -------------------------------------------------------------------------------------------------
@@ -815,7 +841,7 @@ export class AnnotationEditor {
   refresh(): void {
     const sel = this.selected;
     const shown = this.preview && this.preview.id === this.selectedId ? this.preview : sel;
-    const o: Overlay = { ...EMPTY_OVERLAY, touch: this.touch };
+    const o: Overlay = { ...EMPTY_OVERLAY, touch: this.touch, pen: this.penAt };
     o.selectedId = this.selectedId;
     o.selectedVertex = this.selectedVertex;
     o.preview = this.preview;
