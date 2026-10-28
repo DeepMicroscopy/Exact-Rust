@@ -16,3 +16,4 @@ __pycache__/
 # the migrations of the additive tables are SQL files
 !crates/exact-db/migrations/*.sql
 tests/conformance/goldens/django/resource_cases.json
+/images/
