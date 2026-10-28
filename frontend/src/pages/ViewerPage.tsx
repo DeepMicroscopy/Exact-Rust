@@ -94,6 +94,13 @@ export function ViewerPage() {
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [sideOpen, setSideOpen] = useState(() => window.innerWidth >= 760);
+  const [sideFolded, setSideFolded] = useState(() => {
+    try {
+      return localStorage.getItem("exact.side.folded") === "1";
+    } catch {
+      return false;
+    }
+  });
   const [toolsOpen, setToolsOpen] = useState(() => window.innerWidth >= 760); // phones view first: the tools open on demand
   const notify = useCallback((msg: string) => {
     setToast(msg);
@@ -469,7 +476,23 @@ export function ViewerPage() {
           ☰
         </button>
         <aside className={`viewer-side glass ${sideOpen ? "" : "closed"}`}>
-          <div className="sidebar-title">Annotation types</div>
+          <button
+            className="sidebar-title fold"
+            aria-expanded={!sideFolded}
+            onClick={() => {
+              setSideFolded((f) => {
+                try {
+                  localStorage.setItem("exact.side.folded", f ? "0" : "1");
+                } catch {
+                  /* private mode */
+                }
+                return !f;
+              });
+            }}
+          >
+            Annotation types <span aria-hidden>{sideFolded ? "▸" : "▾"}</span>
+          </button>
+          {!sideFolded && <>
           {types.data
             ?.filter((t) => counts.has(t.id))
             .map((t) => (
@@ -492,6 +515,7 @@ export function ViewerPage() {
               </label>
             ))}
           {annotations.data && shapes.length === 0 && <p className="muted small">No annotations.</p>}
+          </>}
         </aside>
         <button className="tools-toggle btn glass" onClick={() => setToolsOpen((o) => !o)} aria-expanded={toolsOpen} title="Annotation tools">
           {toolsOpen ? "✕" : "✎"}
@@ -503,7 +527,7 @@ export function ViewerPage() {
           drawing={drawing}
           oneClick={oneClick}
           currentTypeId={currentTypeId}
-          selected={editorRef.current?.selected ?? null}
+          selected={editorRef.current?.shown ?? null}
           selectedType={editorRef.current?.selected ? (info(editorRef.current.selected.typeId) as PaletteEntry | undefined) ?? null : null}
           verified={editorRef.current?.selected ? (annotations.data ?? []).find((a) => a.id === editorRef.current?.selectedId)?.verified_by_user !== false : false}
           selectedVertex={editorRef.current?.selectedVertex ?? null}

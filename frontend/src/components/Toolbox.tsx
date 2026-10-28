@@ -1,4 +1,6 @@
+import { Dropdown, type DropdownItem } from "./Dropdown";
 import type { BrushMode, PolyOp } from "../viewer-core/editor";
+import { formatArea, formatLength, measureShape } from "../viewer-core/measure";
 import type { PaletteEntry } from "../viewer-core/palette";
 import { canConvert, hintFor, oneClickCapable } from "../viewer-core/palette";
 import type { Shape } from "../viewer-core/types";
@@ -10,6 +12,7 @@ export interface ToolboxProps {
   drawing: boolean;
   oneClick: boolean;
   currentTypeId: number | null;
+  /** the selected annotation as it is now (while it is being dragged: the preview) */
   selected: Shape | null;
   selectedType: PaletteEntry | null;
   /** the signed-in user verified the selected annotation */
@@ -46,21 +49,48 @@ export interface ToolboxProps {
   };
 }
 
-const size = (s: Shape, mpp: number) => {
-  const w = Math.round(s.bbox[2] - s.bbox[0]);
-  const h = Math.round(s.bbox[3] - s.bbox[1]);
-  const um = mpp > 0 ? ` (${((w * mpp) / 1000).toFixed(2)} × ${((h * mpp) / 1000).toFixed(2)} mm)` : "";
-  return s.vectorType === VectorType.Point ? "point" : `${w} × ${h} px${um}`;
-};
+/** What the selection measures: area (boxes, polygons) or length (lines), with the pixel numbers as a tooltip. */
+function Measure({ shape, mpp }: { shape: Shape; mpp: number }) {
+  if (shape.vectorType === VectorType.Point) return null;
+  const m = measureShape(shape);
+  const px = `${Math.round(m.width)} × ${Math.round(m.height)} px`;
+  if (m.areaPx2 != null)
+    return (
+      <span className="measure" title={`Area ${Math.round(m.areaPx2).toLocaleString("en-US")} px² (${px})${mpp > 0 ? "" : " – the image has no resolution"}`}>
+        {formatArea(m.areaPx2, mpp)}
+      </span>
+    );
+  if (m.lengthPx != null) return <span className="measure" title={px}>{formatLength(m.lengthPx, mpp)}</span>;
+  return null;
+}
+
+const swatch = (c?: string) => <span className="swatch" style={{ background: c }} />;
 
 /**
- * The tools follow the context: with an annotation selected they edit it (type, verification, delete, vertices), while
- * drawing they show how to draw the chosen type, otherwise they offer the types to start drawing with one tap.
- * Large touch targets: on narrow screens the bar wraps into rows instead of shrinking the buttons.
+ * The tools follow the context. One row: Select / Draw, the type list (a drop-down: image sets have many types), and what
+ * fits the situation: how to draw the chosen type, or, for a selected annotation, its type, area, verification, reshaping
+ * and delete. Large touch targets; on narrow screens the row wraps.
  */
 export function Toolbox(p: ToolboxProps) {
   const sel = p.selected;
-  const draw = p.drawing ? p.palette.find((e) => e.id === p.currentTypeId) : undefined;
+  const current = p.palette.find((e) => e.id === p.currentTypeId);
+  const draw = p.drawing ? current : undefined;
+  const typeItems: DropdownItem[] = p.palette.map((e) => ({ id: e.id, label: e.name, color: e.color, key: e.key, checked: p.drawing && e.id === p.currentTypeId }));
+  const convertible: DropdownItem[] = sel
+    ? p.palette.filter((e) => canConvert(sel.vectorType, e.vectorType) || e.id === sel.typeId).map((e) => ({ id: e.id, label: e.name, color: e.color, key: e.key, checked: e.id === sel.typeId }))
+    : [];
+  const reshape: DropdownItem[] = [
+    { id: "add", label: "Add area (Shift + drag)", checked: p.brushMode === "add" },
+    { id: "erase", label: "Erase area (Alt + drag)", checked: p.brushMode === "erase" },
+    { id: "scissors", label: "Cut away an area (S)", checked: p.polyOp === "scissors" },
+    { id: "glue", label: "Merge an area (G)", checked: p.polyOp === "glue" },
+    { id: "knife", label: "Split along a line (D)", checked: p.polyOp === "knife" },
+  ];
+  const pickReshape = (id: string | number) => {
+    if (id === "add" || id === "erase") p.on.brush(p.brushMode === id ? "off" : id);
+    else p.on.polyOp(id as PolyOp);
+  };
+
   return (
     <div className="toolbox glass" role="toolbar" aria-label="Annotation tools">
       <div className="seg" role="group">
@@ -72,16 +102,20 @@ export function Toolbox(p: ToolboxProps) {
         </button>
       </div>
 
-      <div className="tool-group types" role="group" aria-label="Annotation types">
-        {p.palette.map((e) => (
-          <button key={e.id} className={`chip ${p.drawing && p.currentTypeId === e.id ? "active" : ""}`} style={{ borderColor: e.color }} onClick={() => p.on.draw(e.id)} title={`${e.name}${e.key ? ` (${e.key})` : ""}`}>
-            <span className="swatch" style={{ background: e.color }} />
-            {e.key != null && <kbd>{e.key}</kbd>}
-            <span className="chip-name">{e.name}</span>
-          </button>
-        ))}
-        {p.palette.length === 0 && <span className="muted small">This image set has no annotation types (assign a product to it).</span>}
-      </div>
+      {(p.drawing || !sel) && (
+      <Dropdown className="type-dd" name="types" items={typeItems} onPick={(id) => p.on.draw(Number(id))} disabled={p.palette.length === 0} title="Annotation type to draw (digit keys 1-9)">
+        {current ? (
+          <>
+            {swatch(current.color)}
+            {current.key != null && <kbd>{current.key}</kbd>}
+            <span className="dd-label">{current.name}</span>
+          </>
+        ) : (
+          <span className="muted">No types</span>
+        )}
+      </Dropdown>
+      )}
+      {p.palette.length === 0 && <span className="muted small">This image set has no annotation types (assign a product to it).</span>}
 
       {draw && (
         <div className="tool-group context">
@@ -107,26 +141,37 @@ export function Toolbox(p: ToolboxProps) {
 
       {!p.drawing && sel && (
         <div className="tool-group context selection">
-          <span className="swatch" style={{ background: p.selectedType?.color }} />
-          <select
-            aria-label="Type of the selected annotation"
-            value={sel.typeId}
-            onChange={(e) => p.on.changeType(Number(e.target.value))}
-            title="Change the type (digit keys)"
-          >
-            {p.palette
-              .filter((e) => canConvert(sel.vectorType, e.vectorType) || e.id === sel.typeId)
-              .map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name}
-                </option>
-              ))}
-            {!p.palette.some((e) => e.id === sel.typeId) && <option value={sel.typeId}>{p.selectedType?.name ?? `type ${sel.typeId}`}</option>}
-          </select>
-          <span className="muted small">{size(sel, p.imageMpp)}</span>
+          <Dropdown className="sel-type-dd" name="selected-type" items={convertible} onPick={(id) => p.on.changeType(Number(id))} title="Type of the selected annotation (digit keys change it)">
+            {swatch(p.selectedType?.color)}
+            <span className="dd-label">{p.selectedType?.name ?? `type ${sel.typeId}`}</span>
+          </Dropdown>
+          <Measure shape={sel} mpp={p.imageMpp} />
           <button className={`btn ${p.verified ? "primary" : ""}`} onClick={() => p.on.verify(!p.verified)} title={p.verified ? "You verified this annotation: click to take it back" : "Verify this annotation"}>
             {p.verified ? "Verified ✓" : "Verify"}
           </button>
+          {p.reshapable && (
+            <Dropdown className="reshape-dd" name="reshape" items={reshape} onPick={pickReshape} title="Reshape the polygon: paint area on or off, cut, merge, split">
+              Reshape
+            </Dropdown>
+          )}
+          {p.brushMode !== "off" && (
+            <label className="toggle brush-size" title="Brush size (mouse wheel)">
+              {p.brushMode === "add" ? "Add" : "Erase"}
+              <input type="range" min={4} max={120} value={Math.round(p.brushRadius)} onChange={(e) => p.on.brushRadius(Number(e.target.value))} />
+            </label>
+          )}
+          {p.polyOp && (
+            <>
+              <span className="hint">
+                {p.polyOp === "scissors" ? "Click the corners of the area to cut away" : p.polyOp === "glue" ? "Click the corners of the area to add" : "Click along the line that splits the polygon"} · Enter applies · Esc
+              </span>
+              {p.draftPoints > 0 && (
+                <button className="btn" onClick={p.on.finish}>
+                  Apply
+                </button>
+              )}
+            </>
+          )}
           {p.selectedVertex != null && (
             <button className="btn" onClick={p.on.removeVertex} title="Remove the vertex (Delete)">
               Remove vertex
@@ -135,54 +180,19 @@ export function Toolbox(p: ToolboxProps) {
           <button className="btn danger" onClick={p.on.remove} title="Delete (Delete, Backspace, X)">
             Delete
           </button>
-          {(sel.vectorType === VectorType.Polygon || sel.vectorType === VectorType.MultiLine) && <span className="hint">Drag a vertex, drag a dot between two to add one</span>}
-          {sel.vectorType === VectorType.BoundingBox && <span className="hint">Drag to move · drag a handle to resize</span>}
-          {(sel.vectorType === VectorType.FixedSizeBoundingBox || sel.vectorType === VectorType.Point) && <span className="hint">Drag to move</span>}
         </div>
       )}
-
-      {!p.drawing && sel && p.reshapable && (
-        <div className="tool-group context reshape" role="group" aria-label="Reshape the polygon">
-          <button className={`btn ${p.brushMode === "add" ? "primary" : ""}`} onClick={() => p.on.brush(p.brushMode === "add" ? "off" : "add")} title="Paint area onto the polygon (or hold Shift and drag)">
-            Add area
-          </button>
-          <button className={`btn ${p.brushMode === "erase" ? "primary" : ""}`} onClick={() => p.on.brush(p.brushMode === "erase" ? "off" : "erase")} title="Paint area away (or hold Alt and drag)">
-            Erase
-          </button>
-          {p.brushMode !== "off" && (
-            <label className="toggle" title="Brush size (mouse wheel)">
-              <input type="range" min={4} max={120} value={Math.round(p.brushRadius)} onChange={(e) => p.on.brushRadius(Number(e.target.value))} />
-            </label>
-          )}
-          <button className={`btn ${p.polyOp === "scissors" ? "primary" : ""}`} onClick={() => p.on.polyOp("scissors")} title="Draw an area to cut away (S)">
-            Cut
-          </button>
-          <button className={`btn ${p.polyOp === "glue" ? "primary" : ""}`} onClick={() => p.on.polyOp("glue")} title="Draw an area to add (G)">
-            Merge
-          </button>
-          <button className={`btn ${p.polyOp === "knife" ? "primary" : ""}`} onClick={() => p.on.polyOp("knife")} title="Draw a line to split the polygon (D)">
-            Split
-          </button>
-          {p.polyOp && <span className="hint">{p.polyOp === "scissors" ? "Click the corners of the area to cut away" : p.polyOp === "glue" ? "Click the corners of the area to add" : "Click along the line that splits the polygon"} · Enter or double-click to apply · Esc</span>}
-          {p.polyOp && p.draftPoints > 0 && (
-            <button className="btn" onClick={p.on.finish}>
-              Apply
-            </button>
-          )}
-        </div>
-      )}
-
-      {!p.drawing && !sel && p.palette.length > 0 && <span className="hint idle">Click an annotation to edit it, or pick a type to draw</span>}
 
       {p.globals.length > 0 && (
-        <div className="tool-group" role="group" aria-label="Image labels">
-          {p.globals.map(({ entry, set }) => (
-            <button key={entry.id} className={`chip ${set ? "active" : ""}`} style={{ borderColor: entry.color }} onClick={() => p.on.toggleGlobal(entry.id)} title={`${entry.name} (label of the whole image)`}>
-              <span className="swatch" style={{ background: entry.color }} />
-              <span className="chip-name">{entry.name}</span>
-            </button>
-          ))}
-        </div>
+        <Dropdown
+          className="labels-dd"
+          name="labels"
+          items={p.globals.map(({ entry, set }) => ({ id: entry.id, label: entry.name, color: entry.color, checked: set }))}
+          onPick={(id) => p.on.toggleGlobal(Number(id))}
+          title="Labels of the whole image"
+        >
+          Labels{p.globals.some((g) => g.set) ? ` (${p.globals.filter((g) => g.set).length})` : ""}
+        </Dropdown>
       )}
 
       <div className="tool-group right">

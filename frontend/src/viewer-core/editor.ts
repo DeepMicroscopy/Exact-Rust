@@ -159,6 +159,11 @@ export class AnnotationEditor {
     return this.host.shapes().find((s) => s.id === this.selectedId) ?? null;
   }
 
+  /** The selected annotation as it looks now: the preview while it is dragged, else the saved shape. */
+  get shown(): Shape | null {
+    return this.preview && this.preview.id === this.selectedId ? this.preview : this.selected;
+  }
+
   get drafting(): boolean {
     return !!this.draft;
   }

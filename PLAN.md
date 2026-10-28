@@ -631,3 +631,9 @@ kept inside the image, rounded to integers; the largest piece keeps the annotati
 step takes it all back). Holes are dropped (annotations have none; the outline is kept and the user is told). Types with a fixed node count cannot be reshaped. Test: `annotate.mjs`
 (brush add, band erase that splits off a piece, scissors notch, knife split, undo of each).
 Not yet: the segmentation tool, multi-select, copy/paste of annotations.
+
+### 5z. UI: compact tools, type drop-down, measurements (2026-10-28)
+Feedback after the first trial: the tool bar took too much room, image sets have many annotation types, and the selection should show its area. Now: one row (`Dropdown.tsx`:
+types, the selected annotation's type, reshape tools and image labels are drop-downs that open upwards, close on Escape / outside click, and get a filter field above 7 entries);
+the draw-type list hides while something is selected (digit keys still change its class); the left type list folds (remembered). A selected box or polygon shows its **area** (µm² / mm²
+with the image resolution, px² without; the pixel numbers in the tooltip), a line its length, live while it is dragged (`viewer-core/measure.ts`, tested). Test: `annotate.mjs`.

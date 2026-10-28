@@ -64,6 +64,12 @@ async function setup(page) {
     return { set: set.id, image: up.items[0].id };
   });
 }
+/** Picks a type in the drop-down of the tools (click, or tap on touch screens). */
+async function pickType(page, name, touch = false) {
+  const act = (l) => (touch ? l.tap() : l.click());
+  await act(page.locator(".type-dd .trigger"));
+  await act(page.locator(".type-dd .dd-item", { hasText: name }).first());
+}
 const waitFor = async (fn, msg, ms = 8000) => {
   const t0 = Date.now();
   for (;;) {
@@ -109,9 +115,13 @@ try {
   ({ set: SET, image: IMAGE } = await setup(admin));
   await openImage(admin);
   const before = (await annotations(admin)).length;
-  const chips = await admin.locator(".toolbox .chip").allInnerTexts();
-  check(chips.length >= 4 && chips.some((c) => c.includes("e2e polygon")), `toolbox offers the types of the set (${chips.join(" | ").replace(/\n/g, " ")})`);
-  check((await admin.locator(".toolbox .hint").first().innerText()).includes("Click an annotation"), "idle hint: select or pick a type");
+  await admin.locator(".type-dd .trigger").click();
+  const chips = await admin.locator(".type-dd .dd-item").allInnerTexts();
+  check(chips.length >= 4 && chips.some((c) => c.includes("e2e polygon")) && chips.some((c) => c.includes("2.25mm")), `the type drop-down offers the types of the set (${chips.join(" | ").replace(/\n/g, " ")})`);
+  check((await admin.locator(".type-dd .dd-item kbd").allInnerTexts()).join("") === "1234", "...with their digit keys");
+  await admin.keyboard.press("Escape");
+  check((await admin.locator(".type-dd .dd-pop").count()) === 0, "Escape closes the drop-down");
+  check((await admin.locator(".toolbox").boundingBox()).height < 80, "the tool bar is a single row");
 
   // draw a bounding box with key 1 and a drag
   await admin.keyboard.press("1");
@@ -135,6 +145,8 @@ try {
   await admin.mouse.click(inside.x, inside.y);
   await waitFor(() => admin.evaluate((id) => window.__editor.selectedId === id, box.id), "clicking the box selects it");
   check((await admin.locator(".toolbox .selection").count()) === 1 && (await admin.locator(".toolbox .selection .btn.danger").count()) === 1, "the toolbox shows the tools of a selected annotation");
+  const area0 = (box.vector.x2 - box.vector.x1) * (box.vector.y2 - box.vector.y1);
+  check((await admin.locator(".toolbox .measure").innerText()) === `${area0.toLocaleString("en-US")} px²`, `the selected box shows its area (${area0.toLocaleString("en-US")} px², the image has no resolution)`);
   const se = await screenOf(admin, box.vector.x2, box.vector.y2);
   const to = await screenOf(admin, box.vector.x2 + 200, box.vector.y2 + 100);
   await admin.mouse.move(se.x, se.y);
@@ -142,6 +154,8 @@ try {
   await admin.mouse.move(to.x, to.y, { steps: 8 });
   await admin.mouse.up();
   let cur = await waitFor(async () => ((await annotations(admin)).find((x) => x.id === box.id).vector.x2 > box.vector.x2 + 150 ? (await annotations(admin)).find((x) => x.id === box.id) : null), "resize saved");
+  const area1 = (cur.vector.x2 - cur.vector.x1) * (cur.vector.y2 - cur.vector.y1);
+  await waitFor(async () => (await admin.locator(".toolbox .measure").innerText()) === `${area1.toLocaleString("en-US")} px²`, "the area follows the resize");
   check(cur.vector.x1 === box.vector.x1 && Math.abs(cur.vector.x2 - (box.vector.x2 + 200)) < 12, "dragging the south-east handle resized the box and left the opposite corner alone");
   const body = await screenOf(admin, (cur.vector.x1 + cur.vector.x2) / 2, (cur.vector.y1 + cur.vector.y2) / 2);
   const body2 = await screenOf(admin, (cur.vector.x1 + cur.vector.x2) / 2 + 150, (cur.vector.y1 + cur.vector.y2) / 2 - 80);
@@ -217,8 +231,7 @@ try {
 
   // ---------------------------------------------------------------------------------------- polygon
   await openImage(admin);
-  const polyChip = admin.locator(".toolbox .chip", { hasText: "e2e polygon" });
-  await polyChip.click();
+  await pickType(admin, "e2e polygon");
   check((await admin.locator(".toolbox .hint").first().innerText()).includes("Click to add points"), "polygon type: click to add points");
   const corners = [[2000, 1200], [2600, 1200], [2600, 1800], [2000, 1800]]; // the toolbox covers the lower edge of the image
   for (const [x, y] of corners) {
@@ -234,6 +247,7 @@ try {
   const inPoly = await screenOf(admin, 2300, 1500);
   await admin.mouse.click(inPoly.x, inPoly.y);
   await waitFor(() => admin.evaluate((id) => window.__editor.selectedId === id, poly.id), "clicking inside the polygon selects it");
+  check((await admin.locator(".toolbox .measure").innerText()) === "360,000 px²", "a selected polygon shows its area (600 x 600 px)");
   // drag the dot between vertices 1 and 2: a new vertex appears
   const mid = await screenOf(admin, 2300, 1200);
   const mid2 = await screenOf(admin, 2300, 1000);
@@ -319,19 +333,48 @@ try {
   await waitFor(async () => (await annotations(admin)).length === before2 && JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "one undo takes the split back completely");
   await admin.screenshot({ path: shots ? `${shots}/a7-ops.png` : undefined });
 
+  // the Reshape menu switches the brush on and off (the way for touch screens, which have no Shift / Alt)
+  await admin.locator(".reshape-dd .trigger").click();
+  await admin.locator(".reshape-dd .dd-item", { hasText: "Add area" }).click();
+  check((await admin.evaluate(() => window.__editor.brushMode)) === "add" && (await admin.locator(".brush-size input").count()) === 1, "Reshape > Add area switches the brush on, with its size slider");
+  await admin.locator(".reshape-dd .trigger").click();
+  await admin.locator(".reshape-dd .dd-item", { hasText: "Add area" }).click();
+  check((await admin.evaluate(() => window.__editor.brushMode)) === "off", "...and picking it again switches it off");
+
+  // many types: a drop-down with a filter
+  await root.evaluate(async () => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    for (let i = 1; i <= 8; i++)
+      await fetch("/api/v2/annotation-types", { method: "POST", headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: JSON.stringify({ name: `e2e extra ${i}`, vector_type: 1, color_code: "#3366cc", product: 1, sort_order: 20 + i }) });
+  });
+  await openImage(admin);
+  await admin.locator(".type-dd .trigger").click();
+  check((await admin.locator(".type-dd .dd-item").count()) >= 12 && (await admin.locator(".type-dd .dd-filter").count()) === 1, "with many types the drop-down has a filter field");
+  await admin.fill(".type-dd .dd-filter", "extra 5");
+  check((await admin.locator(".type-dd .dd-item").count()) === 1, "typing narrows the list");
+  await admin.keyboard.press("Enter");
+  check((await admin.locator(".type-dd .trigger").innerText()).includes("e2e extra 5") && (await admin.locator(".toolbox .seg button.active").innerText()) === "Draw", "Enter picks the first match and starts drawing with it");
+
   // shortcuts: keyboard focus in a text field does not trigger tools; Y hides annotations
   await admin.keyboard.press("y");
   check((await admin.locator(".toolbox .btn", { hasText: "Show" }).count()) === 1, "Y hides the annotations");
   await admin.keyboard.press("y");
-  const kinds = await admin.evaluate(() => [...document.querySelectorAll(".toolbox kbd")].map((k) => k.textContent));
-  check(kinds.includes("1") && kinds.includes("2"), "the type chips show their digit keys");
+
+  // the type list on the left folds away (and stays folded)
+  check((await admin.locator(".viewer-side .type-row").count()) > 0, "the type list shows the types");
+  await admin.locator(".viewer-side .fold").click();
+  check((await admin.locator(".viewer-side .type-row").count()) === 0, "a click on its title folds it away");
+  await admin.reload();
+  await admin.waitForSelector(".viewer-side .fold");
+  check((await admin.locator(".viewer-side .type-row").count()) === 0, "...and it stays folded after a reload");
+  await admin.locator(".viewer-side .fold").click();
 
   // ---------------------------------------------------------------------------------------- tablet: touch
   const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: false });
   const tp = await login(tablet, "rt_teamadmin");
   await openImage(tp);
   const nt = (await annotations(tp)).length;
-  await tp.locator(".toolbox .chip", { hasText: "2.25mm" }).first().tap();
+  await pickType(tp, "2.25mm", true);
   const t1 = await screenOf(tp, 1700, 1500);
   await tp.touchscreen.tap(t1.x, t1.y);
   await waitFor(async () => (await annotations(tp)).length === nt + 1, "a tap places a fixed-size annotation on a touch screen");
