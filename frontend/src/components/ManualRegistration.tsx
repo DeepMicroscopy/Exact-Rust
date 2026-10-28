@@ -213,11 +213,13 @@ export function ManualRegistration({ source, target, names, review = false, onCl
     }
   };
 
+  // the same screen shows a stored registration (Review), the result of picking points, and the picking itself
+  const title = stage === "check" ? (saved ? "Check the registration" : "Review registration") : "Register manually";
   const hint = pending ? `Now click the same spot in “${names[1]}” (right).` : pairs.length ? `Point ${pairs.length + 1}: click a distinctive spot in “${names[0]}” (left).` : `Click a distinctive spot in “${names[0]}” (left), then the same spot in “${names[1]}” (right).`;
   return (
-    <div className="reg-full" role="dialog" aria-modal="true" aria-label="Register manually">
+    <div className="reg-full" role="dialog" aria-modal="true" aria-label={title}>
       <header>
-        <h2>Register manually</h2>
+        <h2>{title}</h2>
         <span className="spacer" />
         <button className="btn ghost" onClick={onClose} aria-label="Close">
           ✕

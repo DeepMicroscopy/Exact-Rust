@@ -274,6 +274,7 @@ try {
   await page.locator(".reg-full .btn.primary", { hasText: "Save registration" }).click();
   await page.waitForSelector('[data-testid="manual-saved"]');
   const saved = await page.locator('[data-testid="manual-saved"]').innerText();
+  check((await page.locator(".reg-full h2").innerText()) === "Check the registration", "after picking points the screen asks to check the result");
   const err = Number(/error ([\d.]+)/.exec(saved)?.[1]);
   check(err < 3, `the manual registration is saved with a small error (${saved})`);
   await page.waitForSelector('[data-testid="reg-check"] canvas', { timeout: 8000 }).catch(async (e) => {
@@ -296,6 +297,7 @@ try {
     throw e;
   });
   check((await page.locator('[data-testid="manual-saved"]').count()) === 0, "a registration can be reviewed from the list");
+  check((await page.locator(".reg-full h2").innerText()) === "Review registration", "the screen of a review is titled as a review, not as manual registration");
   await page.locator(".reg-full .btn", { hasText: "Edit the points" }).click();
   await waitFor(async () => (await page.locator(".reg-pairs .chip").count()) === 3, "a manual registration shows its stored points when reopened");
   await page.locator(".reg-full > header .btn").click();
