@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../api/client";
 import { createAnnotation, deleteAnnotation, patchAnnotation, verifyAnnotation } from "../api/annotations";
 import type { Annotation, Vector } from "../api/types";
+import { vectorOf, type Pt } from "../viewer-core/geometry";
 import { History } from "../viewer-core/history";
 
 /**
@@ -95,6 +96,48 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
     [current, put, patch, history, fail],
   );
 
+  /**
+   * Result of a polygon operation: the first ring replaces the outline of the annotation, every further ring becomes an
+   * annotation of the same type (cutting a polygon in two gives two polygons). One undo step takes it all back.
+   */
+  const replace = useCallback(
+    async (id: number, rings: Pt[][]) => {
+      const before = current(id);
+      if (!before || rings.length === 0) return;
+      const old = before.vector;
+      const vector = vectorOf(rings[0]);
+      put({ ...before, vector });
+      const made: Annotation[] = [];
+      try {
+        await patch(id, { vector });
+        for (const ring of rings.slice(1)) {
+          const a = await createAnnotation({ image: imageId, annotation_type: before.annotation_type, vector: vectorOf(ring), unique_identifier: crypto.randomUUID() });
+          put(a);
+          made.push(a);
+        }
+        history.push({
+          label: "edit polygon",
+          undo: async () => {
+            for (const a of made) {
+              await deleteAnnotation(a.id);
+              drop(a.id);
+            }
+            await patch(id, { vector: old });
+          },
+          redo: async () => {
+            for (const a of made) put(await patchAnnotation(a.id, { deleted: false }));
+            await patch(id, { vector });
+          },
+        });
+      } catch (e) {
+        put(before);
+        for (const a of made) drop(a.id);
+        fail(e, "Could not save the change");
+      }
+    },
+    [current, put, drop, patch, history, fail, imageId],
+  );
+
   const remove = useCallback(
     async (id: number) => {
       const before = current(id);
@@ -159,5 +202,5 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
   const undo = useCallback(() => history.undo().catch((e) => fail(e, "Undo failed")), [history, fail]);
   const redo = useCallback(() => history.redo().catch((e) => fail(e, "Redo failed")), [history, fail]);
 
-  return { history, create, update, remove, changeType, verify, undo, redo };
+  return { history, create, update, replace, remove, changeType, verify, undo, redo };
 }

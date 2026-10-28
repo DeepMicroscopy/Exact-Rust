@@ -622,3 +622,12 @@ switched on again instead of duplicated; annotation type names are unique per pr
 Tests: `frontend/e2e/annotate.mjs` (system Chrome, own image in a new image set: drag-draw, select, resize, move, pan-vs-edit, verify, delete, undo/redo, one-click, polygon incl.
 midpoint insert and vertex delete, hide, tablet touch taps, phone layout), `make e2e`.
 Not yet: brush union / scissors / glue / knife of polygons (old S, G, D keys), segmentation tool, "add area" to a polygon, drawing with a stylus pressure, multi-select, copy/paste.
+
+### 5y. UI: polygon operations (2026-10-28)
+Polygon reshaping, with `polygon-clipping` (`viewer-core/polyops.ts`, pure, 10 tests): **brush** (Shift+drag adds area, Alt+drag erases; on touch screens the toolbox
+buttons "Add area" / "Erase" switch the brush on; the wheel or the slider sizes it; a ring follows the pointer, the result shows live), **scissors** (S: click the corners of an
+area to cut away), **glue** (G: area to add), **knife** (D: a line that splits the polygon). Enter / double-click applies, Esc cancels. Results are simplified to about one screen pixel,
+kept inside the image, rounded to integers; the largest piece keeps the annotation, further pieces become annotations of the same type (`useAnnotationActions.replace`: one undo
+step takes it all back). Holes are dropped (annotations have none; the outline is kept and the user is told). Types with a fixed node count cannot be reshaped. Test: `annotate.mjs`
+(brush add, band erase that splits off a piece, scissors notch, knife split, undo of each).
+Not yet: the segmentation tool, multi-select, copy/paste of annotations.

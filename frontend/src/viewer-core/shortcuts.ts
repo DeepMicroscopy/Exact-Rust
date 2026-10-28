@@ -11,6 +11,7 @@ export type Action =
   | { type: "toggleDrawing" } // C (old: annotation mode): between selecting and drawing the current type
   | { type: "toggleAnnotations" } // Y
   | { type: "toggleOneClick" } // A (new): every click places an annotation of the type's size
+  | { type: "polyOp"; op: "scissors" | "glue" | "knife" } // S, G, D: cut away, add, split the selected polygon
   | { type: "undo" }
   | { type: "redo" }
   | { type: "nextImage" } // E
@@ -50,6 +51,12 @@ export function matchShortcut(e: KeyLike): Action | null {
       return { type: "toggleAnnotations" };
     case "a":
       return { type: "toggleOneClick" };
+    case "s":
+      return { type: "polyOp", op: "scissors" };
+    case "g":
+      return { type: "polyOp", op: "glue" };
+    case "d":
+      return { type: "polyOp", op: "knife" };
     case "e":
       return e.shiftKey ? { type: "nextFrame" } : { type: "nextImage" };
     case "q":

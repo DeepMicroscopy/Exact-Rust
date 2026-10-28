@@ -12,10 +12,14 @@ export interface Overlay {
   draft: { points: Pt[]; closed: boolean; cursor: Pt | null; color: string } | null;
   /** outline of the annotation a click would place (fixed-size types, one-click mode) */
   ghost: { box: Box; color: string } | null;
+  /** the brush ring following the pointer (radius in image pixels) */
+  brush: { at: Pt; r: number; erase: boolean } | null;
+  /** further pieces a brush stroke or an operation would leave */
+  extra: { rings: Pt[][]; color: string } | null;
   touch: boolean;
 }
 
-export const EMPTY_OVERLAY: Overlay = { selectedId: null, selectedVertex: null, preview: null, handles: [], draft: null, ghost: null, touch: false };
+export const EMPTY_OVERLAY: Overlay = { selectedId: null, selectedVertex: null, preview: null, handles: [], draft: null, ghost: null, brush: null, extra: null, touch: false };
 
 /** Canvas on top of an OpenSeadragon viewer: draws annotations (culled to the viewport) and the editor's overlay. */
 export class AnnotationLayer {
@@ -172,6 +176,37 @@ export class AnnotationLayer {
         ctx.fillStyle = "#fff";
         ctx.fillRect(px - 3, py - 3, 6, 6);
       }
+    }
+
+    if (o.extra) {
+      ctx.strokeStyle = o.extra.color;
+      ctx.fillStyle = o.extra.color + "33";
+      ctx.lineWidth = 2;
+      for (const ring of o.extra.rings) {
+        ctx.beginPath();
+        ring.forEach(([x, y], i) => {
+          const [px, py] = toPx(x, y);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    if (o.brush) {
+      const [cx, cy] = toPx(o.brush.at[0], o.brush.at[1]);
+      const [rx] = toPx(o.brush.at[0] + o.brush.r, o.brush.at[1]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.abs(rx - cx), 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.setLineDash(o.brush.erase ? [5, 4] : []);
+      ctx.strokeStyle = o.brush.erase ? "#ff6a5a" : "#6adf8a";
+      ctx.fillStyle = o.brush.erase ? "rgba(255,106,90,0.15)" : "rgba(106,223,138,0.15)";
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     // handles of the selected annotation

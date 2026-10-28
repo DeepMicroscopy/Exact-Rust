@@ -252,6 +252,73 @@ try {
   await waitFor(async () => (await annotations(admin)).find((x) => x.id === poly.id && x.vector.x5 == null), "Delete removed the vertex, not the polygon");
   await admin.screenshot({ path: shots ? `${shots}/a3-polygon.png` : undefined });
 
+  // ---------------------------------------------------------------------------------------- polygon operations
+  const polyNow = async () => (await annotations(admin)).find((x) => x.id === poly.id);
+  const xs = (v) => Object.keys(v).filter((k) => /^x\d+$/.test(k)).map((k) => v[k]);
+  const ys = (v) => Object.keys(v).filter((k) => /^y\d+$/.test(k)).map((k) => v[k]);
+  const pStart = await polyNow();
+  check(Math.max(...xs(pStart.vector)) === 2600, "the polygon is selected again for reshaping");
+
+  // add area: Shift + drag paints onto the polygon (the brush ring is 18 screen pixels)
+  const bFrom = await screenOf(admin, 2500, 1500);
+  const bTo = await screenOf(admin, 2900, 1500);
+  await admin.keyboard.down("Shift");
+  await admin.mouse.move(bFrom.x, bFrom.y);
+  await admin.mouse.down();
+  await admin.mouse.move(bTo.x, bTo.y, { steps: 10 });
+  await admin.mouse.up();
+  await admin.keyboard.up("Shift");
+  const grown = await waitFor(async () => { const v = (await polyNow()).vector; return Math.max(...xs(v)) > 2750 ? v : null; }, "Shift+drag added area to the polygon");
+  check(Math.max(...xs(grown)) > 2750 && Math.min(...xs(grown)) === 2000, `Shift+drag painted the polygon out to x=${Math.max(...xs(grown))} (${xs(grown).length} vertices)`);
+  await admin.screenshot({ path: shots ? `${shots}/a6-brush.png` : undefined });
+
+  // erase: Alt + drag down through the polygon paints a band away; the polygon falls into two pieces
+  const countBefore = (await annotations(admin)).length;
+  const eFrom = await screenOf(admin, 2750, 1000);
+  const eTo = await screenOf(admin, 2750, 2000);
+  await admin.keyboard.down("Alt");
+  await admin.mouse.move(eFrom.x, eFrom.y);
+  await admin.mouse.down();
+  await admin.mouse.move(eTo.x, eTo.y, { steps: 10 });
+  await admin.mouse.up();
+  await admin.keyboard.up("Alt");
+  const eroded = await waitFor(async () => { const v = (await polyNow()).vector; return Math.max(...xs(v)) < 2750 ? v : null; }, "Alt+drag erased a band from the polygon");
+  check(Math.max(...xs(eroded)) < 2750, `Alt+drag erased a band: the polygon ends at x=${Math.max(...xs(eroded))}`);
+  await waitFor(async () => (await annotations(admin)).length === countBefore + 1, "the right piece became an annotation of its own");
+  await admin.keyboard.press("Control+z");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "two undos restore the polygon");
+
+  // scissors (S): draw an area covering the upper right corner
+  await admin.keyboard.press("s");
+  check((await admin.locator(".toolbox .hint", { hasText: "cut away" }).count()) === 1, "S starts the scissors");
+  for (const [x, y] of [[2400, 1100], [2700, 1100], [2700, 1350], [2400, 1350]]) {
+    const p = await screenOf(admin, x, y);
+    await admin.mouse.click(p.x, p.y);
+    await admin.waitForTimeout(150);
+  }
+  await admin.keyboard.press("Enter");
+  const cut = await waitFor(async () => { const v = (await polyNow()).vector; return xs(v).length > 4 ? v : null; }, "scissors cut a notch out of the polygon");
+  check(xs(cut).length >= 6 && Math.max(...xs(cut)) === 2600, `scissors: the polygon has a notch now (${xs(cut).length} vertices)`);
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "undo restores the polygon after the scissors");
+
+  // knife (D): a line through the polygon makes two polygons
+  const before2 = (await annotations(admin)).length;
+  await admin.keyboard.press("d");
+  for (const [x, y] of [[2300, 1000], [2300, 2000]]) {
+    const p = await screenOf(admin, x, y);
+    await admin.mouse.click(p.x, p.y);
+    await admin.waitForTimeout(150);
+  }
+  await admin.keyboard.press("Enter");
+  await waitFor(async () => (await annotations(admin)).length === before2 + 1, "the knife made a second polygon");
+  const pieces = (await annotations(admin)).filter((x) => x.annotation_type === poly.annotation_type && x.vector.x3 != null && Math.min(...xs(x.vector)) >= 2000 && Math.max(...xs(x.vector)) <= 2600 && Math.min(...ys(x.vector)) >= 1200 && Math.max(...ys(x.vector)) <= 1800);
+  check(pieces.some((h) => Math.max(...xs(h.vector)) <= 2302) && pieces.some((h) => Math.min(...xs(h.vector)) >= 2298), "the polygon was split at the line into a left and a right polygon");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === before2 && JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "one undo takes the split back completely");
+  await admin.screenshot({ path: shots ? `${shots}/a7-ops.png` : undefined });
+
   // shortcuts: keyboard focus in a text field does not trigger tools; Y hides annotations
   await admin.keyboard.press("y");
   check((await admin.locator(".toolbox .btn", { hasText: "Show" }).count()) === 1, "Y hides the annotations");

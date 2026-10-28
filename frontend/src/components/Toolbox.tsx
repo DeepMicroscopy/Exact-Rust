@@ -1,3 +1,4 @@
+import type { BrushMode, PolyOp } from "../viewer-core/editor";
 import type { PaletteEntry } from "../viewer-core/palette";
 import { canConvert, hintFor, oneClickCapable } from "../viewer-core/palette";
 import type { Shape } from "../viewer-core/types";
@@ -15,12 +16,21 @@ export interface ToolboxProps {
   verified: boolean;
   selectedVertex: number | null;
   draftPoints: number;
+  /** scissors / glue / knife in progress */
+  polyOp: PolyOp | null;
+  brushMode: BrushMode;
+  brushRadius: number;
+  /** the selected annotation is a polygon whose shape may be changed by brush and operations */
+  reshapable: boolean;
   canUndo: boolean;
   canRedo: boolean;
   annotationsShown: boolean;
   imageMpp: number;
   on: {
     select(): void;
+    polyOp(op: PolyOp): void;
+    brush(mode: BrushMode): void;
+    brushRadius(r: number): void;
     draw(typeId: number): void;
     oneClick(on: boolean): void;
     finish(): void;
@@ -128,6 +138,37 @@ export function Toolbox(p: ToolboxProps) {
           {(sel.vectorType === VectorType.Polygon || sel.vectorType === VectorType.MultiLine) && <span className="hint">Drag a vertex, drag a dot between two to add one</span>}
           {sel.vectorType === VectorType.BoundingBox && <span className="hint">Drag to move · drag a handle to resize</span>}
           {(sel.vectorType === VectorType.FixedSizeBoundingBox || sel.vectorType === VectorType.Point) && <span className="hint">Drag to move</span>}
+        </div>
+      )}
+
+      {!p.drawing && sel && p.reshapable && (
+        <div className="tool-group context reshape" role="group" aria-label="Reshape the polygon">
+          <button className={`btn ${p.brushMode === "add" ? "primary" : ""}`} onClick={() => p.on.brush(p.brushMode === "add" ? "off" : "add")} title="Paint area onto the polygon (or hold Shift and drag)">
+            Add area
+          </button>
+          <button className={`btn ${p.brushMode === "erase" ? "primary" : ""}`} onClick={() => p.on.brush(p.brushMode === "erase" ? "off" : "erase")} title="Paint area away (or hold Alt and drag)">
+            Erase
+          </button>
+          {p.brushMode !== "off" && (
+            <label className="toggle" title="Brush size (mouse wheel)">
+              <input type="range" min={4} max={120} value={Math.round(p.brushRadius)} onChange={(e) => p.on.brushRadius(Number(e.target.value))} />
+            </label>
+          )}
+          <button className={`btn ${p.polyOp === "scissors" ? "primary" : ""}`} onClick={() => p.on.polyOp("scissors")} title="Draw an area to cut away (S)">
+            Cut
+          </button>
+          <button className={`btn ${p.polyOp === "glue" ? "primary" : ""}`} onClick={() => p.on.polyOp("glue")} title="Draw an area to add (G)">
+            Merge
+          </button>
+          <button className={`btn ${p.polyOp === "knife" ? "primary" : ""}`} onClick={() => p.on.polyOp("knife")} title="Draw a line to split the polygon (D)">
+            Split
+          </button>
+          {p.polyOp && <span className="hint">{p.polyOp === "scissors" ? "Click the corners of the area to cut away" : p.polyOp === "glue" ? "Click the corners of the area to add" : "Click along the line that splits the polygon"} · Enter or double-click to apply · Esc</span>}
+          {p.polyOp && p.draftPoints > 0 && (
+            <button className="btn" onClick={p.on.finish}>
+              Apply
+            </button>
+          )}
         </div>
       )}
 

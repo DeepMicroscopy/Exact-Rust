@@ -24,6 +24,12 @@ describe("shortcuts of the old UI", () => {
     expect(key("Y")).toEqual({ type: "toggleAnnotations" });
     expect(key("a")).toEqual({ type: "toggleOneClick" });
   });
+  it("S, G, D are the scissors, glue and knife of the old UI", () => {
+    expect(key("s")).toEqual({ type: "polyOp", op: "scissors" });
+    expect(key("G")).toEqual({ type: "polyOp", op: "glue" });
+    expect(key("d")).toEqual({ type: "polyOp", op: "knife" });
+    expect(key("s", { ctrlKey: true })).toBeNull(); // Ctrl+S belongs to the browser
+  });
   it("Ctrl/Cmd+Z undoes only with the modifier (the old Z fall-through to the heatmap is gone)", () => {
     expect(key("z")).toBeNull();
     expect(key("z", { ctrlKey: true })).toEqual({ type: "undo" });

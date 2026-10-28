@@ -12,6 +12,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",
     "openseadragon": "^4.1.1",
+    "polygon-clipping": "^0.15.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0"

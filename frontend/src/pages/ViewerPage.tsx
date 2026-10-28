@@ -7,7 +7,7 @@ import { ANNOTATION_FIELDS } from "../api/annotations";
 import type { Annotation, AnnotationType, ImageSummary } from "../api/types";
 import { useAnnotationActions } from "../hooks/useAnnotationActions";
 import { AnnotationLayer } from "../viewer-core/annotationLayer";
-import { AnnotationEditor, type EditorHost, type Tool, type TypeInfo } from "../viewer-core/editor";
+import { AnnotationEditor, type EditorHost, type PolyOp, type Tool, type TypeInfo } from "../viewer-core/editor";
 import { buildPalette, canConvert, isDrawable, oneClickCapable, type PaletteEntry } from "../viewer-core/palette";
 import { isTypingTarget, matchShortcut } from "../viewer-core/shortcuts";
 import { toShape } from "../viewer-core/shapes";
@@ -41,6 +41,8 @@ function hostProxy(ref: { current: EditorHost }): EditorHost {
     onCreate: (t, v) => ref.current.onCreate(t, v),
     onUpdate: (s, v) => ref.current.onUpdate(s, v),
     onDelete: (s) => ref.current.onDelete(s),
+    onReplace: (s, r) => ref.current.onReplace(s, r),
+    notify: (m) => ref.current.notify(m),
     onState: () => ref.current.onState(),
   };
 }
@@ -88,6 +90,7 @@ export function ViewerPage() {
   const [drawing, setDrawing] = useState(false);
   const [oneClick, setOneClick] = useState(false);
   const [currentTypeId, setCurrentTypeId] = useState<number | null>(null);
+  const [polyOp, setPolyOp] = useState<PolyOp | null>(null);
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [sideOpen, setSideOpen] = useState(() => window.innerWidth >= 760);
@@ -152,9 +155,11 @@ export function ViewerPage() {
       onCreate: (tid, v) => void hostState.current.actions.create(tid, v),
       onUpdate: (s, v) => void hostState.current.actions.update(s.id, v),
       onDelete: (s) => void hostState.current.actions.remove(s.id),
+      onReplace: (s, rings) => void hostState.current.actions.replace(s.id, rings),
+      notify: (m) => notify(m),
       onState: () => setTick((n) => n + 1),
     }),
-    [],
+    [notify],
   );
   const editorHostRef = useRef(editorHost);
   editorHostRef.current = editorHost;
@@ -356,6 +361,10 @@ export function ViewerPage() {
         case "toggleAnnotations":
           setShowAnnotations((v) => !v);
           return;
+        case "polyOp":
+          setDrawing(false);
+          setPolyOp((cur) => (cur === a.op ? null : a.op));
+          return;
         case "toggleOneClick": {
           const e = drawable.find((x) => x.id === currentTypeId);
           if (e && oneClickCapable(e.vectorType)) {
@@ -407,9 +416,14 @@ export function ViewerPage() {
 
   // the editor's tool follows the toolbox state
   useEffect(() => {
-    const tool: Tool = drawing && currentTypeId != null ? { kind: "draw", typeId: currentTypeId, oneClick } : { kind: "select" };
+    const tool: Tool = polyOp ? { kind: "op", op: polyOp } : drawing && currentTypeId != null ? { kind: "draw", typeId: currentTypeId, oneClick } : { kind: "select" };
     editorRef.current?.setTool(tool);
-  }, [drawing, currentTypeId, oneClick]);
+  }, [drawing, currentTypeId, oneClick, polyOp]);
+  // the editor ends an operation by itself (finished, cancelled, refused): follow it
+  useEffect(() => {
+    const t = editorRef.current?.tool;
+    if (polyOp && t && t.kind !== "op") setPolyOp(null);
+  });
 
   const counts = useMemo(() => {
     const m = new Map<number, number>();
@@ -494,12 +508,28 @@ export function ViewerPage() {
           verified={editorRef.current?.selected ? (annotations.data ?? []).find((a) => a.id === editorRef.current?.selectedId)?.verified_by_user !== false : false}
           selectedVertex={editorRef.current?.selectedVertex ?? null}
           draftPoints={editorRef.current?.draftPoints ?? 0}
+          polyOp={polyOp}
+          brushMode={editorRef.current?.brushMode ?? "off"}
+          brushRadius={editorRef.current?.brushRadius ?? 18}
+          reshapable={!!editorRef.current?.selected && editorRef.current.selected.vectorType === VectorType.Polygon && !((editorRef.current.selected && info(editorRef.current.selected.typeId)?.nodeCount) || 0)}
           canUndo={history.canUndo}
           canRedo={history.canRedo}
           annotationsShown={showAnnotations}
           imageMpp={mpp}
           on={{
-            select: () => setDrawing(false),
+            select: () => {
+              setDrawing(false);
+              setPolyOp(null);
+            },
+            polyOp: (op) => {
+              setDrawing(false);
+              setPolyOp((cur) => (cur === op ? null : op));
+            },
+            brush: (m) => editorRef.current?.setBrush(m),
+            brushRadius: (r) => {
+              if (editorRef.current) editorRef.current.brushRadius = r;
+              editorRef.current?.refresh();
+            },
             draw: startDrawing,
             oneClick: (v) => setOneClick(v),
             finish: () => void editorRef.current?.finish(),
