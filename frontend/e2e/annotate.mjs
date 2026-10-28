@@ -100,6 +100,7 @@ async function openImage(page) {
 try {
   // ---------------------------------------------------------------------------------------- desktop: mouse and keyboard
   const desktop = await browser.newContext({ viewport: { width: 1400, height: 850 } });
+  await desktop.addInitScript(() => localStorage.getItem("exact.mpr") === null && localStorage.setItem("exact.mpr", "0")); // volumes open in one plane here: the tools are there
   // a polygon type for product 1, created by the superuser (the toolbox offers the types of the set's products)
   const root = await login(await browser.newContext(), "aubreville", { quiet: true }); // may answer 400: the type exists from an earlier run
   await root.evaluate(async () => {
@@ -689,6 +690,7 @@ try {
 
   // ---------------------------------------------------------------------------------------- tablet: touch
   const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: false });
+  await tablet.addInitScript(() => localStorage.getItem("exact.mpr") === null && localStorage.setItem("exact.mpr", "0")); // volumes open in one plane here: the tools are there
   const tp = await login(tablet, "rt_teamadmin");
   await openImage(tp);
   const nt = (await annotations(tp)).length;
@@ -714,6 +716,7 @@ try {
 
   // ---------------------------------------------------------------------------------------- phone: viewing first
   const phone = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
+  await phone.addInitScript(() => localStorage.getItem("exact.mpr") === null && localStorage.setItem("exact.mpr", "0")); // volumes open in one plane here: the tools are there
   const pp = await login(phone, "rt_member");
   await openImage(pp);
   check(!(await pp.locator(".viewer-side").isVisible()), "phone: the type list is closed until asked for");

@@ -7,6 +7,7 @@ import { ImageSetPage } from "./pages/ImageSetPage";
 import { JobsPage } from "./pages/JobsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { InvitePage } from "./pages/InvitePage";
+import { MprPage } from "./pages/MprPage";
 import { ViewerPage } from "./pages/ViewerPage";
 
 export function App() {
@@ -31,6 +32,7 @@ export function App() {
       </Route>
       {/* the viewer is full-bleed and has its own chrome */}
       <Route path="images/:imageId" element={<ViewerPage />} />
+      <Route path="images/:imageId/planes" element={<MprPage />} />
       <Route path="annotations/:imageId" element={<OldViewerLink />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

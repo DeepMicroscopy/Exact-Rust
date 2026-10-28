@@ -378,3 +378,16 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 
 .plain { list-style: none; padding: 0; margin: 4px 0 0; }
 .admin-table details summary { cursor: pointer; }
+
+/* three-plane view */
+.mpr { display: flex; flex-direction: column; height: 100%; gap: 8px; padding: 8px; box-sizing: border-box; }
+.mpr-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; }
+.mpr-pane { position: relative; min-height: 0; min-width: 0; border: 2px solid; border-radius: 10px; overflow: hidden; background: #000; opacity: 0.96; }
+.mpr-pane.active { opacity: 1; box-shadow: 0 0 0 1px currentColor; }
+.mpr-pane .osd { position: absolute; inset: 0; }
+.mpr-label { position: absolute; top: 8px; left: 10px; font-size: 13px; font-weight: 600; text-shadow: 0 1px 3px #000; pointer-events: none; }
+.mpr-busy { position: absolute; top: 8px; right: 10px; }
+.mpr-slider { position: absolute; left: 10px; right: 10px; bottom: 6px; opacity: 0.55; }
+.mpr-slider:hover, .mpr-slider:focus { opacity: 1; }
+.mpr-info { padding: 12px 16px; overflow: auto; }
+@media (max-width: 800px) { .mpr-grid { grid-template-columns: 1fr; grid-template-rows: repeat(4, minmax(240px, 1fr)); overflow: auto; } }

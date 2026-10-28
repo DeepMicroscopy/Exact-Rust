@@ -12,10 +12,20 @@ if (shots) fs.mkdirSync(shots, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: chrome, headless: true });
 const page = await browser.newPage({ viewport: { width: 1400, height: 850 } });
+// volumes open in the three-plane view by default; the checks of the single-plane view ask for it
+await page.addInitScript(() => localStorage.getItem("exact.mpr") === null && localStorage.setItem("exact.mpr", "0"));
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 // the anonymous /auth/me probe on the login screen legitimately answers 401
 page.on("console", (m) => m.type() === "error" && !/ 40[01]/.test(m.text()) && errors.push(m.text())); // the unknown-image check provokes a 400
+const waitFor = async (fn, msg, ms = 15000) => {
+  const t0 = Date.now();
+  for (;;) {
+    if (await fn()) return;
+    if (Date.now() - t0 > ms) throw new Error("FAILED (timeout): " + msg);
+    await new Promise((r) => setTimeout(r, 150));
+  }
+};
 const shot = (n) => shots && page.screenshot({ path: `${shots}/${n}.png` });
 const check = (cond, msg) => {
   if (!cond) throw new Error("FAILED: " + msg);
@@ -120,6 +130,45 @@ try {
   const minVisible = await page.evaluate(() => { cancelAnimationFrame(window.__poll); return window.__minVisible; });
   await page.unroute(/\/tile/, slow);
   check(minVisible > 0.99, `volume: while stepping, a slice covering the view is always shown (min opacity ${minVisible})`);
+
+  // three planes of a volume, linked by a crosshair
+  await page.evaluate(() => localStorage.setItem("exact.mpr", "1"));
+  await page.goto(`${base}/images/80`);
+  await page.waitForSelector('[data-testid="mpr"]');
+  check(new URL(page.url()).pathname === "/images/80/planes", "a volume opens in the three-plane view");
+  for (const p of ["axial", "coronal", "sagittal"]) await page.waitForSelector(`[data-testid="mpr-${p}"] canvas`);
+  await waitFor(() => page.evaluate(() => [0, 1, 2].every((i) => window[`__mpr_${i}`]?.world.getItemCount() > 0 && window[`__mpr_${i}`].world.getItemAt(0).getFullyLoaded())), "all three planes are drawn");
+  const voxelText = async () => (await page.locator('[data-testid="mpr-voxel"]').innerText()).match(/x (\d+)\/(\d+) · y (\d+)\/(\d+) · z (\d+)\/(\d+)/).slice(1).map(Number);
+  const [x0, nx, y0, ny, z0, nz] = await voxelText();
+  check(x0 === Math.floor(nx / 2) + 1 && y0 === Math.floor(ny / 2) + 1 && z0 === Math.floor(nz / 2) + 1, `the crosshair starts in the middle of the volume (${x0}, ${y0}, ${z0} of ${nx} x ${ny} x ${nz})`);
+  const axial = await page.locator('[data-testid="mpr-axial"]').boundingBox();
+  await page.mouse.click(axial.x + axial.width * 0.3, axial.y + axial.height * 0.4);
+  await page.waitForTimeout(400);
+  const [x1, , y1, , z1] = await voxelText();
+  check(z1 === z0 && (x1 !== x0 || y1 !== y0), `a click in the axial plane moves the crosshair in it and keeps its slice (${x0},${y0},${z0} -> ${x1},${y1},${z1})`);
+  check((await page.locator('[data-testid="mpr-coronal"] .mpr-label').innerText()).includes(`${y1} /`) && (await page.locator('[data-testid="mpr-sagittal"] .mpr-label').innerText()).includes(`${x1} /`), "...and the coronal and sagittal planes show the slices through it");
+  await page.waitForTimeout(600);
+  await shot("6-three-planes");
+  const sag = await page.locator('[data-testid="mpr-sagittal"]').boundingBox();
+  await page.mouse.move(sag.x + sag.width / 2, sag.y + sag.height / 2);
+  await page.mouse.wheel(0, 100);
+  await page.waitForTimeout(400);
+  const [x2, , , , z2] = await voxelText();
+  check(x2 === x1 + 1 && z2 === z1, `the mouse wheel steps through the slices of the plane under it (x ${x1} -> ${x2})`);
+  const shot3 = new URL(page.url());
+  check(["vx", "vy", "vz"].every((k) => shot3.searchParams.has(k)), "the address bar carries the crosshair");
+  await page.goto(page.url());
+  await page.waitForSelector('[data-testid="mpr-voxel"]');
+  await waitFor(async () => { try { return (await voxelText()).join() === [x2, nx, y1, ny, z1, nz].join(); } catch { return false; } }, "a link restores the crosshair position");
+  await page.locator(".btn", { hasText: "Single plane" }).click();
+  await page.waitForSelector(".zslider");
+  check(new URL(page.url()).pathname === "/images/80", "the button leads to one plane at a time, which then stays the choice");
+  await page.goto(`${base}/images/80`);
+  await page.waitForSelector(".zslider");
+  check(new URL(page.url()).pathname === "/images/80", "...also when the volume is opened again");
+  await page.locator(".btn", { hasText: "Three planes" }).click();
+  await page.waitForSelector('[data-testid="mpr"]');
+  await page.evaluate(() => localStorage.setItem("exact.mpr", "0"));
 
   // multi-series OME-TIFF z-stack (microscopy): vertical slider on the right with real positions, planes are cross-faded
   await openImage(57);

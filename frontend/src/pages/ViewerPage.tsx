@@ -28,6 +28,7 @@ import { AnnotationInfo } from "../components/AnnotationInfo";
 import { ConfirmDelete } from "../components/ConfirmDelete";
 import { ConfirmResize } from "../components/ConfirmResize";
 import { boxVector, centeredBox, isBoxType } from "../viewer-core/geometry";
+import { prefersThreePlanes, rememberThreePlanes } from "./MprPage";
 import { ContextMenu } from "../components/ContextMenu";
 import { CropDialog } from "../components/CropDialog";
 import { VectorType, type Shape, type TypeStyle } from "../viewer-core/types";
@@ -266,6 +267,10 @@ export function ViewerPage() {
   const frames = hasPlanes ? (meta.data?.planes?.[plane]?.frames ?? 1) : (meta.data?.frames ?? image.data?.frames ?? 1);
   const labels = (hasPlanes ? meta.data?.planes?.[plane]?.frame_descriptors : meta.data?.frame_labels) ?? [];
   const zRange = meta.data?.z_range ?? null;
+  // volumes open in the three-plane view unless the user chose a single plane (a link with `single` stays here)
+  useEffect(() => {
+    if (kind === "volume" && hasPlanes && !search.has("single") && prefersThreePlanes()) navigate(`/images/${id}/planes`, { replace: true });
+  }, [kind, hasPlanes, search, id, navigate]);
   const blend = kind === "zstack"; // focus planes are cross-faded, slices and movie frames are not
 
   const setPos = useCallback((v: number) => {
@@ -906,6 +911,18 @@ export function ViewerPage() {
               </button>
             ))}
           </div>
+        )}
+        {hasPlanes && kind === "volume" && (
+          <button
+            className="btn"
+            onClick={() => {
+              rememberThreePlanes(true);
+              navigate(`/images/${id}/planes`);
+            }}
+            title="Show the axial, coronal and sagittal planes together, linked by a crosshair"
+          >
+            Three planes
+          </button>
         )}
         <button className="btn ghost" onClick={() => navigate("/")}>
           Image sets
