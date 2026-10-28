@@ -101,7 +101,8 @@ try {
     window.__minVisible = 1;
     const tick = () => {
       const items = [...Array(w.getItemCount()).keys()].map((i) => w.getItemAt(i));
-      const best = Math.max(0, ...items.filter((it) => it.getFullyLoaded()).map((it) => it.getOpacity()));
+      const el = window.__viewer.canvas;
+      const best = Math.max(0, ...items.filter((it) => it.getFullyLoaded() || window.__coverage(it, el.clientWidth, el.clientHeight) >= 0.97).map((it) => it.getOpacity()));
       window.__minVisible = Math.min(window.__minVisible, best);
       window.__poll = requestAnimationFrame(tick);
     };
@@ -114,10 +115,11 @@ try {
     await page.locator(".zslider input").fill(String(cur + d));
     await page.waitForTimeout(120);
   }
+  check((await page.locator('[data-testid="plane-busy"]').count()) === 1, "a progress indicator shows while the next slice loads");
   await page.waitForTimeout(1500);
   const minVisible = await page.evaluate(() => { cancelAnimationFrame(window.__poll); return window.__minVisible; });
   await page.unroute(/\/tile/, slow);
-  check(minVisible > 0.99, `volume: while stepping, a fully loaded slice is always shown (min opacity ${minVisible})`);
+  check(minVisible > 0.99, `volume: while stepping, a slice covering the view is always shown (min opacity ${minVisible})`);
 
   // multi-series OME-TIFF z-stack (microscopy): vertical slider on the right with real positions, planes are cross-faded
   await openImage(57);

@@ -364,3 +364,5 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .field-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .field-row .grow { flex: 1; min-width: 160px; }
 .checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0; }
+
+.plane-busy { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; font-size: 13px; pointer-events: none; }

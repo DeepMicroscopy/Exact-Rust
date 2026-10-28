@@ -7,6 +7,26 @@ export interface BlenderOptions {
   blend: boolean;
   /** called once, when the first plane has been added to the viewer */
   onReady?: () => void;
+  /** true while the plane to show is still loading (the previous one stays on display meanwhile) */
+  onBusy?: (busy: boolean) => void;
+}
+
+/**
+ * Share (0..1) of the viewer's area that the tiles drawn for `item` cover, on a coarse grid. A plane whose tiles cover
+ * the whole view may be shown (sharpening as finer tiles arrive) although it is not fully loaded: OpenSeadragon draws
+ * coarse tiles first.
+ */
+export function coverageOf(item: OpenSeadragon.TiledImage, width: number, height: number): number {
+  const [cols, rows] = [24, 14];
+  const hit = new Uint8Array(cols * rows);
+  const drawn = (item as unknown as { lastDrawn?: { position?: { x: number; y: number }; size?: { x: number; y: number } }[] }).lastDrawn ?? [];
+  for (const t of drawn) {
+    if (!t.position || !t.size) continue;
+    const [x0, x1] = [Math.max(0, Math.floor(((t.position.x) / width) * cols)), Math.min(cols - 1, Math.floor(((t.position.x + t.size.x) / width) * cols))];
+    const [y0, y1] = [Math.max(0, Math.floor((t.position.y / height) * rows)), Math.min(rows - 1, Math.floor(((t.position.y + t.size.y) / height) * rows))];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) hit[y * cols + x] = 1;
+  }
+  return hit.reduce((a, b) => a + b, 0) / hit.length;
 }
 
 /** Opacity of planes that are loaded but not visible: not 0, so that their tiles keep loading ahead of the user. */
@@ -34,6 +54,7 @@ export class ZBlender {
   private waiting: ReturnType<typeof setTimeout> | null = null;
   private giveUp = false;
   private settle: ReturnType<typeof setTimeout> | null = null;
+  private poll: ReturnType<typeof setInterval> | null = null;
   private moveTimer: ReturnType<typeof setTimeout> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   /** how many planes after the current one are loaded ahead (more while a movie plays) */
@@ -59,6 +80,8 @@ export class ZBlender {
 
   destroy(): void {
     this.dead = true;
+    this.setBusy(false);
+    if (this.poll) clearInterval(this.poll);
     if (this.waiting) clearTimeout(this.waiting);
     if (this.settle) clearTimeout(this.settle);
     if (this.moveTimer) clearTimeout(this.moveTimer);
@@ -74,29 +97,43 @@ export class ZBlender {
     return out.filter((f) => f >= 0 && f < this.frames);
   }
 
+  /** The planes the position needs: one, or two while it lies between two planes of a focus stack. */
+  private needed(): number[] {
+    if (!this.opts.blend) return [Math.round(this.pos)];
+    const base = Math.floor(this.pos);
+    return this.pos - base > 0 && base + 1 < this.frames ? [base, base + 1] : [base];
+  }
+
   private update(): void {
-    const wanted = this.wanted();
-    const byDistance = [...wanted].sort((a, b) => Math.abs(a - this.pos) - Math.abs(b - this.pos));
-    if (this.opts.blend || this.items.size === 0 || this.ahead > 2) {
-      // nearest planes first, so that the visible ones are requested before the preloaded ones (a playing movie loads at once)
-      for (const f of byDistance) this.ensure(f);
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    if (this.moveTimer) clearTimeout(this.moveTimer);
+    const now = this.needed();
+    if (this.ahead > 2 || this.items.size === 0) {
+      // a playing movie (and the first plane) loads everything at once, nearest first
+      for (const f of [...this.wanted()].sort((x, y) => Math.abs(x - this.pos) - Math.abs(y - this.pos))) this.ensure(f);
     } else {
-      // A volume slice costs the server a rendering and ~dozens of tiles. While the position keeps moving (slider drag,
-      // key held) only the slice it comes to rest on is requested, and its neighbours once it has rested.
-      if (this.moveTimer) clearTimeout(this.moveTimer);
-      if (this.idleTimer) clearTimeout(this.idleTimer);
-      const target = Math.round(this.pos);
+      // A plane costs the server a rendering or a read of the file and the viewer dozens of tile requests: while the
+      // position keeps moving (slider drag, key held) only the plane it comes to rest on is requested.
       this.moveTimer = setTimeout(() => {
         this.moveTimer = null;
-        this.ensure(target);
+        for (const f of now) this.ensure(f);
       }, 70);
-      this.idleTimer = setTimeout(() => {
-        this.idleTimer = null;
-        for (const f of byDistance) this.ensure(f);
-      }, 350);
     }
     this.prune();
     this.applyOpacity();
+  }
+
+  /**
+   * The neighbouring planes are loaded only once the plane to show is complete: their tiles would otherwise queue
+   * in front of it in the viewer's request queue and delay what the user waits for.
+   */
+  private preloadSoon(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.dead || !this.needed().every((f) => this.loaded(f))) return;
+      for (const f of [...this.wanted()].sort((x, y) => Math.abs(x - this.pos) - Math.abs(y - this.pos))) this.ensure(f);
+    }, 120);
   }
 
   /**
@@ -148,8 +185,24 @@ export class ZBlender {
       .catch(() => this.pending.delete(frame));
   }
 
+  private busy = false;
+  private setBusy(b: boolean): void {
+    if (b === this.busy) return;
+    this.busy = b;
+    this.opts.onBusy?.(b);
+  }
+
   private loaded(frame: number): boolean {
     return this.items.get(frame)?.getFullyLoaded() ?? false;
+  }
+
+  /** Complete, or drawn over the whole view with the tiles that are there (the finer ones follow). */
+  private showable(frame: number): boolean {
+    const item = this.items.get(frame);
+    if (!item) return false;
+    if (item.getFullyLoaded()) return true;
+    const el = this.viewer.canvas as HTMLElement;
+    return coverageOf(item, el.clientWidth, el.clientHeight) >= 0.97;
   }
 
   /** Opacity of every loaded plane for the current position. */
@@ -159,8 +212,14 @@ export class ZBlender {
     const nearest = Math.round(this.pos);
     // the plane that carries the picture must be complete before anything changes (or something is shown at all)
     const need = this.opts.blend ? base : nearest;
-    const ready = this.loaded(need) || this.giveUp || this.shown.size === 0 || ![...this.shown].some((x) => this.items.has(x));
+    const ready = this.showable(need) || this.giveUp || this.shown.size === 0 || ![...this.shown].some((x) => this.items.has(x));
+    this.setBusy(!ready);
     if (!ready) {
+      if (!this.poll)
+        this.poll = setInterval(() => {
+          if (this.dead) return;
+          this.applyOpacity();
+        }, 60);
       if (!this.waiting)
         this.waiting = setTimeout(() => {
           this.waiting = null;
@@ -171,6 +230,8 @@ export class ZBlender {
     }
     if (this.waiting) clearTimeout(this.waiting);
     this.waiting = null;
+    if (this.poll) clearInterval(this.poll);
+    this.poll = null;
     this.giveUp = false;
     const next = new Map<number, number>();
     for (const frame of this.items.keys()) {
@@ -193,6 +254,7 @@ export class ZBlender {
     const leaving = [...this.shown].filter((x) => this.items.has(x) && (next.get(x) ?? 0) <= PRELOAD_OPACITY);
     for (const [frame, item] of this.items) item.setOpacity(leaving.includes(frame) ? 1 : (next.get(frame) ?? PRELOAD_OPACITY));
     this.shown = new Set([...next].filter(([, o]) => o > PRELOAD_OPACITY).map(([x]) => x));
+    this.preloadSoon();
     if (this.settle) clearTimeout(this.settle);
     if (leaving.length) {
       this.settle = setTimeout(() => {

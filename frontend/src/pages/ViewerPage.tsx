@@ -19,7 +19,7 @@ import { clipboard, pasteVector } from "../viewer-core/clipboard";
 import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
 import { loadTileSource } from "../viewer-core/tileSource";
 import { OverlayControl } from "../components/OverlayControl";
-import { ZBlender } from "../viewer-core/zBlend";
+import { coverageOf, ZBlender } from "../viewer-core/zBlend";
 import type { ZRange } from "../viewer-core/zFormat";
 import { RepairBanner } from "../components/RepairBanner";
 import { TimeSlider, ZSlider } from "../components/FrameControls";
@@ -122,6 +122,8 @@ export function ViewerPage() {
   /** the view of a shared link (centre and zoom in image pixels), applied once when the image has loaded */
   const pendingView = useRef<SharedView | null>(null);
   const appliedView = useRef<SharedView | null>(null);
+  /** the plane to show is still loading */
+  const [planeBusy, setPlaneBusy] = useState(false);
   const viewFor = useRef<number | null>(null);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -279,7 +281,8 @@ export function ViewerPage() {
       cancelAnimationFrame(anim.current);
       const from = posRef.current;
       const t0 = performance.now();
-      const duration = blend ? Math.min(420, 160 + Math.abs(target - from) * 60) : 0;
+      // only a step to the next plane is cross-faded; a longer jump goes straight to the plane, which is loaded alone
+      const duration = blend && Math.abs(target - from) <= 1.01 ? Math.min(420, 160 + Math.abs(target - from) * 60) : 0;
       if (duration === 0 || from === target) return setPos(target);
       const step = (now: number) => {
         const t = Math.min((now - t0) / duration, 1);
@@ -351,6 +354,7 @@ export function ViewerPage() {
     urlWriter.current = scheduleUrl;
     (window as unknown as { __viewer?: OpenSeadragon.Viewer; __osd?: typeof OpenSeadragon }).__viewer = viewer; // used by the e2e tests
     (window as unknown as { __osd?: typeof OpenSeadragon }).__osd = OpenSeadragon;
+    (window as unknown as { __coverage?: typeof coverageOf }).__coverage = coverageOf; // used by the e2e tests
     const layer = new AnnotationLayer(viewer);
     layerRef.current = layer;
     const editor = new AnnotationEditor(viewer, layer, hostProxy(editorHostRef));
@@ -437,6 +441,7 @@ export function ViewerPage() {
     setError(null);
     const blender = new ZBlender(viewer, frames, (f) => loadTileSource(id, z, f), {
       blend,
+      onBusy: setPlaneBusy,
       onReady: () => {
         viewer.viewport.goHome(true);
         const first = viewer.world.getItemAt(0);
@@ -908,6 +913,11 @@ export function ViewerPage() {
       </header>
       <div className={`viewer-body ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
+        {planeBusy && !failed && (
+          <div className="plane-busy glass" role="status" aria-label="Loading the plane" data-testid="plane-busy">
+            <span className="spinner" /> Loading {kind === "volume" ? "slice" : "plane"} {Math.round(pos) + 1}…
+          </div>
+        )}
         {failed && (
           <div className="viewer-error glass" role="alert" data-testid="viewer-error">
             <strong>{image.isError ? `Image ${id} was not found.` : error}</strong>
