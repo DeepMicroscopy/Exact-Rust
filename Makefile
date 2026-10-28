@@ -1,7 +1,7 @@
 # Dev workflow for the Phase 1 test environment (local scratch DB `exact_rust_test`, never the live `exact`).
 PY := reference/.venv/bin/python
 
-.PHONY: mutation-parity enroll-passkey migrate restore seed django rust test conformance sync-tests record-goldens sweep
+.PHONY: rust-release mutation-parity enroll-passkey migrate restore seed django rust test conformance sync-tests record-goldens sweep
 restore:         ## recreate exact_rust_test from the newest dump, seed test users, create Rust tables
 	scripts/restore-backup.sh && reference/seed-users.sh && $(MAKE) migrate
 migrate:         ## additive Rust tables in the scratch DB only
@@ -10,6 +10,8 @@ django:          ## reference Django on :8001 (foreground)
 	reference/run-django.sh
 rust:            ## Rust server on :8002 against exact_rust_test (foreground)
 	SQL_DATABASE=exact_rust_test EXACT_LISTEN=127.0.0.1:8002 cargo run -p exact-server
+rust-release:    ## like `rust`, but an optimized build: use it to judge speed (the debug build is several times slower on slices and tiles)
+	SQL_DATABASE=exact_rust_test EXACT_LISTEN=127.0.0.1:8002 cargo run --release -p exact-server
 verify:         ## everything: unit tests, restore, both servers, all suites (see scripts/verify.sh)
 	scripts/verify.sh
 test:            ## Rust unit tests + lint
