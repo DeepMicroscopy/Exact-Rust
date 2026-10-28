@@ -5,13 +5,14 @@ import { createAnnotation, deleteAnnotation, patchAnnotation } from "../api/anno
 import type { Annotation, Vector } from "../api/types";
 import { vectorOf, type Pt } from "../viewer-core/geometry";
 import { History } from "../viewer-core/history";
+import { keepFrame, withFrame } from "../viewer-core/frames";
 
 /**
  * The annotation edits of one image against the server, with optimistic updates of the cached list and an undo history.
  * Edits are conditional on the last edit time the client saw: when somebody else changed the annotation meanwhile the
  * server answers 409 and the client shows the current state instead of overwriting it.
  */
-export function useAnnotationActions(imageId: number, notify: (msg: string) => void, onCreated?: (a: Annotation) => void) {
+export function useAnnotationActions(imageId: number, notify: (msg: string) => void, onCreated?: (a: Annotation) => void, frameNow?: () => number | null) {
   const qc = useQueryClient();
   const key = useMemo(() => ["annotations", imageId], [imageId]);
   const history = useRef(new History()).current;
@@ -46,8 +47,12 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
     [current, put],
   );
 
+  /** New vectors carry the frame they are drawn on (stacks, volumes, movies; counted from 1). */
+  const stamped = useCallback((v: Vector): Vector => withFrame(v, frameNow?.()), [frameNow]);
+
   const create = useCallback(
-    async (typeId: number, vector: Vector | null) => {
+    async (typeId: number, drawn: Vector | null) => {
+      const vector = drawn && stamped(drawn);
       const tempId = -Date.now();
       const uid = crypto.randomUUID();
       put({ id: tempId, annotation_type: typeId, vector, image: imageId, deleted: false, unique_identifier: uid });
@@ -72,14 +77,15 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
         fail(e, "Could not create the annotation");
       }
     },
-    [imageId, put, drop, fail, history, onCreated],
+    [imageId, put, drop, fail, history, onCreated, stamped],
   );
 
   const update = useCallback(
-    async (id: number, vector: Vector) => {
+    async (id: number, geometry: Vector) => {
       const before = current(id);
       if (!before) return;
       const old = before.vector;
+      const vector = keepFrame(geometry, old);
       put({ ...before, vector });
       try {
         await patch(id, { vector });
@@ -105,13 +111,13 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
       const before = current(id);
       if (!before || rings.length === 0) return;
       const old = before.vector;
-      const vector = vectorOf(rings[0]);
+      const vector = keepFrame(vectorOf(rings[0]), old);
       put({ ...before, vector });
       const made: Annotation[] = [];
       try {
         await patch(id, { vector });
         for (const ring of rings.slice(1)) {
-          const a = await createAnnotation({ image: imageId, annotation_type: before.annotation_type, vector: vectorOf(ring), unique_identifier: crypto.randomUUID() });
+          const a = await createAnnotation({ image: imageId, annotation_type: before.annotation_type, vector: keepFrame(vectorOf(ring), old), unique_identifier: crypto.randomUUID() });
           put(a);
           made.push(a);
         }
@@ -165,9 +171,10 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
 
   /** Changes the class; `vector` also resizes the annotation in the same step (bounding box -> fixed-size box). */
   const changeType = useCallback(
-    async (id: number, typeId: number, vector?: Vector) => {
+    async (id: number, typeId: number, resized?: Vector) => {
       const before = current(id);
-      if (!before || (before.annotation_type === typeId && !vector)) return;
+      if (!before || (before.annotation_type === typeId && !resized)) return;
+      const vector = resized && keepFrame(resized, before.vector);
       const old = { type: before.annotation_type, vector: before.vector };
       put({ ...before, annotation_type: typeId, ...(vector ? { vector } : {}) });
       try {
@@ -197,7 +204,7 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
         for (const it of items) {
           const uid = crypto.randomUUID();
           try {
-            const a = await createAnnotation({ image: imageId, annotation_type: it.typeId, vector: it.vector, unique_identifier: uid });
+            const a = await createAnnotation({ image: imageId, annotation_type: it.typeId, vector: stamped(it.vector), unique_identifier: uid });
             put(a);
             ids.push(a.id);
             let cur = a;
@@ -218,7 +225,7 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
         }
         return ids;
       }),
-    [history, imageId, put, drop, fail],
+    [history, imageId, put, drop, fail, stamped],
   );
 
   const undo = useCallback(() => history.undo().catch((e) => fail(e, "Undo failed")), [history, fail]);

@@ -28,6 +28,7 @@ import { AnnotationInfo } from "../components/AnnotationInfo";
 import { ConfirmDelete } from "../components/ConfirmDelete";
 import { ConfirmResize } from "../components/ConfirmResize";
 import { boxVector, centeredBox, isBoxType } from "../viewer-core/geometry";
+import { visibleOnFrame } from "../viewer-core/frames";
 import { prefersThreePlanes, rememberThreePlanes } from "./MprPage";
 import { ContextMenu } from "../components/ContextMenu";
 import { CropDialog } from "../components/CropDialog";
@@ -137,7 +138,7 @@ export function ViewerPage() {
   const meta = useQuery({ queryKey: ["image-meta", id], queryFn: () => api<Meta>(`/api/v2/images/${id}/metadata`) });
   const types = useQuery({
     queryKey: ["annotation-types"],
-    queryFn: () => listAll<AnnotationType>("/api/v2/annotation-types", { fields: "id,name,vector_type,color_code,closed,node_count,default_width,default_height,size_unit,sort_order,product" }),
+    queryFn: () => listAll<AnnotationType>("/api/v2/annotation-types", { fields: "id,name,vector_type,color_code,closed,node_count,default_width,default_height,size_unit,sort_order,product,multi_frame" }),
   });
   const imageSetId = image.data?.image_set;
   const imageSet = useQuery({
@@ -211,7 +212,11 @@ export function ViewerPage() {
   }, [drawable, currentTypeId, imageSet.data]);
 
   const created = useCallback((a: Annotation) => void a, []);
-  const actions = useAnnotationActions(id, notify, created);
+  // new annotations of a stack, volume or movie carry the frame they are drawn on (counted from 1)
+  const stampFrames = useRef(false);
+  const drawHere = useRef(true);
+  const frameNow = useCallback(() => (stampFrames.current ? Math.round(posRef.current) + 1 : null), []);
+  const actions = useAnnotationActions(id, notify, created, frameNow);
   const history = actions.history;
   useEffect(() => history.subscribe(() => setTick((n) => n + 1)), [history]);
   useEffect(() => history.clear(), [id, history]);
@@ -224,17 +229,27 @@ export function ViewerPage() {
     return m;
   }, [types.data]);
 
+  // Annotations belong to a frame (and, in a volume, to the axial plane): see viewer-core/frames.ts
+  const volumePlanes = !!meta.data?.planes && (image.data?.depth ?? 1) === 1;
+  const annotationsHere = !volumePlanes || plane === 0;
+  const framed = volumePlanes || (meta.data?.frames ?? image.data?.frames ?? 1) > 1;
+  const frame1 = Math.round(pos) + 1;
+  stampFrames.current = framed && annotationsHere;
+  drawHere.current = annotationsHere;
+  const multiFrameTypes = useMemo(() => new Set((types.data ?? []).filter((t) => t.multi_frame).map((t) => t.id)), [types.data]);
   const shapes = useMemo(() => {
     const out: Shape[] = [];
+    if (!annotationsHere) return out; // the coronal and sagittal planes show no annotations
     for (const a of annotations.data ?? []) {
       if (a.deleted) continue;
       const t = styles.get(a.annotation_type);
       if (!t) continue;
+      if (framed && !visibleOnFrame(a.vector, multiFrameTypes.has(a.annotation_type), frame1)) continue;
       const s = toShape(a.id, a.annotation_type, t.vectorType, t.closed, a.vector);
       if (s) out.push(s);
     }
     return out;
-  }, [annotations.data, styles]);
+  }, [annotations.data, styles, annotationsHere, framed, frame1, multiFrameTypes]);
 
   // the editor reads the current data through this object, so it does not have to be rebuilt when the data changes
   const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
@@ -599,13 +614,17 @@ export function ViewerPage() {
     if (editorRef.current?.multiMode) editorRef.current.setMultiMode(false);
   }, []);
   const startDrawing = useCallback((typeId: number) => {
+    if (!drawHere.current) {
+      notify("Annotations are drawn in the axial plane.");
+      return;
+    }
     exitMulti();
     setSegTypeId(null);
     setCurrentTypeId(typeId);
     setDrawing(true);
     const e = info(typeId);
     if (e && !oneClickCapable(e.vectorType)) setOneClick(false);
-  }, [info, exitMulti]);
+  }, [info, exitMulti, notify]);
   const toggleGlobal = useCallback(
     (typeId: number) => {
       const existing = (annotations.data ?? []).find((a) => a.annotation_type === typeId && !a.deleted && a.id > 0);
@@ -852,9 +871,9 @@ export function ViewerPage() {
 
   // the editor's tool follows the toolbox state
   useEffect(() => {
-    const tool: Tool = polyOp ? { kind: "op", op: polyOp } : drawing && currentTypeId != null ? { kind: "draw", typeId: currentTypeId, oneClick } : { kind: "select" };
+    const tool: Tool = polyOp ? { kind: "op", op: polyOp } : drawing && currentTypeId != null && annotationsHere ? { kind: "draw", typeId: currentTypeId, oneClick } : { kind: "select" };
     editorRef.current?.setTool(tool);
-  }, [drawing, currentTypeId, oneClick, polyOp]);
+  }, [drawing, currentTypeId, oneClick, polyOp, annotationsHere]);
   // the editor ends an operation by itself (finished, cancelled, refused): follow it
   useEffect(() => {
     const t = editorRef.current?.tool;
@@ -996,6 +1015,7 @@ export function ViewerPage() {
         {toolsOpen && (
         <Toolbox
           palette={drawable}
+          locked={annotationsHere ? null : "Annotations are drawn in the axial plane."}
           globals={globals.map((entry) => ({ entry, set: (annotations.data ?? []).some((a) => a.annotation_type === entry.id && !a.deleted) }))}
           drawing={drawing}
           oneClick={oneClick}

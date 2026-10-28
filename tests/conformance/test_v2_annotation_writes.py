@@ -138,3 +138,15 @@ def test_global_annotation_exists_once_and_is_switched_on_again():
         for a in admin.get("/api/v2/annotations", params={"annotation_type": t["id"]}).json()["items"]:
             admin.delete(f"/api/v2/annotations/{a['id']}", params={"hard": "true"})
         admin.delete(f"/api/v2/annotation-types/{t['id']}")
+
+
+def test_the_frame_of_an_annotation_in_a_stack_is_stored_with_the_vector():
+    c = client()
+    a = make(c, vector={**BB, "frame": 4})
+    assert a["vector"] == {**BB, "frame": 4}
+    moved = c.patch(f"/api/v2/annotations/{a['id']}", json={"vector": {"x1": 2, "y1": 2, "x2": 9, "y2": 9, "frame": 4}})
+    assert moved.status_code == 200 and moved.json()["vector"]["frame"] == 4
+    # the frame is not a coordinate: another extra key is still refused, and so is a frame that is no number
+    assert c.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": BBOX_TYPE, "vector": {**BB, "frame": 4, "z": 1}}).status_code == 400
+    assert c.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": BBOX_TYPE, "vector": {**BB, "frame": "x"}}).status_code == 400
+    c.delete(f"/api/v2/annotations/{a['id']}")

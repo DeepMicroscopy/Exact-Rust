@@ -33,6 +33,8 @@ export interface ToolboxProps {
   group: { count: number; classes: PaletteEntry[] } | null;
   /** touch: taps add or remove annotations from the selection, a drag draws a frame */
   multiMode: boolean;
+  /** why annotating is not possible here (the coronal and sagittal planes of a volume), or null */
+  locked?: string | null;
   canPaste: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -133,7 +135,7 @@ export function Toolbox(p: ToolboxProps) {
         <button
           className="annotate-label"
           onClick={() => (p.drawing || p.seg ? p.on.select() : p.currentTypeId != null && p.on.draw(p.currentTypeId))}
-          disabled={p.palette.length === 0}
+          disabled={p.palette.length === 0 || !!p.locked}
           aria-pressed={p.drawing || !!p.seg}
           aria-label="Annotate with"
           title="Draw annotations of the type on the right; click again to go back to selecting (C)"
@@ -145,7 +147,7 @@ export function Toolbox(p: ToolboxProps) {
           name="types"
           items={[...typeItems, ...segItems]}
           onPick={(id) => (String(id).startsWith("seg:") ? p.on.segment(Number(String(id).slice(4))) : p.on.draw(Number(id)))}
-          disabled={p.palette.length === 0 && p.segTypes.length === 0}
+          disabled={(p.palette.length === 0 && p.segTypes.length === 0) || !!p.locked}
           title="Annotation type to draw (digit keys 1-9); ▨ = pixel mask"
         >
           {segCur ? (
@@ -165,6 +167,7 @@ export function Toolbox(p: ToolboxProps) {
         </Dropdown>
       </div>
       {p.palette.length === 0 && <span className="muted small">This image set has no annotation types (assign a product to it).</span>}
+      {p.locked && <span className="muted small" data-testid="annotations-locked">{p.locked}</span>}
 
       {p.seg && (
         <div className="tool-group context seg-tools" data-testid="seg-tools">

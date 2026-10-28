@@ -47,6 +47,8 @@ export interface AnnotationType {
   size_unit?: string;
   sort_order?: number;
   product?: number | null;
+  /** the annotations of this type are shown on every frame of a stack, not only on the frame they were drawn on */
+  multi_frame?: boolean;
 }
 
 export type Vector = Record<string, number | undefined>;

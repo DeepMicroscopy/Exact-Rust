@@ -44,15 +44,18 @@ pub fn validate(vector_type: i32, node_count: i32, vector: &mut Value) -> bool {
         }
     }
     let get = |k: &str| obj.get(k).and_then(Value::as_i64);
+    // `frame` (counted from 1) says on which frame of a stack, volume or movie the annotation was drawn; EXACT's viewer
+    // writes it into the vector (the REST API takes it, only its legacy views count it as a coordinate). It is not part
+    // of the shape.
+    let len = obj.len() - usize::from(obj.contains_key("frame"));
     let bbox = || {
         // x2 - x1 >= 1 and y2 - y1 >= 1 (a missing coordinate gives -inf / inf) and exactly four entries
         matches!((get("x1"), get("x2")), (Some(a), Some(b)) if b - a >= 1)
             && matches!((get("y1"), get("y2")), (Some(a), Some(b)) if b - a >= 1)
-            && obj.len() == 4
+            && len == 4
     };
-    let nodes_ok = |min_len: usize| {
-        obj.len() >= min_len && (node_count == 0 || node_count as usize == obj.len() / 2)
-    };
+    let nodes_ok =
+        |min_len: usize| len >= min_len && (node_count == 0 || node_count as usize == len / 2);
     match vector_type {
         BOUNDING_BOX | FIXED_SIZE_BOUNDING_BOX | GLOBAL => bbox(),
         LINE => {
@@ -62,9 +65,9 @@ pub fn validate(vector_type: i32, node_count: i32, vector: &mut Value) -> bool {
                 (Some(x), Some(y)) => !(x == y && (-5..=256).contains(&x)),
                 _ => true,
             };
-            is_not("x2", "x1") || (is_not("y2", "y1") && obj.len() == 4)
+            is_not("x2", "x1") || (is_not("y2", "y1") && len == 4)
         }
-        POINT => obj.contains_key("x1") && obj.contains_key("y1") && obj.len() == 4,
+        POINT => obj.contains_key("x1") && obj.contains_key("y1") && len == 4,
         POLYGON => nodes_ok(6),
         MULTI_LINE => nodes_ok(4),
         SEGMENTATION => true,
@@ -102,6 +105,42 @@ mod tests {
             BOUNDING_BOX,
             0,
             &mut json!({"x1": 1, "y1": 2, "x2": 3, "y2": 4, "x3": 5})
+        ));
+    }
+
+    #[test]
+    fn the_frame_of_a_stack_annotation_is_not_part_of_the_shape() {
+        assert!(validate(
+            BOUNDING_BOX,
+            0,
+            &mut json!({"x1": 1, "y1": 2, "x2": 30, "y2": 40, "frame": 5})
+        ));
+        assert!(validate(
+            POINT,
+            0,
+            &mut json!({"x1": 1, "y1": 2, "x2": 1, "y2": 2, "frame": 3})
+        ));
+        // a polygon of three points with a frame: the node count is of the points
+        assert!(validate(
+            POLYGON,
+            3,
+            &mut json!({"x1": 1, "y1": 1, "x2": 5, "y2": 1, "x3": 5, "y3": 5, "frame": 2})
+        ));
+        assert!(!validate(
+            POLYGON,
+            4,
+            &mut json!({"x1": 1, "y1": 1, "x2": 5, "y2": 1, "x3": 5, "y3": 5, "frame": 2})
+        ));
+        // another extra key is still refused, a frame must be a whole number
+        assert!(!validate(
+            BOUNDING_BOX,
+            0,
+            &mut json!({"x1": 1, "y1": 2, "x2": 30, "y2": 40, "frame": 5, "z": 1})
+        ));
+        assert!(!validate(
+            BOUNDING_BOX,
+            0,
+            &mut json!({"x1": 1, "y1": 2, "x2": 30, "y2": 40, "frame": "a"})
         ));
     }
 

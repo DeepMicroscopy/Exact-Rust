@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import OpenSeadragon from "openseadragon";
-import { api } from "../api/client";
+import { api, listAll } from "../api/client";
+import { ANNOTATION_FIELDS } from "../api/annotations";
+import type { Annotation, AnnotationType } from "../api/types";
+import { AnnotationLayer } from "../viewer-core/annotationLayer";
+import { visibleOnFrame } from "../viewer-core/frames";
+import { toShape } from "../viewer-core/shapes";
+import type { Shape, TypeStyle } from "../viewer-core/types";
 import { loadTileSource } from "../viewer-core/tileSource";
 import { ZBlender } from "../viewer-core/zBlend";
 import { CrosshairLayer } from "../viewer-core/crosshair";
@@ -50,6 +56,24 @@ export function MprPage() {
   const planes = meta.data?.planes ?? null;
   const shape = useMemo(() => (planes ? shapeOf(planes) : null), [planes]);
   const [voxel, setVoxel] = useState<Voxel | null>(null);
+  // the annotations of the axial slice, shown read-only (drawing is done in the single-plane view)
+  const types = useQuery({
+    queryKey: ["annotation-types"],
+    queryFn: () => listAll<AnnotationType>("/api/v2/annotation-types", { fields: "id,name,vector_type,color_code,closed,node_count,default_width,default_height,size_unit,sort_order,product,multi_frame" }),
+  });
+  const annotations = useQuery({ queryKey: ["annotations", id], queryFn: () => listAll<Annotation>("/api/v2/annotations", { image: id, deleted: false, fields: ANNOTATION_FIELDS }) });
+  const styles = useMemo(() => new Map<number, TypeStyle>((types.data ?? []).map((t) => [t.id, { color: t.color_code, vectorType: t.vector_type, closed: t.closed }])), [types.data]);
+  const shapes = useMemo(() => {
+    const multi = new Set((types.data ?? []).filter((t) => t.multi_frame).map((t) => t.id));
+    const out: Shape[] = [];
+    for (const a of annotations.data ?? []) {
+      const t = styles.get(a.annotation_type);
+      if (a.deleted || !t || !voxel || !visibleOnFrame(a.vector, multi.has(a.annotation_type), voxel.z + 1)) continue;
+      const sh = toShape(a.id, a.annotation_type, t.vectorType, t.closed, a.vector);
+      if (sh) out.push(sh);
+    }
+    return out;
+  }, [annotations.data, types.data, styles, voxel]);
   const [active, setActive] = useState<Plane>(0);
 
   // the crosshair starts where a link says, else in the middle of the volume
@@ -116,7 +140,7 @@ export function MprPage() {
       <div className="mpr-grid">
         {shape && planes && voxel
           ? ([0, 1, 2] as Plane[]).map((p) => (
-              <Pane key={p} imageId={id} plane={p} shape={shape} info={planes[p]} voxel={voxel} active={active === p} onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} />
+              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} />
             ))
           : null}
         <div className="mpr-info glass" data-testid="mpr-info">
@@ -143,13 +167,14 @@ function Info({ voxel, shape, planes }: { voxel: Voxel; shape: VolumeShape; plan
   );
 }
 
-function Pane({ imageId, plane, shape, info, voxel, active, onActivate, onPick, onStep }: { imageId: number; plane: Plane; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void }) {
+function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onActivate, onPick, onStep }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void }) {
   const host = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null);
   const blender = useRef<ZBlender | null>(null);
   const cross = useRef<CrosshairLayer | null>(null);
-  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate });
-  live.current = { shape, plane, voxel, onPick, onStep, onActivate };
+  const notes = useRef<AnnotationLayer | null>(null);
+  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles });
+  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles };
   const [busy, setBusy] = useState(false);
   const frame = frameOf(plane, voxel);
 
@@ -187,6 +212,8 @@ function Pane({ imageId, plane, shape, info, voxel, active, onActivate, onPick, 
       live.current.onPick(voxelAt(s, pl, p.x, p.y, frameOf(pl, vx)));
     });
     v.addHandler("canvas-press", () => live.current.onActivate());
+    notes.current = plane === 0 ? new AnnotationLayer(v) : null; // below the crosshair
+    if (live.current.shapes) notes.current?.setData(live.current.shapes, live.current.styles);
     const c = new CrosshairLayer(v);
     cross.current = c;
     const b = new ZBlender(v, info.frames, (f) => loadTileSource(imageId, plane + 1, f), {
@@ -200,6 +227,8 @@ function Pane({ imageId, plane, shape, info, voxel, active, onActivate, onPick, 
       el.removeEventListener("wheel", wheel, { capture: true });
       b.destroy();
       c.destroy();
+      notes.current?.destroy();
+      notes.current = null;
       v.destroy();
       viewerRef.current = null;
       blender.current = null;
@@ -210,6 +239,9 @@ function Pane({ imageId, plane, shape, info, voxel, active, onActivate, onPick, 
   useEffect(() => {
     blender.current?.setPosition(frame);
   }, [frame]);
+  useEffect(() => {
+    if (shapes) notes.current?.setData(shapes, styles);
+  }, [shapes, styles]);
   useEffect(() => {
     const [px, py] = pixelOf(shape, plane, voxel);
     cross.current?.set([px, py], { vertical: PLANE_COLORS[CROSS_PLANES[plane].vertical], horizontal: PLANE_COLORS[CROSS_PLANES[plane].horizontal] });

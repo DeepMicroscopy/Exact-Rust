@@ -202,6 +202,54 @@ try {
   check(Math.abs(view1.z - view0.z) < 1e-6 && Math.abs(view1.c.x - view0.c.x) < 1e-6 && Math.abs(view1.c.y - view0.c.y) < 1e-6,
     `z-stack: zoom and position are kept when jumping along the stack (${view0.z.toFixed(3)} -> ${view1.z.toFixed(3)})`);
 
+  // annotations belong to the frame they were drawn on (multi frame types: to all of them)
+  const api2 = (method, url, body) => page.evaluate(async ([method, url, body]) => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const r = await fetch(url, { method, headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    return r.status === 204 ? null : await r.json();
+  }, [method, url, body]);
+  const zimg = await api2("GET", "/api/v2/images/57?fields=id,image_set");
+  const zset = await api2("GET", `/api/v2/image-sets/${zimg.image_set}?fields=id,product_set`);
+  const ztypes = (await api2("GET", "/api/v2/annotation-types?fields=id,name,vector_type,product,multi_frame&limit=1000")).items.filter((t) => zset.product_set.includes(t.product) && t.vector_type === 1);
+  const boxType = ztypes.find((t) => !t.multi_frame);
+  const made = [];
+  for (const [frame, x] of [[2, 100], [5, 300], [null, 500]]) made.push(await api2("POST", "/api/v2/annotations", { image: 57, annotation_type: boxType.id, vector: { x1: x, y1: 100, x2: x + 80, y2: 180, ...(frame ? { frame } : {}) }, unique_identifier: crypto.randomUUID?.() ?? `${Date.now()}-${x}` }));
+  await page.goto(`${base}/images/57?frame=1`);
+  await page.waitForSelector(".zslider input");
+  const shown = () => page.evaluate(() => window.__editor.host.shapes().map((s) => s.id));
+  await page.waitForTimeout(2500);
+  await waitFor(async () => (await shown()).includes(made[0].id), "an annotation is shown on its frame");
+  check(!(await shown()).includes(made[1].id) && (await shown()).includes(made[2].id), "...not on other frames, but one without a frame is shown everywhere");
+  await page.locator(".zslider input").fill("4");
+  await waitFor(async () => (await shown()).includes(made[1].id), "stepping to frame 5 shows the annotation of frame 5");
+  check(!(await shown()).includes(made[0].id), "...and hides the one of frame 2");
+  // an annotation drawn here gets the frame
+  await page.locator(".type-dd .trigger").click();
+  await page.locator(".dd-item", { hasText: boxType.name }).first().click();
+  const [d1, d2] = await page.evaluate(() => { const v = window.__viewer; const it = v.world.getItemAt(0); const r = v.canvas.getBoundingClientRect(); const f = (x, y) => { const p = it.imageToViewerElementCoordinates(new window.__osd.Point(x, y)); return [r.left + p.x, r.top + p.y]; }; return [f(700, 300), f(780, 380)]; });
+  await page.mouse.move(d1[0], d1[1]);
+  await page.mouse.down();
+  await page.mouse.move(d2[0], d2[1], { steps: 6 });
+  await page.mouse.up();
+  let drawn = null;
+  await waitFor(async () => { drawn = (await api2("GET", "/api/v2/annotations?image=57&deleted=false&fields=id,vector&limit=1000")).items.find((a) => a.vector && Math.abs(a.vector.x1 - 700) < 15); return !!drawn; }, "an annotation was drawn");
+  check(drawn.vector.frame === 5, `an annotation drawn on frame 5 carries frame ${drawn.vector.frame}`);
+  // editing keeps the frame
+  await page.keyboard.press("c");
+  const c0 = await page.evaluate(() => { const v = window.__viewer; const it = v.world.getItemAt(0); const r = v.canvas.getBoundingClientRect(); const p = it.imageToViewerElementCoordinates(new window.__osd.Point(740, 340)); return [r.left + p.x, r.top + p.y]; });
+  await page.mouse.click(c0[0], c0[1]);
+  await page.mouse.move(c0[0], c0[1]);
+  await page.mouse.down();
+  await page.mouse.move(c0[0] + 30, c0[1] + 20, { steps: 5 });
+  await page.mouse.up();
+  await waitFor(async () => { const a = (await api2("GET", `/api/v2/annotations/${drawn.id}?fields=id,vector`)); return a.vector.x1 > drawn.vector.x1 + 1; }, "the annotation was moved");
+  check((await api2("GET", `/api/v2/annotations/${drawn.id}?fields=id,vector`)).vector.frame === 5, "moving an annotation keeps its frame");
+  for (const a of [...made, drawn]) await api2("DELETE", `/api/v2/annotations/${a.id}?hard=true`);
+  await page.goto(`${base}/images/57`);
+  await page.waitForSelector(".zslider input");
+  await page.locator(".zslider input").fill("1");
+  await page.waitForTimeout(1200);
+
   // the address bar follows the view, and the link opens the same view
   await page.waitForTimeout(600);
   const shared = new URL(page.url());
