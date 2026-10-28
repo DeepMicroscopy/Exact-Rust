@@ -155,7 +155,7 @@ fn rgb_tile(band: &RgbaImage, x0: u32, band_h: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{formats, WsiError};
+    use crate::WsiError;
     use std::collections::HashMap;
 
     /// A slide whose pixel (x, y) has a colour that tells where it is.
@@ -213,11 +213,20 @@ mod tests {
         )
         .unwrap();
         assert!(levels >= 2);
-        let out = formats::open(dst.to_str().unwrap()).unwrap();
-        assert_eq!(out.level_dimensions()[0], (1300, 900));
-        assert_eq!(out.level_dimensions().len(), levels);
+        // read the file back with the crate's own TIFF reader: it must not depend on OpenSlide being installed
+        let t = Tiff::open(dst.to_str().unwrap()).unwrap();
+        let mut pages = Vec::new();
+        let mut off = t.first_ifd_offset().unwrap();
+        while off != 0 {
+            let ifd = t.read_ifd(off).unwrap();
+            pages.push(Page::new(&t, &ifd).unwrap());
+            off = ifd.next;
+        }
+        assert_eq!((pages[0].width, pages[0].height), (1300, 900));
+        assert_eq!(pages.len(), levels);
         // level 0 equals the region of the source (JPEG, so within a tolerance)
-        let got = out.read_region(300, 200, 0, 64, 64, 0).unwrap();
+        let cache = ChunkCache::new(64);
+        let got = pages[0].read_rgba(300, 200, 64, 64, &cache, 0).unwrap();
         let want = src.read_region(1300, 900, 0, 64, 64, 0).unwrap();
         let diff: u64 = got
             .pixels()
