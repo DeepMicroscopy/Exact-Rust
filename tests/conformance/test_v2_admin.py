@@ -140,3 +140,14 @@ def test_user_admin_needs_site_admin():
     assert client("rt_teamadmin").post(f"/api/v2/users/{uid}/random-password").status_code == 403
     sql(f"delete from users_userpreferences where user_id={uid}")
     sql(f"delete from users_user where id={uid}")
+
+
+def test_admin_me_tells_what_the_screens_may_offer():
+    root = client("aubreville")
+    me = root.get("/api/v2/admin/me").json()
+    assert me["is_site_admin"] is True and isinstance(me["admin_team_ids"], list)
+    ta = client("rt_teamadmin").get("/api/v2/admin/me").json()
+    assert ta["is_site_admin"] is False and 1 in ta["admin_team_ids"]
+    m = client("rt_member").get("/api/v2/admin/me").json()
+    assert m["is_site_admin"] is False and m["admin_team_ids"] == []
+    assert httpx.get(BASE + "/api/v2/admin/me").status_code in (401, 403)

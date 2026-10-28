@@ -35,6 +35,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/teams/{id}/members/{user}",
             put(member_put).delete(member_delete),
         )
+        .route("/api/v2/admin/me", axum::routing::get(admin_me))
         .route(
             "/api/v2/users/{id}/random-password",
             axum::routing::post(random_password),
@@ -551,6 +552,14 @@ pub async fn user_delete(
     cascade::delete_users(&mut tx, &[id]).await?;
     tx.commit().await.map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `GET /api/v2/admin/me`: what the administration screens may offer this user.
+async fn admin_me(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let site = users::is_site_admin(&s.pool, p.user.id).await?;
+    let teams = users::admin_team_ids(&s.pool, p.user.id).await?;
+    Ok(Json(json!({"is_site_admin": site, "is_staff": p.user.is_staff, "is_superuser": p.user.is_superuser, "admin_team_ids": teams})).into_response())
 }
 
 async fn random_password(

@@ -342,3 +342,11 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .modal textarea { width: 100%; box-sizing: border-box; background: var(--panel, transparent); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
 .help dt { font-weight: 600; font-size: 12px; margin-top: 6px; }
 .help dd { margin: 0; opacity: 0.85; }
+.admin-main { flex: 1; min-width: 0; }
+.admin-table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; }
+.admin-table th { text-align: left; font-size: 12px; opacity: 0.7; padding: 4px 8px; }
+.admin-table td { padding: 5px 8px; border-top: 1px solid var(--border); vertical-align: middle; }
+.admin-table .row-actions { white-space: nowrap; text-align: right; }
+.row-inline { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.secret { width: 100%; box-sizing: border-box; }
+.team-panel h4 { margin: 14px 0 4px; }

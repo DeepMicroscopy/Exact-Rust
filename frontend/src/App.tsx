@@ -4,6 +4,8 @@ import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Index } from "./pages/Index";
 import { ImageSetPage } from "./pages/ImageSetPage";
+import { AdminPage } from "./pages/AdminPage";
+import { InvitePage } from "./pages/InvitePage";
 import { ViewerPage } from "./pages/ViewerPage";
 
 export function App() {
@@ -12,6 +14,7 @@ export function App() {
   if (!user) {
     return (
       <Routes>
+        <Route path="invite/:token" element={<InvitePage />} />
         <Route path="*" element={<Login />} />
       </Routes>
     );
@@ -21,6 +24,8 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<Index />} />
         <Route path="sets/:setId" element={<ImageSetPage />} />
+        <Route path="admin" element={<AdminPage />} />
+        <Route path="invite/:token" element={<InvitePage />} />
       </Route>
       {/* the viewer is full-bleed and has its own chrome */}
       <Route path="images/:imageId" element={<ViewerPage />} />

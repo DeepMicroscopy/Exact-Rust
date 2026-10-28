@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fresh scratch database, the Rust server on :8002 with the built UI, then the browser tests (frontend/e2e). Leaves the server running
 # so that the result can be tried by hand; stop it with `pkill -f target/debug/exact-server`.
-# Usage: scripts/run-e2e.sh [annotate|smoke|imageset|all]   (default: annotate)
+# Usage: scripts/run-e2e.sh [annotate|smoke|imageset|admin|all]   (default: annotate)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 export SDKROOT="${SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
@@ -21,6 +21,7 @@ case "${1:-annotate}" in
   annotate) SHOTS=/tmp/shots node e2e/annotate.mjs || rc=$? ;;
   smoke) SHOTS=/tmp/shots node e2e/smoke.mjs || rc=$? ;;
   imageset) SHOTS=/tmp/shots node e2e/imageset.mjs || rc=$? ;;
-  all) SHOTS=/tmp/shots node e2e/smoke.mjs && SHOTS=/tmp/shots node e2e/imageset.mjs && SHOTS=/tmp/shots node e2e/annotate.mjs || rc=$? ;;
+  admin) SHOTS=/tmp/shots node e2e/admin.mjs || rc=$? ;;
+  all) SHOTS=/tmp/shots node e2e/smoke.mjs && SHOTS=/tmp/shots node e2e/imageset.mjs && SHOTS=/tmp/shots node e2e/admin.mjs && SHOTS=/tmp/shots node e2e/annotate.mjs || rc=$? ;;
 esac
 exit $rc
