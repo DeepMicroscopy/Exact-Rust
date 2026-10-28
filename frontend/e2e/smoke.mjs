@@ -15,8 +15,7 @@ const page = await browser.newPage({ viewport: { width: 1400, height: 850 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 // the anonymous /auth/me probe on the login screen legitimately answers 401
-page.on("console", (m) => m.type() === "error" && !m.text().includes("401") && errors.push(m.text()));
-page.on("response", (r) => r.status() === 400 && console.log("HTTP400", r.url()));
+page.on("console", (m) => m.type() === "error" && !/ 40[01]/.test(m.text()) && errors.push(m.text())); // the unknown-image check provokes a 400
 const shot = (n) => shots && page.screenshot({ path: `${shots}/${n}.png` });
 const check = (cond, msg) => {
   if (!cond) throw new Error("FAILED: " + msg);
@@ -95,6 +94,30 @@ try {
   await waitPainted("volume slice 41 renders");
   const volOpacities = await page.evaluate(() => { const w = window.__viewer.world; return [...Array(w.getItemCount()).keys()].map((i) => w.getItemAt(i).getOpacity()).filter((o) => o > 0.01); });
   check(volOpacities.length === 1 && volOpacities[0] === 1, "volume: exactly one slice visible (no blending)");
+
+  // stepping through the volume never shows an empty or half-loaded slice: some plane is always fully visible
+  await page.evaluate(() => {
+    const w = window.__viewer.world;
+    window.__minVisible = 1;
+    const tick = () => {
+      const items = [...Array(w.getItemCount()).keys()].map((i) => w.getItemAt(i));
+      const best = Math.max(0, ...items.filter((it) => it.getFullyLoaded()).map((it) => it.getOpacity()));
+      window.__minVisible = Math.min(window.__minVisible, best);
+      window.__poll = requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  const slow = async (route) => { await new Promise((r) => setTimeout(r, 250)); await route.continue().catch(() => {}); };
+  await page.route(/\/tile/, slow); // tiles arrive late, as over a slow connection
+  const cur = Number((await page.locator(".zslider input").inputValue()) || 40);
+  for (const d of [1, 2, 3, 4, 5, 6]) {
+    await page.locator(".zslider input").fill(String(cur + d));
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(1500);
+  const minVisible = await page.evaluate(() => { cancelAnimationFrame(window.__poll); return window.__minVisible; });
+  await page.unroute(/\/tile/, slow);
+  check(minVisible > 0.99, `volume: while stepping, a fully loaded slice is always shown (min opacity ${minVisible})`);
 
   // multi-series OME-TIFF z-stack (microscopy): vertical slider on the right with real positions, planes are cross-faded
   await openImage(57);

@@ -88,6 +88,8 @@ const swatch = (c?: string) => <span className="swatch" style={{ background: c }
  */
 export function Toolbox(p: ToolboxProps) {
   const penState = usePen();
+  // a finger moves the image, so a touch screen needs a switch for the selection frame; with a mouse or pen a drag selects
+  const coarse = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches && !penState.seen;
   const sel = p.selected;
   const current = p.palette.find((e) => e.id === p.currentTypeId);
   const draw = p.drawing ? current : undefined;
@@ -112,17 +114,19 @@ export function Toolbox(p: ToolboxProps) {
   return (
     <div className="toolbox glass" role="toolbar" aria-label="Annotation tools">
       <div className="seg" role="group">
-        <button className={!p.drawing && !p.seg && !p.multiMode ? "active" : ""} onClick={p.on.select} aria-label="Select" aria-pressed={!p.drawing && !p.seg && !p.multiMode} title="Select and edit annotations">
+        <button className={!p.drawing && !p.seg && !p.multiMode ? "active" : ""} onClick={p.on.select} aria-label="Select" aria-pressed={!p.drawing && !p.seg && !p.multiMode} title="Select and edit annotations. Drag on empty space to select with a frame (Shift or Ctrl/⌘ adds). Move the image with Space + drag, the middle button or a two-finger swipe.">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
             <path d="M5 3l14 8-6.2 1.6L9.6 19z" fill="currentColor" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
           </svg>
         </button>
-        <button className={p.multiMode ? "active" : ""} onClick={p.on.toggleMulti} aria-label="Select several" aria-pressed={p.multiMode} title="Select several: Shift + click adds or removes an annotation, Ctrl/⌘ + drag draws a frame around many (Ctrl+A: all). On a touch screen switch this on: tap annotations, drag a frame.">
+        {coarse && (
+          <button className={p.multiMode ? "active" : ""} onClick={p.on.toggleMulti} aria-label="Select several" aria-pressed={p.multiMode} title="Select several (touch screens): tap annotations to add or remove them, drag to draw a frame around many">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
             <rect x="3" y="3" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
             <rect x="10" y="10" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeDasharray="3 2" />
           </svg>
         </button>
+        )}
       </div>
       <span className="v-sep" role="separator" aria-orientation="vertical" />
       <div className={`annotate-btn ${p.drawing || p.seg ? "active" : ""}`} role="group" aria-label="Annotate with">

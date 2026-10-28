@@ -150,10 +150,9 @@ try {
   // the tools are exclusive: select, select several, annotate
   const on = () => admin.locator('.toolbox [aria-pressed="true"][aria-label="Select"], .toolbox [aria-pressed="true"][aria-label="Select several"], .toolbox [aria-pressed="true"][aria-label="Annotate with"]').evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
   check(JSON.stringify(await on()) === '["Select"]', "only Select is on after C");
-  await admin.locator('.toolbox [aria-label="Select several"]').click();
-  check(JSON.stringify(await on()) === '["Select several"]', "Select several switches Select off");
+  check((await admin.locator('.toolbox [aria-label="Select several"]').count()) === 0, "no separate Select several tool with a mouse: a frame drawn in Select selects");
   await admin.keyboard.press("c");
-  check(JSON.stringify(await on()) === '["Annotate with"]', "C turns annotating on and select several off");
+  check(JSON.stringify(await on()) === '["Annotate with"]', "C turns annotating on");
   await admin.locator('.toolbox .annotate-label').click();
   check(JSON.stringify(await on()) === '["Select"]', "clicking Annotate with while annotating goes back to Select");
   await admin.keyboard.press("c");
@@ -205,16 +204,32 @@ try {
   const emptySpot = await screenOf(admin, 2600, 1900);
   const emptySpot2 = await screenOf(admin, 2450, 1800);
   const center0 = await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x);
+  // a plain drag on empty space draws a selection frame (and does not move the image)
+  await admin.mouse.move(emptySpot.x, emptySpot.y);
+  await admin.mouse.down();
+  await admin.mouse.move(emptySpot2.x, emptySpot2.y, { steps: 5 });
+  check(await admin.evaluate(() => window.__editor.session?.kind === "marquee"), "a plain drag on empty space draws a selection frame");
+  await admin.mouse.up();
+  await admin.waitForTimeout(400);
+  check(Math.abs((await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x)) - center0) < 1e-6, "...and the image stays where it is");
+  // Space + drag moves the image
+  await admin.keyboard.down("Space");
   await admin.mouse.move(emptySpot.x, emptySpot.y);
   await admin.mouse.down();
   await admin.mouse.move(emptySpot2.x, emptySpot2.y, { steps: 5 });
   await admin.mouse.up();
+  await admin.keyboard.up("Space");
   await admin.waitForTimeout(600);
-  check(Math.abs((await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x)) - center0) > 0.001, "a drag on empty space pans");
+  check(Math.abs((await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x)) - center0) > 0.001, "Space + drag pans");
   check(JSON.stringify((await annotations(admin)).find((x) => x.id === box.id).vector) === JSON.stringify(moved.vector), "...and does not touch the annotation");
   await admin.evaluate(() => window.__viewer.viewport.goHome(true));
   await admin.waitForTimeout(400);
 
+  // the frame on empty space deselected the box: select it again
+  const mv = moved.vector;
+  const mvc = await screenOf(admin, (mv.x1 + mv.x2) / 2, (mv.y1 + mv.y2) / 2);
+  await admin.mouse.click(mvc.x, mvc.y);
+  await waitFor(() => admin.evaluate((id) => window.__editor.selectedId === id, box.id), "a click selects the box again");
   // there is no verification in the tools for now
   check((await admin.locator(".toolbox .btn", { hasText: /Verif/ }).count()) === 0, "the tool bar has no verify button");
   // Delete removes; Ctrl+Z restores; Ctrl+Shift+Z deletes again
@@ -278,13 +293,11 @@ try {
   check(msExpected >= 3, `three boxes are in the frame to be drawn (${msExpected})`);
   const msF1 = await screenOf(admin, 200, 950);
   const msF2 = await screenOf(admin, 1400, 1250);
-  await admin.keyboard.down("Control");
   await admin.mouse.move(msF1.x, msF1.y);
   await admin.mouse.down();
   await admin.mouse.move(msF2.x, msF2.y, { steps: 8 });
   await admin.mouse.up();
-  await admin.keyboard.up("Control");
-  await waitFor(async () => (await admin.locator('[data-testid="group-count"]').count()) === 1, "a frame drawn with Ctrl selects several annotations");
+  await waitFor(async () => (await admin.locator('[data-testid="group-count"]').count()) === 1, "a plain drag in the select tool draws a frame that selects several annotations");
   check((await admin.locator('[data-testid="group-count"]').innerText()) === `${msExpected} selected`, `...all that touch the frame (${msExpected} selected)`);
   // moving one moves all
   const msBefore = new Map((await inRegion()).map((a) => [a.id, a.vector]));

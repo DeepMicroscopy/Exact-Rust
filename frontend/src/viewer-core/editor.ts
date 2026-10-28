@@ -1,3 +1,4 @@
+import { isTypingTarget } from "./shortcuts";
 import { isHovering, pen } from "./pen";
 import OpenSeadragon from "openseadragon";
 import { AnnotationLayer, EMPTY_OVERLAY, type Overlay } from "./annotationLayer";
@@ -85,7 +86,7 @@ type Session =
   | { kind: "drag"; typeId: number; start: Pt; cur: Pt }
   | { kind: "brush"; shape: Shape; erase: boolean; last: Pt; swept: Ring[]; moved: boolean }
   | { kind: "groupmove"; shapes: Shape[]; start: Pt; moved: boolean }
-  | { kind: "marquee"; start: Pt; cur: Pt };
+  | { kind: "marquee"; start: Pt; cur: Pt; additive: boolean };
 
 const TOUCH_SLOP = 18;
 const MOUSE_SLOP = 7;
@@ -131,6 +132,8 @@ export class AnnotationEditor {
   group: number[] = [];
   /** touch: a tap adds or removes an annotation, a drag draws a rubber band (instead of Ctrl / Shift) */
   multiMode = false;
+  /** Space is held: a drag moves the image instead of drawing a selection frame */
+  private spaceDown = false;
   private previews: Shape[] = [];
   /** where a pen hovers above the screen (image pixels), null when it does not */
   private penAt: Pt | null = null;
@@ -185,6 +188,32 @@ export class AnnotationEditor {
       }
     };
     const noteDown = (ev: PointerEvent) => pen.note(ev);
+    const space = (ev: KeyboardEvent) => {
+      if (ev.code === "Space" && !isTypingTarget(ev.target)) this.spaceDown = ev.type === "keydown";
+    };
+    const blur = () => (this.spaceDown = false);
+    // middle button: OpenSeadragon only moves the image with the primary button
+    let mid: { x: number; y: number } | null = null;
+    const midDown = (ev: PointerEvent) => {
+      if (ev.button !== 1) return;
+      ev.preventDefault();
+      mid = { x: ev.clientX, y: ev.clientY };
+      el.setPointerCapture(ev.pointerId);
+    };
+    const midMove = (ev: PointerEvent) => {
+      if (!mid) return;
+      const d = viewer.viewport.deltaPointsFromPixels(new OpenSeadragon.Point(mid.x - ev.clientX, mid.y - ev.clientY), true);
+      viewer.viewport.panBy(d, true);
+      viewer.viewport.applyConstraints(true);
+      mid = { x: ev.clientX, y: ev.clientY };
+    };
+    const midUp = () => (mid = null);
+    window.addEventListener("keydown", space);
+    window.addEventListener("keyup", space);
+    window.addEventListener("blur", blur);
+    el.addEventListener("pointerdown", midDown);
+    el.addEventListener("pointermove", midMove);
+    el.addEventListener("pointerup", midUp);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerdown", noteDown, true);
     el.addEventListener("pointerleave", gone);
@@ -192,6 +221,12 @@ export class AnnotationEditor {
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerdown", noteDown, true);
       el.removeEventListener("pointerleave", gone);
+      window.removeEventListener("keydown", space);
+      window.removeEventListener("keyup", space);
+      window.removeEventListener("blur", blur);
+      el.removeEventListener("pointerdown", midDown);
+      el.removeEventListener("pointermove", midMove);
+      el.removeEventListener("pointerup", midUp);
     });
     // right click, and a long press on touch screens, open the menu of the annotation under the pointer
     const ctx = (ev: MouseEvent) => {
@@ -472,13 +507,16 @@ export class AnnotationEditor {
       }
     }
     if (mod || this.multiMode) {
-      this.session = { kind: "marquee", start: p, cur: p };
+      this.session = { kind: "marquee", start: p, cur: p, additive: true };
       e.preventDefaultAction = true;
       this.consumedPress = true;
       return;
     }
     const sel = this.selected;
-    if (!sel) return;
+    if (!sel) {
+      this.startMarquee(e, p, !!oe?.shiftKey);
+      return;
+    }
     const mode = oe?.altKey ? "erase" : oe?.shiftKey ? "add" : this.brushMode;
     if (mode !== "off" && this.canReshape(sel)) {
       const p0 = clampPoint(p, this.host.image());
@@ -500,7 +538,21 @@ export class AnnotationEditor {
       this.session = { kind: "move", shape: sel, start: p, moved: false };
       e.preventDefaultAction = true;
       this.consumedPress = true;
+      return;
     }
+    this.startMarquee(e, p, !!oe?.shiftKey);
+  }
+
+  /**
+   * A press on nothing that can be edited starts the selection frame (a plain click inside it selects what is under
+   * the pointer). The image is moved with Space + drag, the middle button, a track pad swipe or on a touch screen, where
+   * a finger always moves the image.
+   */
+  private startMarquee(e: Ev, p: Pt, additive: boolean): void {
+    if (this.isTouch(e) || this.spaceDown || (e as unknown as { originalEvent?: MouseEvent }).originalEvent?.button === 1) return;
+    this.session = { kind: "marquee", start: p, cur: p, additive };
+    e.preventDefaultAction = true;
+    this.consumedPress = true;
   }
 
   private drag(e: Ev): void {
@@ -582,14 +634,16 @@ export class AnnotationEditor {
       const tiny = dist(s.start, s.cur) * this.zoom() < 4;
       if (tiny) {
         const hit = hitShape(this.host.shapes(), s.start, this.tol(this.touch ? "touch" : "mouse"));
-        if (hit) this.toggle(hit.id);
-        else this.refresh();
+        if (hit && s.additive) this.toggle(hit.id);
+        else if (s.additive) this.refresh();
+        else this.select(hit?.id ?? null);
         return;
       }
       const [x0, y0, x1, y1] = boxBetween(s.start, s.cur);
       const inside = this.host.shapes().filter((q) => q.bbox[2] >= x0 && q.bbox[0] <= x1 && q.bbox[3] >= y0 && q.bbox[1] <= y1);
       const now = this.group.length > 1 ? this.group : this.selectedId !== null ? [this.selectedId] : [];
-      this.selectGroup([...now, ...inside.map((q) => q.id)]);
+      // a frame selects what it touches (one annotation: that one, several: a group); Shift / Ctrl / ⌘ adds to the selection
+      this.selectGroup([...(s.additive ? now : []), ...inside.map((q) => q.id)]);
       return;
     }
     if (s.kind === "groupmove") {
