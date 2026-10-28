@@ -15,8 +15,6 @@ export interface ToolboxProps {
   /** the selected annotation as it is now (while it is being dragged: the preview) */
   selected: Shape | null;
   selectedType: PaletteEntry | null;
-  /** the signed-in user verified the selected annotation */
-  verified: boolean;
   selectedVertex: number | null;
   draftPoints: number;
   /** scissors / glue / knife in progress */
@@ -40,7 +38,6 @@ export interface ToolboxProps {
     cancel(): void;
     remove(): void;
     removeVertex(): void;
-    verify(v: boolean): void;
     changeType(typeId: number): void;
     toggleGlobal(typeId: number): void;
     undo(): void;
@@ -68,7 +65,7 @@ const swatch = (c?: string) => <span className="swatch" style={{ background: c }
 
 /**
  * The tools follow the context. One row: Select / Draw, the type list (a drop-down: image sets have many types), and what
- * fits the situation: how to draw the chosen type, or, for a selected annotation, its type, area, verification, reshaping
+ * fits the situation: how to draw the chosen type, or, for a selected annotation, its type, area, reshaping
  * and delete. Large touch targets; on narrow screens the row wraps.
  */
 export function Toolbox(p: ToolboxProps) {
@@ -146,9 +143,6 @@ export function Toolbox(p: ToolboxProps) {
             <span className="dd-label">{p.selectedType?.name ?? `type ${sel.typeId}`}</span>
           </Dropdown>
           <Measure shape={sel} mpp={p.imageMpp} />
-          <button className={`btn ${p.verified ? "primary" : ""}`} onClick={() => p.on.verify(!p.verified)} title={p.verified ? "You verified this annotation: click to take it back" : "Verify this annotation"}>
-            {p.verified ? "Verified ✓" : "Verify"}
-          </button>
           {p.reshapable && (
             <Dropdown className="reshape-dd" name="reshape" items={reshape} onPick={pickReshape} title="Reshape the polygon: paint area on or off, cut, merge, split">
               Reshape

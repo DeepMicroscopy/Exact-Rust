@@ -204,3 +204,16 @@ dl.info { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; 
 dl.info dt { color: var(--muted); font-size: 0.85rem; }
 dl.info dd { margin: 0; overflow-wrap: anywhere; }
 .toast.ok { border-color: #2b6a3b; background: rgba(18, 40, 26, 0.96); }
+
+/* ---- crop origin, pointer position, movie playback ---------------------------------------------------------------- */
+.origin { font-size: 0.85rem; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.origin a:not(.btn) { color: var(--text); text-decoration: underline; }
+.origin .btn { padding: 4px 10px; font-size: 0.82rem; }
+.cursor-pos { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.viewer-foot .play { position: relative; display: inline-flex; }
+.play-btn { min-width: 44px; min-height: 36px; padding: 6px 12px; }
+.fps-menu { position: fixed; min-width: 150px; }
+.fps-menu > button { display: flex; justify-content: space-between; }
+.fps-title { padding: 4px 10px 6px; }
+.fps-custom { display: flex; gap: 6px; padding: 6px 4px 2px; }
+.fps-custom input { width: 80px; background: var(--glass); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; }

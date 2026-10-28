@@ -26,12 +26,12 @@ def make(c, **kw):
     return r.json()
 
 
-def test_create_returns_v2_shape_and_is_verified_by_creator():
+def test_create_returns_v2_shape_and_is_not_verified():
     c = client()
     a = make(c, description="hello", meta_data={"k": 1})
     assert a["vector"] == BB and a["description"] == "hello" and a["meta_data"] == {"k": 1}
     assert a["deleted"] is False and a["last_edit_time"].endswith("Z") or "+00:00" in a["last_edit_time"]
-    assert a["verified_by_user"] is True
+    assert a["verified_by_user"] is False  # writing does not verify
     assert c.get(f"/api/v2/annotations/{a['id']}").json()["id"] == a["id"]
 
 

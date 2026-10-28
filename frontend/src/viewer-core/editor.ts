@@ -25,6 +25,7 @@ import {
   type Pt,
 } from "./geometry";
 import { capsule, difference, simplify, split, tidy, union, type Ring } from "./polyops";
+import { formatArea, formatLength, measureShape } from "./measure";
 import { toShape } from "./shapes";
 import { VectorType, type Shape } from "./types";
 
@@ -50,7 +51,7 @@ export interface EditorHost {
   /** annotations that are shown (hidden types left out) */
   shapes(): Shape[];
   type(id: number): TypeInfo | undefined;
-  image(): { width: number; height: number };
+  image(): { width: number; height: number; mpp: number };
   onCreate(typeId: number, vector: Record<string, number>): void;
   onUpdate(shape: Shape, vector: Record<string, number>): void;
   onDelete(shape: Shape): void;
@@ -94,7 +95,7 @@ const ringOf = (s: Shape): Ring => s.points.map((q) => [...q] as Pt);
 
 function reshape(base: Shape, box: Box | null, points: Pt[] | null): Shape {
   const v = box ? boxVector(box) : vectorOf(points ?? base.points);
-  return { ...(toShape(base.id, base.typeId, base.vectorType, base.closed, v) as Shape), verified: base.verified };
+  return toShape(base.id, base.typeId, base.vectorType, base.closed, v) as Shape;
 }
 
 /**
@@ -671,6 +672,13 @@ export class AnnotationEditor {
     o.selectedId = this.selectedId;
     o.selectedVertex = this.selectedVertex;
     o.preview = this.preview;
+    if (this.preview) {
+      // what the shape measures while it is edited, shown in the middle of what is visible of it
+      const m = measureShape(this.preview);
+      const mpp = this.host.image().mpp;
+      const text = m.areaPx2 != null ? formatArea(m.areaPx2, mpp) : m.lengthPx != null ? formatLength(m.lengthPx, mpp) : null;
+      if (text) o.label = { text, box: this.preview.bbox };
+    }
     if (shown && this.tool.kind === "select" && this.session?.kind !== "brush") o.handles = this.editableHandles(shown);
     if (this.draft) {
       const info = this.host.type(this.draft.typeId);

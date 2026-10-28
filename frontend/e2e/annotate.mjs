@@ -135,7 +135,7 @@ try {
   await admin.mouse.up();
   let list = await waitFor(async () => ((await annotations(admin)).length === before + 1 ? await annotations(admin) : null), "the box was saved");
   const box = list.at(-1);
-  check(Math.abs(box.vector.x1 - 800) < 12 && Math.abs(box.vector.y2 - 1300) < 12 && box.verified_by_user === true, `box drawn by drag (${JSON.stringify(box.vector)}), verified by its creator`);
+  check(Math.abs(box.vector.x1 - 800) < 12 && Math.abs(box.vector.y2 - 1300) < 12 && box.verified_by_user === false, `box drawn by drag (${JSON.stringify(box.vector)}); writing does not verify it`);
   await admin.screenshot({ path: shots ? `${shots}/a1-drawn.png` : undefined });
 
   // click selects it; a handle resizes, the body moves
@@ -183,9 +183,9 @@ try {
   await admin.evaluate(() => window.__viewer.viewport.goHome(true));
   await admin.waitForTimeout(400);
 
-  // verify toggles; Delete removes; Ctrl+Z restores; Ctrl+Shift+Z deletes again
-  await admin.locator(".toolbox .selection .btn", { hasText: "Verified" }).click();
-  await waitFor(async () => (await annotations(admin)).find((x) => x.id === box.id).verified_by_user === false, "un-verify");
+  // there is no verification in the tools for now
+  check((await admin.locator(".toolbox .btn", { hasText: /Verif/ }).count()) === 0, "the tool bar has no verify button");
+  // Delete removes; Ctrl+Z restores; Ctrl+Shift+Z deletes again
   await admin.keyboard.press("Delete");
   await waitFor(async () => !(await annotations(admin)).some((x) => x.id === box.id), "Delete removed the annotation");
   await admin.keyboard.press("Control+z");
@@ -375,7 +375,7 @@ try {
   await admin.waitForSelector(".modal");
   await admin.waitForFunction(() => !document.querySelector(".modal dl.info")?.textContent.includes("…"), null, { timeout: 8000 }).catch(() => null);
   const infoText = await admin.locator(".modal dl.info").innerText();
-  check(infoText.includes("rt_teamadmin") && infoText.includes("Created by") && infoText.includes("Bounding box") && infoText.includes("px²"), `Info shows who created it, when, its type and area (${infoText.replace(/\s+/g, " ")})`);
+  check(infoText.includes("rt_teamadmin") && infoText.includes("Created by") && !infoText.includes("Verified") && infoText.includes("Bounding box") && infoText.includes("px²"), `Info shows who created it, when, its type and area (${infoText.replace(/\s+/g, " ")})`);
   await admin.keyboard.press("Escape");
   check((await admin.locator(".modal").count()) === 0, "Escape closes the dialog");
   // change class within compatible shapes
@@ -384,10 +384,22 @@ try {
   const classes = await admin.locator(".ctx-sub .dd-item").allInnerTexts();
   check(classes.some((c) => c.includes("Annotation")) && classes.some((c) => c.includes("2.25mm")) && !classes.some((c) => c.includes("e2e polygon")), `Change class offers the compatible types only (${classes.join(" | ").replace(/\n/g, " ")})`);
   await admin.locator(".ctx-sub .dd-item", { hasText: "2.25mm" }).click();
-  await waitFor(async () => (await annotations(admin)).find((x) => x.id === box.id).annotation_type !== boxNow.annotation_type, "the class changed");
+  // bounding box -> fixed-size box changes the size: the user is asked
+  await admin.waitForSelector(".modal");
+  check((await admin.locator(".modal").innerText()).includes("fixed size") && (await admin.locator(".modal").innerText()).includes("500 × 400 px"), "changing to a fixed-size type asks whether to resize");
   check((await admin.locator(".ctx").count()) === 0, "the menu closes after the choice");
+  await admin.locator(".modal .btn", { hasText: "Keep the class" }).click();
+  await admin.waitForTimeout(500);
+  check((await annotations(admin)).find((x) => x.id === box.id).annotation_type === boxNow.annotation_type, "\"Keep the class\" leaves the annotation alone");
+  await admin.mouse.click(boxC.x, boxC.y, { button: "right" });
+  await admin.locator(".ctx > button", { hasText: "Change class" }).click();
+  await admin.locator(".ctx-sub .dd-item", { hasText: "2.25mm" }).click();
+  await admin.locator(".modal .btn.primary").click();
+  const resized = await waitFor(async () => { const a = (await annotations(admin)).find((x) => x.id === box.id); return a.annotation_type !== boxNow.annotation_type ? a : null; }, "the class changed after confirming");
+  const [cx0, cy0] = [(boxNow.vector.x1 + boxNow.vector.x2) / 2, (boxNow.vector.y1 + boxNow.vector.y2) / 2];
+  check(resized.vector.x2 - resized.vector.x1 === 2 && Math.abs((resized.vector.x1 + resized.vector.x2) / 2 - cx0) <= 1 && Math.abs((resized.vector.y1 + resized.vector.y2) / 2 - cy0) <= 1, `...and resized it around its centre (${JSON.stringify(resized.vector)})`);
   await admin.keyboard.press("Control+z");
-  await waitFor(async () => (await annotations(admin)).find((x) => x.id === box.id).annotation_type === boxNow.annotation_type, "undo changes the class back");
+  await waitFor(async () => { const a = (await annotations(admin)).find((x) => x.id === box.id); return a.annotation_type === boxNow.annotation_type && JSON.stringify(a.vector) === JSON.stringify(boxNow.vector); }, "undo restores the class and the size");
   // a polygon has no other class to change to
   const polyNow2 = (await annotations(admin)).find((x) => x.id === poly.id);
   const pc = await screenOf(admin, 2300, 1500);
@@ -413,6 +425,25 @@ try {
   const mine = crops.find((c) => c.crop_source === IMAGE && c.crop_x === boxNow.vector.x1 && c.crop_y === boxNow.vector.y1);
   check(mine && mine.width === boxNow.vector.x2 - boxNow.vector.x1 && mine.height === boxNow.vector.y2 - boxNow.vector.y1 && mine.image_set !== SET, "the crop is a new image in a new image set, with the size of the annotation");
   const cropSet = mine.image_set;
+  // the crop knows where it comes from: the top bar says so and leads back to the original
+  const tab = await desktop.newPage();
+  await tab.goto(`${base}/images/${mine.id}`);
+  await tab.waitForSelector(".origin");
+  const originText = await tab.locator(".origin").innerText();
+  check(originText.includes("Crop of") && originText.includes(`(${boxNow.vector.x1}, ${boxNow.vector.y1})`) && originText.includes("Show in original"), `a crop shows where it comes from (${originText.replace(/\s+/g, " ")})`);
+  await tab.waitForFunction(() => window.__viewer?.world.getItemCount() > 0);
+  await tab.waitForTimeout(800);
+  const pos = await tab.evaluate(() => { const v = window.__viewer; const r = v.canvas.getBoundingClientRect(); return { x: r.left + r.width * 0.6, y: r.top + r.height * 0.4 }; });
+  await tab.mouse.move(pos.x, pos.y);
+  await tab.waitForTimeout(300);
+  check((await tab.locator(".cursor-pos").innerText()).includes("original"), `the pointer position is also given in the original's coordinates (${(await tab.locator(".cursor-pos").innerText()).replace(/\s+/g, " ")})`);
+  await tab.locator(".origin .btn", { hasText: "Show in original" }).click();
+  await tab.waitForURL(`**/images/${IMAGE}?region=*`);
+  await tab.waitForFunction(() => window.__viewer?.world.getItemCount() > 0);
+  await tab.waitForTimeout(1500);
+  const zoomed = await tab.evaluate(() => window.__viewer.viewport.getZoom(true) > window.__viewer.viewport.getHomeZoom() * 1.5);
+  check(zoomed, "\"Show in original\" opens the original zoomed to the cropped region");
+  await tab.close();
   // the same crop again into the same set is refused, with a way to open the existing one
   await admin.mouse.click(boxC.x, boxC.y, { button: "right" });
   await admin.locator(".ctx > button", { hasText: "Crop to new image" }).click();

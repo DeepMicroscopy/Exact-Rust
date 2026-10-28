@@ -130,6 +130,24 @@ try {
   await waitPainted("video frame 101 renders");
   check((await page.locator(".viewer-foot").innerText()).includes("101 / 215"), "movie: frame label follows the slider");
   await shot("6-video");
+  // play / pause on the left of the slider, right click chooses the speed
+  check((await page.locator(".viewer-foot .play-btn").count()) === 1, "movie: a play button sits next to the frame slider");
+  const f0 = await page.locator(".viewer-foot .time-current").innerText();
+  await page.locator(".viewer-foot .play-btn").click();
+  await page.waitForTimeout(1200);
+  const f1 = await page.locator(".viewer-foot .time-current").innerText();
+  check(f1 !== f0, `movie: playing advances the frames (${f0.replace(/\s+/g, " ")} -> ${f1.replace(/\s+/g, " ")})`);
+  check((await page.locator(".viewer-foot .play-btn").getAttribute("aria-label")) === "Pause", "movie: the button becomes Pause while playing");
+  await page.locator(".viewer-foot .play-btn").click();
+  const p1 = await page.locator(".viewer-foot .time-current").innerText();
+  await page.waitForTimeout(600);
+  check((await page.locator(".viewer-foot .time-current").innerText()) === p1, "movie: pausing stops at the current frame");
+  await page.locator(".viewer-foot .play-btn").click({ button: "right" });
+  await page.waitForSelector(".fps-menu");
+  const items = await page.locator(".fps-menu button[role=menuitemradio]").allInnerTexts();
+  check(items.some((t) => t.includes("Movie's own")) && items.some((t) => t.trim().startsWith("24")), `movie: right click offers the movie's own speed and presets (${items.length} entries)`);
+  await page.locator(".fps-menu button", { hasText: /^1\s*$/ }).first().click();
+  check((await page.locator(".viewer-foot .play-btn").getAttribute("title")).includes("1 frames per second"), "movie: a chosen speed is in use");
 
   check(errors.length === 0, "no console errors: " + errors.join(" | "));
 } finally {

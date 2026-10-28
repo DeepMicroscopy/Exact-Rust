@@ -22,13 +22,6 @@ interface Detail {
   annotation_type: number;
 }
 
-interface Verification {
-  id: number;
-  time: string;
-  verified: boolean;
-  user: UserRef | number | null;
-}
-
 const KINDS: Record<number, string> = {
   [VectorType.BoundingBox]: "Bounding box",
   [VectorType.Point]: "Point",
@@ -43,17 +36,12 @@ const KINDS: Record<number, string> = {
 const who = (u: UserRef | number | null) => (u == null ? "unknown (e.g. a plugin)" : typeof u === "number" ? `user ${u}` : u.username);
 const when = (iso?: string) => (iso ? new Date(iso).toLocaleString() : "–");
 
-/** Who made an annotation, when, how big it is, who verified it. */
+/** Who made an annotation, when, how big it is. */
 export function AnnotationInfo({ shape, typeName, typeColor, mpp, onClose }: { shape: Shape; typeName: string; typeColor?: string; mpp: number; onClose(): void }) {
   const detail = useQuery({ queryKey: ["annotation-info", shape.id], queryFn: () => api<Detail>(`/api/v2/annotations/${shape.id}?expand=user,last_editor`) });
-  const verifications = useQuery({
-    queryKey: ["annotation-verifications", shape.id],
-    queryFn: () => api<{ items: Verification[] }>(`/api/v2/verifications?annotation=${shape.id}&expand=user&limit=200`),
-  });
   const m = measureShape(shape);
   const [x1, y1, x2, y2] = shape.bbox.map(Math.round);
   const d = detail.data;
-  const yes = (verifications.data?.items ?? []).filter((v) => v.verified);
   return (
     <Modal title="Annotation info" onClose={onClose}>
       <dl className="info">
@@ -87,8 +75,6 @@ export function AnnotationInfo({ shape, typeName, typeColor, mpp, onClose }: { s
         <dd>{detail.isLoading ? "…" : who(d?.last_editor ?? null)}</dd>
         <dt>Last edited</dt>
         <dd>{detail.isLoading ? "…" : when(d?.last_edit_time)}</dd>
-        <dt>Verified by</dt>
-        <dd>{verifications.isLoading ? "…" : yes.length === 0 ? <span className="muted">nobody yet</span> : yes.map((v) => `${who(v.user)} (${when(v.time)})`).join(", ")}</dd>
         {d?.description ? (
           <>
             <dt>Description</dt>

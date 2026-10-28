@@ -133,6 +133,11 @@ fn drop_inconsistent_levels(levels: &mut Vec<Page>, cache: &tiff::ChunkCache) {
 }
 
 impl Slide for GenericTiff {
+    /// The pyramids of these files come from many generators (Bio-Formats, vips, ImageMagick, ...); several shift the lower
+    /// levels by a fraction of a pixel, which shows as wobble when zooming. The shift is measured once and corrected.
+    fn needs_registration(&self) -> bool {
+        true
+    }
     fn level_dimensions(&self) -> Vec<(u64, u64)> {
         self.dims.clone()
     }

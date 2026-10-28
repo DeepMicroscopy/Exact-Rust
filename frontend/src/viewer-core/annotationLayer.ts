@@ -12,6 +12,8 @@ export interface Overlay {
   draft: { points: Pt[]; closed: boolean; cursor: Pt | null; color: string } | null;
   /** outline of the annotation a click would place (fixed-size types, one-click mode) */
   ghost: { box: Box; color: string } | null;
+  /** a measurement shown in the middle of the visible part of a box (image pixels) while a shape is edited */
+  label: { text: string; box: Box } | null;
   /** the brush ring following the pointer (radius in image pixels) */
   brush: { at: Pt; r: number; erase: boolean } | null;
   /** further pieces a brush stroke or an operation would leave */
@@ -19,7 +21,7 @@ export interface Overlay {
   touch: boolean;
 }
 
-export const EMPTY_OVERLAY: Overlay = { selectedId: null, selectedVertex: null, preview: null, handles: [], draft: null, ghost: null, brush: null, extra: null, touch: false };
+export const EMPTY_OVERLAY: Overlay = { selectedId: null, selectedVertex: null, preview: null, handles: [], draft: null, ghost: null, label: null, brush: null, extra: null, touch: false };
 
 /** Canvas on top of an OpenSeadragon viewer: draws annotations (culled to the viewport) and the editor's overlay. */
 export class AnnotationLayer {
@@ -28,6 +30,8 @@ export class AnnotationLayer {
   private styles = new Map<number, TypeStyle>();
   private hidden = new Set<number>();
   private overlay: Overlay = EMPTY_OVERLAY;
+  /** a region of the image to point out (a crop's place in its original), dashed white */
+  private mark: Box | null = null;
   private raf = 0;
 
   constructor(private viewer: OpenSeadragon.Viewer) {
@@ -49,6 +53,11 @@ export class AnnotationLayer {
 
   setHiddenTypes(hidden: Set<number>): void {
     this.hidden = hidden;
+    this.schedule();
+  }
+
+  setMark(box: Box | null): void {
+    this.mark = box;
     this.schedule();
   }
 
@@ -111,6 +120,15 @@ export class AnnotationLayer {
       if (s.closed) ctx.closePath();
     };
 
+    if (this.mark) {
+      const [a, b] = [toPx(this.mark[0], this.mark[1]), toPx(this.mark[2], this.mark[3])];
+      ctx.setLineDash([10, 6]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+      ctx.setLineDash([]);
+    }
+
     for (const committed of this.shapes) {
       if (this.hidden.has(committed.typeId)) continue;
       const s = o.preview && o.preview.id === committed.id ? o.preview : committed;
@@ -120,7 +138,6 @@ export class AnnotationLayer {
       const selected = s.id === o.selectedId;
       trace(s);
       ctx.lineWidth = selected ? 3 : 2;
-      ctx.setLineDash(s.verified === false ? [7, 4] : []);
       ctx.strokeStyle = color;
       ctx.fillStyle = color + (selected ? "44" : "26");
       if (s.closed || s.vectorType === VectorType.Point) ctx.fill();
@@ -207,6 +224,25 @@ export class AnnotationLayer {
       ctx.fill();
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+
+    if (o.label) {
+      const [a, b] = [toPx(o.label.box[0], o.label.box[1]), toPx(o.label.box[2], o.label.box[3])];
+      const [vx0, vy0] = [Math.max(0, Math.min(a[0], b[0])), Math.max(0, Math.min(a[1], b[1]))];
+      const [vx1, vy1] = [Math.min(w, Math.max(a[0], b[0])), Math.min(h, Math.max(a[1], b[1]))];
+      if (vx1 > vx0 && vy1 > vy0) {
+        ctx.font = "600 13px system-ui, sans-serif";
+        const tw = ctx.measureText(o.label.text).width;
+        const [cx, cy] = [(vx0 + vx1) / 2, (vy0 + vy1) / 2];
+        ctx.fillStyle = "rgba(10,10,16,0.78)";
+        ctx.beginPath();
+        ctx.roundRect(cx - tw / 2 - 8, cy - 12, tw + 16, 24, 7);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(o.label.text, cx, cy + 0.5);
+      }
     }
 
     // handles of the selected annotation

@@ -28,6 +28,11 @@ export interface ImageSummary {
   depth: number;
   image_set: number;
   mpp?: number;
+  /** set for crops: the image they were cut from and the position (and frame) of the crop in it */
+  crop_source?: number | null;
+  crop_x?: number | null;
+  crop_y?: number | null;
+  crop_frame?: number | null;
 }
 
 export interface AnnotationType {
@@ -52,8 +57,6 @@ export interface Annotation {
   vector: Vector | null;
   image: number;
   last_edit_time?: string;
-  /** whether the signed-in user verified it */
-  verified_by_user?: boolean;
   deleted?: boolean;
   unique_identifier?: string;
 }

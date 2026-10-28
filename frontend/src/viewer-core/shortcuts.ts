@@ -12,6 +12,7 @@ export type Action =
   | { type: "toggleAnnotations" } // Y
   | { type: "toggleOneClick" } // A (new): every click places an annotation of the type's size
   | { type: "polyOp"; op: "scissors" | "glue" | "knife" } // S, G, D: cut away, add, split the selected polygon
+  | { type: "play" } // Space: play / pause a movie
   | { type: "undo" }
   | { type: "redo" }
   | { type: "nextImage" } // E
@@ -41,6 +42,8 @@ export function matchShortcut(e: KeyLike): Action | null {
       return e.shiftKey ? null : { type: "finish" };
     case "Escape":
       return { type: "cancel" };
+    case " ":
+      return e.shiftKey ? null : { type: "play" };
     case "Delete":
     case "Backspace":
     case "x":

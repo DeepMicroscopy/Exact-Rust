@@ -207,6 +207,9 @@ impl Slide for Mkt {
     fn frame_count(&self) -> u32 {
         self.offsets.len() as u32
     }
+    fn frame_rate(&self) -> Option<f64> {
+        (self.fps > 0.0).then_some(self.fps)
+    }
     fn frame_kind(&self) -> crate::FrameKind {
         crate::FrameKind::TimeSeries
     }

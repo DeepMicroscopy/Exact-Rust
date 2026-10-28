@@ -49,6 +49,9 @@ describe("shortcuts of the old UI", () => {
     expect(key("-")).toEqual({ type: "zoom", factor: 0.8 });
     expect(key("=")).toEqual({ type: "zoom", factor: 1.25 });
   });
+  it("Space plays and pauses", () => {
+    expect(key(" ", { code: "Space" })).toEqual({ type: "play" });
+  });
   it("Alt combinations belong to the browser", () => {
     expect(key("c", { altKey: true })).toBeNull();
   });

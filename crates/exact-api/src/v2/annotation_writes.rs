@@ -1,6 +1,8 @@
 //! `/api/v2` annotation writes, the API of the new viewer. Authority is the image set permission (`annotate`,
 //! `edit_annotation`, `delete_annotation`, `verify`); the Django model permissions are not consulted.
 //!
+//! Writing an annotation does not verify it (verification is a separate act; the old UI's auto-verification is gone).
+//!
 //! - `POST /api/v2/annotations`: create; an existing `unique_identifier` on the image answers 200 with that annotation
 //!   (a client can retry safely); a global annotation (vector type 7) is created once per image/type (and user).
 //! - `PATCH /api/v2/annotations/{id}`: partial update; `expected_last_edit_time` makes it conditional (409 with the
@@ -146,7 +148,6 @@ pub async fn create_h(
         },
     )
     .await?;
-    verify(&mut tx, id, p.user.id, true).await?;
     tx.commit().await.map_err(db_err)?;
     Ok((StatusCode::CREATED, Json(one(&s, &p, &headers, id).await?)).into_response())
 }
@@ -239,9 +240,6 @@ pub async fn patch_h(
     .execute(&mut *tx)
     .await
     .map_err(db_err)?;
-    if d.contains_key("vector") {
-        verify(&mut tx, id, p.user.id, true).await?;
-    }
     tx.commit().await.map_err(db_err)?;
     Ok(Json(one(&s, &p, &headers, id).await?).into_response())
 }

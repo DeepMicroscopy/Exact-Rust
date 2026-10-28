@@ -232,6 +232,9 @@ impl Slide for Video {
     fn frame_kind(&self) -> crate::FrameKind {
         crate::FrameKind::TimeSeries
     }
+    fn frame_rate(&self) -> Option<f64> {
+        (self.fps > 0.0).then_some(self.fps)
+    }
     fn frame_labels(&self) -> Vec<String> {
         self.frame_descriptors()
     }

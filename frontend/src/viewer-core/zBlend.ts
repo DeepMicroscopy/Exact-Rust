@@ -26,6 +26,8 @@ export class ZBlender {
   private pos = 0;
   private dead = false;
   private ready = false;
+  /** how many planes after the current one are loaded ahead (more while a movie plays) */
+  ahead = 2;
 
   constructor(
     private viewer: OpenSeadragon.Viewer,
@@ -51,7 +53,9 @@ export class ZBlender {
 
   private wanted(): number[] {
     const base = Math.floor(this.pos);
-    return [base - 1, base, base + 1, base + 2].filter((f) => f >= 0 && f < this.frames);
+    const out: number[] = [base - 1];
+    for (let i = 0; i <= this.ahead; i++) out.push(base + i);
+    return out.filter((f) => f >= 0 && f < this.frames);
   }
 
   private update(): void {

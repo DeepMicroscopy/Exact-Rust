@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import OpenSeadragon from "openseadragon";
 import { api, listAll } from "../api/client";
@@ -19,6 +19,8 @@ import { TimeSlider, ZSlider } from "../components/FrameControls";
 import { Toolbox } from "../components/Toolbox";
 import { AnnotationInfo } from "../components/AnnotationInfo";
 import { ConfirmDelete } from "../components/ConfirmDelete";
+import { ConfirmResize } from "../components/ConfirmResize";
+import { boxVector, centeredBox, isBoxType } from "../viewer-core/geometry";
 import { ContextMenu } from "../components/ContextMenu";
 import { CropDialog } from "../components/CropDialog";
 import { VectorType, type Shape, type TypeStyle } from "../viewer-core/types";
@@ -32,6 +34,8 @@ interface Meta {
   issues?: string[];
   frame_kind?: FrameKind;
   frame_labels?: string[];
+  /** frames per second of a movie, when the file says */
+  frame_rate?: number | null;
   z_range?: ZRange | null;
   planes: { plane: number; name: string; frames: number; frame_descriptors: string[] }[] | null;
 }
@@ -56,6 +60,7 @@ const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) /
 
 export function ViewerPage() {
   const { imageId } = useParams();
+  const [search] = useSearchParams();
   const id = Number(imageId);
   const navigate = useNavigate();
   const host = useRef<HTMLDivElement>(null);
@@ -64,6 +69,7 @@ export function ViewerPage() {
   const blenderRef = useRef<ZBlender | null>(null);
   const [pos, setPosState] = useState(0); // (fractional) frame position
   const posRef = useRef(0);
+  const frameFor = useRef<number | null>(null);
   const anim = useRef(0);
   const [plane, setPlane] = useState(0);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
@@ -71,7 +77,7 @@ export function ViewerPage() {
 
   const image = useQuery({
     queryKey: ["image", id],
-    queryFn: () => api<ImageSummary>(`/api/v2/images/${id}?fields=id,name,width,height,frames,depth,image_set,mpp`),
+    queryFn: () => api<ImageSummary>(`/api/v2/images/${id}?fields=id,name,width,height,frames,depth,image_set,mpp,crop_source,crop_x,crop_y,crop_frame`),
   });
   const meta = useQuery({ queryKey: ["image-meta", id], queryFn: () => api<Meta>(`/api/v2/images/${id}/metadata`) });
   const types = useQuery({
@@ -97,8 +103,10 @@ export function ViewerPage() {
   const [currentTypeId, setCurrentTypeId] = useState<number | null>(null);
   const [polyOp, setPolyOp] = useState<PolyOp | null>(null);
   const [menu, setMenu] = useState<{ shape: Shape; x: number; y: number } | null>(null);
-  const [dialog, setDialog] = useState<{ kind: "info" | "crop" | "delete"; shape: Shape } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "info" | "crop" | "delete" | "resize"; shape: Shape; typeId?: number } | null>(null);
   const [cropped, setCropped] = useState<{ id: number } | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [fpsOverride, setFpsOverride] = useState<number | null>(null);
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [sideOpen, setSideOpen] = useState(() => window.innerWidth >= 760);
@@ -116,6 +124,12 @@ export function ViewerPage() {
   }, []);
 
   const mpp = image.data?.mpp ?? 0;
+  const original = useQuery({
+    queryKey: ["image-name", image.data?.crop_source],
+    enabled: image.data?.crop_source != null,
+    queryFn: () => api<{ id: number; name: string }>(`/api/v2/images/${image.data!.crop_source}?fields=id,name`),
+  });
+  const [cursor, setCursor] = useState<[number, number] | null>(null);
   const allEntries = useMemo(() => buildPalette(types.data ?? [], mpp), [types.data, mpp]);
   const palette: PaletteEntry[] = useMemo(() => {
     const products = new Set(imageSet.data?.product_set ?? []);
@@ -154,7 +168,7 @@ export function ViewerPage() {
       const t = styles.get(a.annotation_type);
       if (!t) continue;
       const s = toShape(a.id, a.annotation_type, t.vectorType, t.closed, a.vector);
-      if (s) out.push({ ...s, verified: a.verified_by_user !== false });
+      if (s) out.push(s);
     }
     return out;
   }, [annotations.data, styles]);
@@ -166,7 +180,7 @@ export function ViewerPage() {
     () => ({
       shapes: () => hostState.current.shapes.filter((s) => s.id > 0 && !hostState.current.hiddenAll.has(s.typeId)),
       type: (tid) => hostState.current.info(tid),
-      image: () => ({ width: hostState.current.image?.width ?? 1, height: hostState.current.image?.height ?? 1 }),
+      image: () => ({ width: hostState.current.image?.width ?? 1, height: hostState.current.image?.height ?? 1, mpp: hostState.current.image?.mpp ?? 0 }),
       onCreate: (tid, v) => void hostState.current.actions.create(tid, v),
       onUpdate: (s, v) => void hostState.current.actions.update(s.id, v),
       onDelete: (s) => void hostState.current.actions.remove(s.id),
@@ -214,6 +228,7 @@ export function ViewerPage() {
   );
   const onSlider = useCallback(
     (v: number) => {
+      setPlaying(false);
       cancelAnimationFrame(anim.current);
       setPos(v);
     },
@@ -248,6 +263,21 @@ export function ViewerPage() {
     layerRef.current = layer;
     const editor = new AnnotationEditor(viewer, layer, hostProxy(editorHostRef));
     editorRef.current = editor;
+    // pixel under the pointer (and, for a crop, in the original)
+    let moveRaf = 0;
+    const onMove = (ev: PointerEvent) => {
+      cancelAnimationFrame(moveRaf);
+      moveRaf = requestAnimationFrame(() => {
+        const item = viewer.world.getItemCount() ? viewer.world.getItemAt(0) : null;
+        const r = (viewer.canvas as HTMLElement).getBoundingClientRect();
+        if (!item) return;
+        const p = item.viewerElementToImageCoordinates(new OpenSeadragon.Point(ev.clientX - r.left, ev.clientY - r.top));
+        setCursor([Math.round(p.x), Math.round(p.y)]);
+      });
+    };
+    const onLeave = () => setCursor(null);
+    (viewer.canvas as HTMLElement).addEventListener("pointermove", onMove);
+    (viewer.canvas as HTMLElement).addEventListener("pointerleave", onLeave);
     (window as unknown as { __editor?: AnnotationEditor }).__editor = editor; // used by the e2e tests
     // the container may be laid out after the viewer was created; keep OSD's idea of its size current
     const el = host.current;
@@ -262,6 +292,7 @@ export function ViewerPage() {
     return () => {
       ro.disconnect();
       cancelAnimationFrame(anim.current);
+      cancelAnimationFrame(moveRaf);
       editor.destroy();
       layer.destroy();
       viewer.destroy();
@@ -278,9 +309,23 @@ export function ViewerPage() {
     setError(null);
     const blender = new ZBlender(viewer, frames, (f) => loadTileSource(id, z, f), {
       blend,
-      onReady: () => viewer.viewport.goHome(true),
+      onReady: () => {
+        viewer.viewport.goHome(true);
+        // opened from a crop: show where it lies in this image
+        const region = search.get("region")?.split(",").map(Number);
+        const item = viewer.world.getItemAt(0);
+        if (region?.length === 4 && region.every(Number.isFinite) && item) {
+          const [rx, ry, rw, rh] = region;
+          const pad = Math.max(rw, rh) * 0.35;
+          viewer.viewport.fitBounds(item.imageToViewportRectangle(rx - pad, ry - pad, rw + 2 * pad, rh + 2 * pad), true);
+          layerRef.current?.setMark([rx, ry, rx + rw, ry + rh]);
+        } else layerRef.current?.setMark(null);
+      },
     });
     blenderRef.current = blender;
+    const wanted = Number(search.get("frame"));
+    if (search.get("frame") && Number.isFinite(wanted) && frameFor.current !== id) posRef.current = wanted; // opened from a crop: its frame
+    frameFor.current = id;
     const start = Math.min(Math.round(posRef.current), Math.max(frames - 1, 0));
     posRef.current = start;
     setPosState(start);
@@ -291,6 +336,43 @@ export function ViewerPage() {
       if (blenderRef.current === blender) blenderRef.current = null;
     };
   }, [id, z, frames, blend, image.data, meta.data]);
+
+  // ---- playing a movie ----------------------------------------------------------------------------------------------
+  const nativeFps = meta.data?.frame_rate ?? null;
+  const fps = fpsOverride ?? nativeFps ?? 10;
+  const togglePlay = useCallback(() => {
+    setPlaying((p) => {
+      if (!p && Math.round(posRef.current) >= frames - 1) setPos(0); // at the end: start again
+      return !p;
+    });
+  }, [frames, setPos]);
+  useEffect(() => {
+    if (blenderRef.current) blenderRef.current.ahead = playing ? 6 : 2; // load further ahead while playing
+    if (!playing) return;
+    let raf = 0;
+    let last = performance.now();
+    let acc = 0;
+    const tick = (now: number) => {
+      acc += now - last;
+      last = now;
+      const ms = 1000 / fps;
+      if (acc >= ms) {
+        const steps = Math.min(Math.floor(acc / ms), 3); // a slow machine drops frames instead of falling behind
+        acc = 0;
+        const next = Math.round(posRef.current) + steps;
+        if (next >= frames - 1) {
+          setPos(frames - 1);
+          setPlaying(false);
+          return;
+        }
+        setPos(next);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, fps, frames, setPos]);
+  useEffect(() => setPlaying(false), [id]);
 
   // ---- keyboard ---------------------------------------------------------------------------------------------------
   const menuOpen = useRef(false);
@@ -323,6 +405,23 @@ export function ViewerPage() {
     const ed = editorRef.current;
     if (ed && ed.tool.kind === "select") setDrawing(false);
   }, []);
+  /** Class change; a change to a fixed-size type that would change the size asks first. */
+  const requestChangeType = useCallback(
+    (shapeId: number, typeId: number) => {
+      const shape = shapes.find((x) => x.id === shapeId);
+      const target = info(typeId);
+      if (shape && target && target.vectorType === VectorType.FixedSizeBoundingBox && isBoxType(shape.vectorType) && target.width && target.height) {
+        const [w, h] = [Math.round(shape.bbox[2] - shape.bbox[0]), Math.round(shape.bbox[3] - shape.bbox[1])];
+        if (Math.abs(w - target.width) >= 1 || Math.abs(h - target.height) >= 1) {
+          setDialog({ kind: "resize", shape, typeId });
+          return;
+        }
+      }
+      void actions.changeType(shapeId, typeId);
+    },
+    [shapes, info, actions],
+  );
+
   const digit = useCallback(
     (n: number, shift: boolean) => {
       if (shift) {
@@ -334,11 +433,11 @@ export function ViewerPage() {
       if (!e) return;
       const sel = editorRef.current?.selected;
       if (sel && !drawing) {
-        if (canConvert(sel.vectorType, e.vectorType)) void actions.changeType(sel.id, e.id);
+        if (canConvert(sel.vectorType, e.vectorType)) requestChangeType(sel.id, e.id);
         else notify(`${e.name} cannot replace the type of this annotation (different shape).`);
       } else startDrawing(e.id);
     },
-    [globals, drawable, drawing, actions, toggleGlobal, startDrawing, notify],
+    [globals, drawable, drawing, requestChangeType, toggleGlobal, startDrawing, notify],
   );
 
   useEffect(() => {
@@ -371,6 +470,12 @@ export function ViewerPage() {
         case "digit":
           ev.preventDefault();
           digit(a.n, a.shift);
+          return;
+        case "play":
+          if (kind === "timeseries" && frames > 1) {
+            ev.preventDefault();
+            togglePlay();
+          }
           return;
         case "toggleDrawing":
           if (drawing) setDrawing(false);
@@ -426,7 +531,7 @@ export function ViewerPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor]);
+  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay]);
 
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
@@ -458,6 +563,24 @@ export function ViewerPage() {
           ← Back
         </Link>
         <span className="viewer-title">{image.data?.name}</span>
+        {image.data?.crop_source != null && image.data.crop_x != null && image.data.crop_y != null && (
+          <span className="origin" title="This image is a crop. Its pixel (0, 0) is the original's pixel (x, y).">
+            Crop of{" "}
+            <Link to={`/images/${image.data.crop_source}?region=${image.data.crop_x},${image.data.crop_y},${image.data.width},${image.data.height}`}>{original.data?.name ?? `image ${image.data.crop_source}`}</Link> at ({image.data.crop_x.toLocaleString("en-US")}, {image.data.crop_y.toLocaleString("en-US")})
+            {" "}
+            <Link className="btn" to={`/images/${image.data.crop_source}?region=${image.data.crop_x},${image.data.crop_y},${image.data.width},${image.data.height}${image.data.crop_frame ? `&frame=${image.data.crop_frame}` : ""}`}>
+              Show in original
+            </Link>
+          </span>
+        )}
+        {cursor && (
+          <span className="cursor-pos muted small" title="Pixel under the pointer">
+            x {cursor[0].toLocaleString("en-US")} · y {cursor[1].toLocaleString("en-US")}
+            {image.data?.crop_source != null && image.data.crop_x != null && image.data.crop_y != null && (
+              <> · original {(cursor[0] + image.data.crop_x).toLocaleString("en-US")}, {(cursor[1] + (image.data.crop_y ?? 0)).toLocaleString("en-US")}</>
+            )}
+          </span>
+        )}
         <span className="spacer" />
         {hasPlanes && (
           <div className="seg">
@@ -540,7 +663,6 @@ export function ViewerPage() {
           currentTypeId={currentTypeId}
           selected={editorRef.current?.shown ?? null}
           selectedType={editorRef.current?.selected ? (info(editorRef.current.selected.typeId) as PaletteEntry | undefined) ?? null : null}
-          verified={editorRef.current?.selected ? (annotations.data ?? []).find((a) => a.id === editorRef.current?.selectedId)?.verified_by_user !== false : false}
           selectedVertex={editorRef.current?.selectedVertex ?? null}
           draftPoints={editorRef.current?.draftPoints ?? 0}
           polyOp={polyOp}
@@ -574,8 +696,7 @@ export function ViewerPage() {
             },
             remove: () => editorRef.current?.deleteSelection(),
             removeVertex: () => editorRef.current?.deleteSelection(),
-            verify: (v) => editorRef.current?.selectedId != null && void actions.verify(editorRef.current.selectedId, v),
-            changeType: (tid) => editorRef.current?.selectedId != null && void actions.changeType(editorRef.current.selectedId, tid),
+            changeType: (tid) => editorRef.current?.selectedId != null && requestChangeType(editorRef.current.selectedId, tid),
             toggleGlobal,
             undo: () => void actions.undo(),
             redo: () => void actions.redo(),
@@ -599,7 +720,7 @@ export function ViewerPage() {
               setMenu(null);
             }}
             onClass={(tid) => {
-              void actions.changeType(menu.shape.id, tid);
+              requestChangeType(menu.shape.id, tid);
               setMenu(null);
             }}
             onCrop={() => {
@@ -613,6 +734,24 @@ export function ViewerPage() {
           />
         )}
         {dialog?.kind === "info" && <AnnotationInfo shape={dialog.shape} typeName={info(dialog.shape.typeId)?.name ?? `type ${dialog.shape.typeId}`} typeColor={info(dialog.shape.typeId)?.color} mpp={mpp} onClose={() => setDialog(null)} />}
+        {dialog?.kind === "resize" && dialog.typeId != null && (() => {
+          const target = info(dialog.typeId);
+          const [w, h] = [Math.round(dialog.shape.bbox[2] - dialog.shape.bbox[0]), Math.round(dialog.shape.bbox[3] - dialog.shape.bbox[1])];
+          const to: [number, number] = [Math.round(target?.width ?? w), Math.round(target?.height ?? h)];
+          return (
+            <ConfirmResize
+              typeName={target?.name ?? `type ${dialog.typeId}`}
+              from={[w, h]}
+              to={to}
+              sizeLabel={(target as PaletteEntry | undefined)?.sizeLabel ?? null}
+              onConfirm={() => {
+                const c: [number, number] = [(dialog.shape.bbox[0] + dialog.shape.bbox[2]) / 2, (dialog.shape.bbox[1] + dialog.shape.bbox[3]) / 2];
+                void actions.changeType(dialog.shape.id, dialog.typeId!, boxVector(centeredBox(c, to[0], to[1], { width: image.data?.width ?? 1, height: image.data?.height ?? 1 })));
+              }}
+              onClose={() => setDialog(null)}
+            />
+          );
+        })()}
         {dialog?.kind === "delete" && (
           <ConfirmDelete
             what={`Delete this ${info(dialog.shape.typeId)?.name ?? "annotation"} (ID ${dialog.shape.id})?`}
@@ -662,7 +801,21 @@ export function ViewerPage() {
           <ZSlider frames={frames} value={pos} onChange={onSlider} labels={labels} zRange={kind === "zstack" ? zRange : null} blend={blend} />
         )}
       </div>
-      {multiFrame && kind === "timeseries" && <TimeSlider frames={frames} value={pos} onChange={onSlider} labels={labels} />}
+      {multiFrame && kind === "timeseries" && (
+        <TimeSlider
+          frames={frames}
+          value={pos}
+          onChange={onSlider}
+          labels={labels}
+          playback={{
+            playing,
+            onPlay: togglePlay,
+            fps,
+            nativeFps,
+            onFps: setFpsOverride,
+          }}
+        />
+      )}
     </div>
   );
 }

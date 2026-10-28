@@ -4,7 +4,8 @@
 //! CZI read through slideio, 0.2-0.8 px between neighbouring levels at every position). Tiles of two zoom levels are
 //! blended while the viewer loads or zooms, so such a shift shows as wobbling. The offsets are measured once per slide
 //! on up to three textured spots (each level against the previous one, chained to level 0), combined (the two closest spots),
-//! applied when tiles are sampled. A level is corrected only when at least two spots agree.
+//! applied when tiles are sampled. A level is corrected only when at least two spots agree. Each level is compared with the
+//! level below reduced by a box filter: an integer search, then a gradient-based refinement for the fractional part.
 
 use crate::Slide;
 
@@ -17,7 +18,7 @@ const MAX_SPREAD: f64 = 0.15;
 const MIN_OFFSET: f64 = 0.04;
 
 /// Version of the estimation; stored with the result, rows of other versions are measured again.
-pub const ALGORITHM: i16 = 2;
+pub const ALGORITHM: i16 = 3;
 
 fn gray(img: &image::RgbaImage) -> Vec<f32> {
     img.pixels()
@@ -97,6 +98,94 @@ fn best_shift(lvl: &[f32], reference: &[f32], w: usize, h: usize) -> Option<(f64
     ))
 }
 
+/// Binomial blur (1 4 6 4 1) / 16 in both directions: the same smoothing for both images before they are compared, so that
+/// the aliasing of a level made by plain sub-sampling (Bio-Formats and friends) does not pull the estimate towards zero.
+fn blur(src: &[f32], w: usize, h: usize) -> Vec<f32> {
+    const K: [f32; 5] = [1.0, 4.0, 6.0, 4.0, 1.0];
+    let mut tmp = vec![0f32; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut s = 0.0;
+            for (i, k) in K.iter().enumerate() {
+                let xx = (x as i32 + i as i32 - 2).clamp(0, w as i32 - 1) as usize;
+                s += k * src[y * w + xx];
+            }
+            tmp[y * w + x] = s / 16.0;
+        }
+    }
+    let mut out = vec![0f32; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut s = 0.0;
+            for (i, k) in K.iter().enumerate() {
+                let yy = (y as i32 + i as i32 - 2).clamp(0, h as i32 - 1) as usize;
+                s += k * tmp[yy * w + x];
+            }
+            out[y * w + x] = s / 16.0;
+        }
+    }
+    out
+}
+
+fn bilinear(img: &[f32], w: usize, x: f64, y: f64) -> f32 {
+    let (x0, y0) = (x.floor() as usize, y.floor() as usize);
+    let (fx, fy) = ((x - x0 as f64) as f32, (y - y0 as f64) as f32);
+    let at = |xx: usize, yy: usize| img[yy * w + xx];
+    at(x0, y0) * (1.0 - fx) * (1.0 - fy)
+        + at(x0 + 1, y0) * fx * (1.0 - fy)
+        + at(x0, y0 + 1) * (1.0 - fx) * fy
+        + at(x0 + 1, y0 + 1) * fx * fy
+}
+
+/// Gradient-based refinement (Lucas-Kanade) of a shift found on the integer grid: the parabola through three SSD values is
+/// biased towards the grid when the true shift lies in between (it under-estimated the 0.4 px shift of a sub-sampled pyramid
+/// as 0.27), the iteration on the image gradients is not. `init` is returned when it does not converge.
+fn refine_shift(
+    lvl: &[f32],
+    reference: &[f32],
+    w: usize,
+    h: usize,
+    init: (f64, f64),
+) -> (f64, f64) {
+    let (lvl, reference) = (blur(lvl, w, h), blur(reference, w, h));
+    let grad = |x: f64, y: f64| {
+        (
+            (bilinear(&lvl, w, x + 0.5, y) - bilinear(&lvl, w, x - 0.5, y)) as f64,
+            (bilinear(&lvl, w, x, y + 0.5) - bilinear(&lvl, w, x, y - 0.5)) as f64,
+        )
+    };
+    let lo = MARGIN + MAX_SHIFT as usize + 2;
+    let mut d = init;
+    for _ in 0..8 {
+        let (mut a, mut b, mut c, mut bx, mut by) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+        for y in lo..h - lo {
+            for x in lo..w - lo {
+                let (px, py) = (x as f64 + d.0, y as f64 + d.1);
+                let r = (reference[y * w + x] - bilinear(&lvl, w, px, py)) as f64;
+                let (gx, gy) = grad(px, py);
+                a += gx * gx;
+                b += gx * gy;
+                c += gy * gy;
+                bx += gx * r;
+                by += gy * r;
+            }
+        }
+        let det = a * c - b * b;
+        if det.abs() < 1e-9 {
+            return init;
+        }
+        let step = ((c * bx - b * by) / det, (a * by - b * bx) / det);
+        d = (d.0 + step.0, d.1 + step.1);
+        if (d.0 - init.0).abs() > 1.5 || (d.1 - init.1).abs() > 1.5 {
+            return init;
+        }
+        if step.0.abs() < 0.002 && step.1.abs() < 0.002 {
+            break;
+        }
+    }
+    d
+}
+
 /// Chained offsets of every level at one spot (level-0 coordinates of the window centre).
 fn offsets_at(slide: &dyn Slide, centre: (f64, f64)) -> Vec<(f64, f64)> {
     let dims = slide.level_dimensions();
@@ -129,7 +218,9 @@ fn offsets_at(slide: &dyn Slide, centre: (f64, f64)) -> Vec<(f64, f64)> {
         let measured = if std_dev(&reference) < 6.0 {
             None
         } else {
-            best_shift(&gray(&lvl), &reference, side, side)
+            let g = gray(&lvl);
+            best_shift(&g, &reference, side, side)
+                .map(|init| refine_shift(&g, &reference, side, side, init))
         };
         let prev = out[k - 1];
         match measured {

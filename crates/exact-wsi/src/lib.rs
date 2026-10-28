@@ -85,6 +85,10 @@ pub trait Slide: Send + Sync {
     fn frame_kind(&self) -> FrameKind {
         FrameKind::None
     }
+    /// Frames per second of a movie or time series (the speed it was recorded at), when the file knows it.
+    fn frame_rate(&self) -> Option<f64> {
+        None
+    }
     /// One label per frame (`z=1.20 mm`, `3.50 s (42)`, ...); empty if the format has none.
     fn frame_labels(&self) -> Vec<String> {
         Vec::new()

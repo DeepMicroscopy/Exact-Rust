@@ -22,6 +22,8 @@ enum Cmd {
         /// Folder to scan recursively (the image root or one image set folder).
         dir: PathBuf,
     },
+    /// Measure how far the pyramid levels of a file are shifted against level 0 (a cause of tiles that "wobble" when zooming).
+    LevelOffsets { file: PathBuf },
     /// Repair one damaged TIFF in place: pyramid rebuilt from level 0, original kept as `<name>.orig.<ext>`.
     RepairImage { file: PathBuf },
     /// Create the additive tables the Rust server needs (sessions). Safe to repeat; Django tables are untouched.
@@ -41,6 +43,21 @@ async fn main() -> anyhow::Result<()> {
             let t = schema::introspect(&pool).await?;
             std::fs::write(&out, serde_json::to_string_pretty(&t)?)?;
             println!("{} tables -> {}", t.len(), out.display());
+        }
+        Cmd::LevelOffsets { file } => {
+            let slide = exact_wsi::formats::open(&file.to_string_lossy())?;
+            let dims = slide.level_dimensions();
+            let down = slide.level_downsamples();
+            let off = exact_wsi::registration::estimate_level_offsets(slide.as_ref());
+            println!(
+                "{}  needs_registration={}",
+                file.display(),
+                slide.needs_registration()
+            );
+            for (i, ((w, h), d)) in dims.iter().zip(&down).enumerate() {
+                let (dx, dy) = off.get(i).copied().unwrap_or((0.0, 0.0));
+                println!("level {i}: {w} x {h}  downsample {d:.4}  offset ({dx:+.3}, {dy:+.3}) px of that level");
+            }
         }
         Cmd::CheckImages { dir } => {
             let mut files = Vec::new();

@@ -158,12 +158,13 @@ impl DeepZoom {
         let (lw, lh) = self.l_dims[level];
         // Level pixel size is `down` level-0 pixels, so the level covers `level-0 width / down` pixels of extent (not
         // necessarily its stored width: levels made by rounding-down decimation cover slightly less than the full slide).
-        let (w0, h0) = self.l_dims[0];
         let down = self.l0_l_down[level];
-        let (sx, sy) = (
-            zw as f64 / (w0 as f64 / down),
-            zh as f64 / (h0 as f64 / down),
-        );
+        // OpenSeadragon places a DeepZoom level `e` steps below the full size as a grid of exactly 2^e level-0 pixels per
+        // pixel (it does not know the rounded-up sizes of the levels), so that is what the pixels of the tile have to
+        // show; sampling by `level size / slide size` instead drifts by up to a pixel towards the far edge of a level and
+        // makes neighbouring zoom levels slide against each other while they are blended.
+        let e = (self.z_dims.len() - 1 - dz) as i32;
+        let (sx, sy) = (down / 2f64.powi(e), down / 2f64.powi(e));
         let ov = |t: u64| if t != 0 { OVERLAP } else { 0 };
         let ov_end = |t: u64, n: u64| if t != n - 1 { OVERLAP } else { 0 };
         let z_size = (
@@ -192,7 +193,23 @@ impl DeepZoom {
             (down * iy as f64) as i64 + self.l0_offset.1,
         );
         let raw = self.slide.read_region(l0.0, l0.1, level, rw, rh, frame)?;
-        let rgb = composite(&raw, self.bg);
+        let mut rgb = composite(&raw, self.bg);
+        // A tile at the far edge of a level reaches past the last row / column of the slide (levels are rounded up). The part
+        // outside is background; shrinking the source box instead would stretch the tile and shift its content.
+        let full = (
+            ((fx + fw).ceil() as i64 - ix).max(1) as u32,
+            ((fy + fh).ceil() as i64 - iy).max(1) as u32,
+        );
+        if rgb.width() < full.0 || rgb.height() < full.1 {
+            let mut canvas = RgbImage::from_pixel(
+                full.0.max(rgb.width()),
+                full.1.max(rgb.height()),
+                image::Rgb(self.bg),
+            );
+            image::imageops::replace(&mut canvas, &rgb, 0, 0);
+            rgb = canvas;
+        }
+        let (rw, rh) = (rgb.width(), rgb.height());
         let exact = (rw as u64, rh as u64) == z_size
             && (fx - ix as f64).abs() < 1e-6
             && (fy - iy as f64).abs() < 1e-6;
@@ -371,5 +388,84 @@ mod tests {
             (dx - 0.75).abs() < 0.1 && (dy - 0.5).abs() < 0.1,
             "got ({dx}, {dy}), expected (0.75, 0.5)"
         );
+    }
+    /// A single-level slide with one bright dot.
+    struct Dot {
+        w: u32,
+        h: u32,
+        at: (f64, f64),
+    }
+    impl Slide for Dot {
+        fn level_dimensions(&self) -> Vec<(u64, u64)> {
+            vec![(self.w as u64, self.h as u64)]
+        }
+        fn level_downsamples(&self) -> Vec<f64> {
+            vec![1.0]
+        }
+        fn best_level_for_downsample(&self, _d: f64) -> usize {
+            0
+        }
+        fn properties(&self) -> std::collections::HashMap<String, String> {
+            // black background: the part of an edge tile outside the slide must not weigh in the centroid
+            std::collections::HashMap::from([(
+                "openslide.background-color".to_string(),
+                "000000".to_string(),
+            )])
+        }
+        fn read_region(
+            &self,
+            x: i64,
+            y: i64,
+            _l: usize,
+            w: u32,
+            h: u32,
+            _f: u32,
+        ) -> Result<image::RgbaImage> {
+            Ok(image::RgbaImage::from_fn(w, h, |i, j| {
+                let d2 = (x as f64 + i as f64 + 0.5 - self.at.0).powi(2)
+                    + (y as f64 + j as f64 + 0.5 - self.at.1).powi(2);
+                let v = (255.0 * (-d2 / (2.0 * 2.5f64.powi(2))).exp()) as u8;
+                image::Rgba([v, v, v, 255])
+            }))
+        }
+    }
+
+    /// OpenSeadragon draws a DeepZoom level `e` steps below the full size as 2^e level-0 pixels per pixel. A dot in the far
+    /// corner of an image whose size is not a multiple of 2^e must therefore sit at `position / 2^e` on every level; sampling by
+    /// `level size / image size` (sizes are rounded up) moved it by up to a pixel and made neighbouring levels slide against each other.
+    #[test]
+    fn zoom_levels_keep_their_content_where_the_viewer_places_them() {
+        let (w, h) = (4003u32, 3001u32);
+        let at = (3500.5, 2500.5);
+        let dz = DeepZoom::build(std::sync::Arc::new(Dot { w, h, at }), 0, vec![]);
+        let n = dz.z_dims.len();
+        for e in 0..=5usize {
+            let level = n - 1 - e;
+            let (zw, zh) = dz.z_dims[level];
+            let want = (at.0 / 2f64.powi(e as i32), at.1 / 2f64.powi(e as i32));
+            let (tc, tr) = ((want.0 as u64) / 254, (want.1 as u64) / 254);
+            let tile = dz.tile(level, (tc, tr), 0).unwrap();
+            // centroid of the dot in level pixels (tile origin: column tc * 254, minus the overlap of one pixel on the inner side)
+            let (ox, oy) = (
+                (tc * 254) as f64 - if tc > 0 { 1.0 } else { 0.0 },
+                (tr * 254) as f64 - if tr > 0 { 1.0 } else { 0.0 },
+            );
+            let (mut sx, mut sy, mut sw) = (0.0, 0.0, 0.0);
+            for (x, y, p) in tile.enumerate_pixels() {
+                let v = p[0] as f64;
+                sx += v * (ox + x as f64 + 0.5);
+                sy += v * (oy + y as f64 + 0.5);
+                sw += v;
+            }
+            let got = (sx / sw, sy / sw);
+            assert!(
+                (got.0 - want.0).abs() < 0.25 && (got.1 - want.1).abs() < 0.25,
+                "level {level} ({zw}x{zh}): dot at ({:.2}, {:.2}), expected ({:.2}, {:.2})",
+                got.0,
+                got.1,
+                want.0,
+                want.1
+            );
+        }
     }
 }

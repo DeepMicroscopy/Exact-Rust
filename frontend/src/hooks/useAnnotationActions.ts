@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../api/client";
-import { createAnnotation, deleteAnnotation, patchAnnotation, verifyAnnotation } from "../api/annotations";
+import { createAnnotation, deleteAnnotation, patchAnnotation } from "../api/annotations";
 import type { Annotation, Vector } from "../api/types";
 import { vectorOf, type Pt } from "../viewer-core/geometry";
 import { History } from "../viewer-core/history";
@@ -50,7 +50,7 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
     async (typeId: number, vector: Vector | null) => {
       const tempId = -Date.now();
       const uid = crypto.randomUUID();
-      put({ id: tempId, annotation_type: typeId, vector, image: imageId, verified_by_user: true, deleted: false, unique_identifier: uid });
+      put({ id: tempId, annotation_type: typeId, vector, image: imageId, deleted: false, unique_identifier: uid });
       try {
         let a = await createAnnotation({ image: imageId, annotation_type: typeId, vector, unique_identifier: uid });
         drop(tempId);
@@ -163,18 +163,19 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
     [current, drop, put, history, fail],
   );
 
+  /** Changes the class; `vector` also resizes the annotation in the same step (bounding box -> fixed-size box). */
   const changeType = useCallback(
-    async (id: number, typeId: number) => {
+    async (id: number, typeId: number, vector?: Vector) => {
       const before = current(id);
-      if (!before || before.annotation_type === typeId) return;
-      const old = before.annotation_type;
-      put({ ...before, annotation_type: typeId });
+      if (!before || (before.annotation_type === typeId && !vector)) return;
+      const old = { type: before.annotation_type, vector: before.vector };
+      put({ ...before, annotation_type: typeId, ...(vector ? { vector } : {}) });
       try {
-        await patch(id, { annotation_type: typeId });
+        await patch(id, { annotation_type: typeId, ...(vector ? { vector } : {}) });
         history.push({
           label: "change type",
-          undo: async () => void (await patch(id, { annotation_type: old })),
-          redo: async () => void (await patch(id, { annotation_type: typeId })),
+          undo: async () => void (await patch(id, { annotation_type: old.type, ...(vector ? { vector: old.vector } : {}) })),
+          redo: async () => void (await patch(id, { annotation_type: typeId, ...(vector ? { vector } : {}) })),
         });
       } catch (e) {
         put(before);
@@ -184,23 +185,8 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
     [current, put, patch, history, fail],
   );
 
-  const verify = useCallback(
-    async (id: number, verified: boolean) => {
-      const before = current(id);
-      if (!before) return;
-      put({ ...before, verified_by_user: verified });
-      try {
-        put(await verifyAnnotation(id, verified));
-      } catch (e) {
-        put(before);
-        fail(e, "Could not verify");
-      }
-    },
-    [current, put, fail],
-  );
-
   const undo = useCallback(() => history.undo().catch((e) => fail(e, "Undo failed")), [history, fail]);
   const redo = useCallback(() => history.redo().catch((e) => fail(e, "Redo failed")), [history, fail]);
 
-  return { history, create, update, replace, remove, changeType, verify, undo, redo };
+  return { history, create, update, replace, remove, changeType, undo, redo };
 }

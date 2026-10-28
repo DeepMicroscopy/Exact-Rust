@@ -493,6 +493,7 @@ async fn metadata(
             "issues": slide.issues(),
             "frame_kind": slide.frame_kind().as_str(),
             "frame_labels": slide.frame_labels(),
+            "frame_rate": slide.frame_rate(),
             "z_range": slide.z_positions().and_then(|(z, unit)| Some(json!({"start": z.first()?, "end": z.last()?, "positions": z, "unit": unit}))),
         }))
     })
