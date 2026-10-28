@@ -151,6 +151,18 @@ try {
   check(Math.abs(view1.z - view0.z) < 1e-6 && Math.abs(view1.c.x - view0.c.x) < 1e-6 && Math.abs(view1.c.y - view0.c.y) < 1e-6,
     `z-stack: zoom and position are kept when jumping along the stack (${view0.z.toFixed(3)} -> ${view1.z.toFixed(3)})`);
 
+  // the address bar follows the view, and the link opens the same view
+  await page.waitForTimeout(600);
+  const shared = new URL(page.url());
+  check(["x", "y", "zoom", "frame"].every((k) => shared.searchParams.has(k)), `the address bar carries the view (${shared.search})`);
+  const sharedView = await page.evaluate(() => { const v = window.__viewer.viewport; const it = window.__viewer.world.getItemAt(0); return { z: it.viewportToImageZoom(v.getZoom(true)), c: it.viewportToImageCoordinates(v.getCenter(true)) }; });
+  await page.goto(page.url());
+  await page.waitForSelector(".viewer-host, .osd, canvas");
+  await waitPainted("the shared link renders");
+  await page.waitForTimeout(800);
+  const reopened = await page.evaluate(() => { const v = window.__viewer.viewport; const it = window.__viewer.world.getItemAt(0); return { z: it.viewportToImageZoom(v.getZoom(true)), c: it.viewportToImageCoordinates(v.getCenter(true)) }; });
+  check(Math.abs(reopened.z / sharedView.z - 1) < 0.01 && Math.abs(reopened.c.x - sharedView.c.x) < 3 && Math.abs(reopened.c.y - sharedView.c.y) < 3, `the link restores zoom and position (${sharedView.z.toFixed(3)} -> ${reopened.z.toFixed(3)})`);
+
   // track pad: a two-finger swipe moves, a pinch (Ctrl + wheel) zooms about the fingers, a mouse wheel step still zooms
   const wheel = (init) => page.evaluate((i) => { const c = window.__viewer.canvas; const r = c.getBoundingClientRect(); c.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, ...i })); }, init);
   const viewNow = () => page.evaluate(() => { const v = window.__viewer.viewport; return { z: v.getZoom(true), c: v.getCenter(true) }; });

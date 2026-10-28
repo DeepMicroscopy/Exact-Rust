@@ -91,7 +91,17 @@ export function ViewerPage() {
   const posRef = useRef(0);
   const frameFor = useRef<number | null>(null);
   const anim = useRef(0);
-  const [plane, setPlane] = useState(0);
+  const [plane, setPlane] = useState(() => {
+    const p = Number(search.get("plane"));
+    return Number.isInteger(p) && p >= 0 && p <= 2 ? p : 0; // a shared link names the plane of a volume
+  });
+  const urlWriter = useRef<() => void>(() => {});
+  const planeRef = useRef(plane);
+  planeRef.current = plane;
+  /** the view of a shared link (centre and zoom in image pixels), applied once when the image has loaded */
+  const pendingView = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  const appliedView = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  const viewFor = useRef<number | null>(null);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
@@ -239,6 +249,7 @@ export function ViewerPage() {
     posRef.current = v;
     setPosState(v);
     blenderRef.current?.setPosition(v);
+    urlWriter.current();
   }, []);
 
   /** Moves to `target` with an eased animation (keyboard steps); dragging the slider sets the position directly. */
@@ -289,6 +300,31 @@ export function ViewerPage() {
       e.preventDefaultAction = true;
     });
     viewerRef.current = viewer;
+    // the address bar follows the view (centre and zoom in image pixels, frame, plane), so that the link shows what is seen
+    let urlTimer = 0;
+    const writeUrl = () => {
+      const item = viewer.world.getItemCount() ? viewer.world.getItemAt(0) : null;
+      if (!item || pendingView.current) return;
+      const c = item.viewportToImageCoordinates(viewer.viewport.getCenter(true));
+      const u = new URL(window.location.href);
+      u.searchParams.set("x", String(Math.round(c.x)));
+      u.searchParams.set("y", String(Math.round(c.y)));
+      u.searchParams.set("zoom", Number(item.viewportToImageZoom(viewer.viewport.getZoom(true)).toPrecision(4)).toString());
+      const frame = Math.round(posRef.current);
+      if (frame > 0) u.searchParams.set("frame", String(frame));
+      else u.searchParams.delete("frame");
+      if (planeRef.current > 0) u.searchParams.set("plane", String(planeRef.current));
+      else u.searchParams.delete("plane");
+      u.searchParams.delete("region");
+      if (u.href !== window.location.href) window.history.replaceState(window.history.state, "", u);
+    };
+    const scheduleUrl = () => {
+      window.clearTimeout(urlTimer);
+      urlTimer = window.setTimeout(writeUrl, 250);
+    };
+    viewer.addHandler("viewport-change", scheduleUrl);
+    viewer.addHandler("open", scheduleUrl);
+    urlWriter.current = scheduleUrl;
     (window as unknown as { __viewer?: OpenSeadragon.Viewer; __osd?: typeof OpenSeadragon }).__viewer = viewer; // used by the e2e tests
     (window as unknown as { __osd?: typeof OpenSeadragon }).__osd = OpenSeadragon;
     const layer = new AnnotationLayer(viewer);
@@ -330,11 +366,21 @@ export function ViewerPage() {
     const ro = new ResizeObserver(() => {
       const tiny = el.clientHeight < 50 || el.clientWidth < 50;
       (viewer as unknown as { forceResize(): void }).forceResize();
-      if (wasTiny && !tiny && viewer.world.getItemCount()) viewer.viewport.goHome(true);
+      if (wasTiny && !tiny && viewer.world.getItemCount()) {
+        const shared = appliedView.current;
+        const item = viewer.world.getItemAt(0);
+        if (shared) {
+          // laid out after the shared view was set: the zoom is relative to the width, so set it again
+          viewer.viewport.zoomTo(item.imageToViewportZoom(shared.zoom), undefined, true);
+          viewer.viewport.panTo(item.imageToViewportCoordinates(shared.x, shared.y), true);
+        } else viewer.viewport.goHome(true);
+      }
       wasTiny = tiny;
     });
     ro.observe(el);
     return () => {
+      window.clearTimeout(urlTimer);
+      urlWriter.current = () => {};
       ro.disconnect();
       cancelAnimationFrame(anim.current);
       cancelAnimationFrame(moveRaf);
@@ -372,6 +418,15 @@ export function ViewerPage() {
         viewer.viewport.goHome(true);
         const first = viewer.world.getItemAt(0);
         if (first) setPlaneDims({ w: Math.round(first.source.dimensions.x), h: Math.round(first.source.dimensions.y) });
+        const shared = pendingView.current;
+        if (shared && first) {
+          pendingView.current = null;
+          appliedView.current = shared;
+          viewer.viewport.zoomTo(first.imageToViewportZoom(shared.zoom), undefined, true);
+          viewer.viewport.panTo(first.imageToViewportCoordinates(shared.x, shared.y), true);
+          layerRef.current?.setMark(null);
+          return;
+        }
         // opened from a crop: show where it lies in this image
         const region = search.get("region")?.split(",").map(Number);
         const item = viewer.world.getItemAt(0);
@@ -384,6 +439,11 @@ export function ViewerPage() {
       },
     });
     blenderRef.current = blender;
+    if (viewFor.current !== id) {
+      viewFor.current = id;
+      const [x, y, zoom] = ["x", "y", "zoom"].map((k) => (search.get(k) == null ? NaN : Number(search.get(k))));
+      pendingView.current = [x, y, zoom].every(Number.isFinite) && zoom > 0 ? { x, y, zoom } : null;
+    }
     const wanted = Number(search.get("frame"));
     if (search.get("frame") && Number.isFinite(wanted) && frameFor.current !== id) posRef.current = wanted; // opened from a crop: its frame
     frameFor.current = id;
