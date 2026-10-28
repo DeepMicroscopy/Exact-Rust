@@ -110,6 +110,12 @@ try {
       body: JSON.stringify({ name: "e2e polygon", vector_type: 5, color_code: "#22aa44", product: 1, sort_order: 9 }),
     });
     if (!r.ok && !(await r.text()).includes("exists")) throw new Error("cannot create the polygon type");
+    const m = await fetch("/api/v2/annotation-types", {
+      method: "POST",
+      headers: { "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({ name: "e2e mask", vector_type: 8, color_code: "#ff2a8a", product: 1, sort_order: 10 }),
+    });
+    if (!m.ok && !(await m.text()).includes("exists")) throw new Error("cannot create the mask type");
   });
   const admin = await login(desktop, "rt_teamadmin");
   ({ set: SET, image: IMAGE } = await setup(admin));
@@ -318,6 +324,77 @@ try {
     const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
     await fetch(`/api/v2/annotations/${id}`, { method: "DELETE", headers: { "x-csrf-token": csrf } });
   }, c.id);
+  await openImage(admin);
+
+  // ---------------------------------------------------------------------------------------- segmentation masks
+  await openImage(admin);
+  await pickType(admin, "e2e mask");
+  await admin.waitForSelector('[data-testid="seg-tools"]');
+  check((await admin.locator(".type-dd .trigger").innerText()).includes("e2e mask"), "a segmentation type is offered with a mark and starts the mask tools");
+  const maskAnn = async () => (await annotations(admin)).find((a) => a.vector && a.vector.tile_size === 256);
+  const tileInfo = (id, tx, ty) =>
+    admin.evaluate(async ([id, tx, ty]) => {
+      const r = await fetch(`/api/v2/segmentation/${id}/tiles/0/${tx}/${ty}?frame=0`);
+      if (r.status !== 200) return { status: r.status, set: 0 };
+      const bmp = await createImageBitmap(await r.blob());
+      const c = document.createElement("canvas");
+      c.width = c.height = 256;
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(bmp, 0, 0);
+      const d = g.getImageData(0, 0, 256, 256).data;
+      let set = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 127) set++;
+      return { status: 200, set };
+    }, [id, tx, ty]);
+  await waitFor(maskAnn, "choosing the type creates the mask annotation");
+  await waitFor(() => admin.evaluate(() => !!window.__masks?.editable), "its layer is ready to paint");
+  await admin.waitForTimeout(500);
+  const m0 = await screenOf(admin, 300, 400);
+  const m1 = await screenOf(admin, 480, 400);
+  await admin.mouse.move(m0.x, m0.y);
+  await admin.mouse.down();
+  await admin.mouse.move(m1.x, m1.y, { steps: 10 });
+  await admin.mouse.up();
+  const mask = await maskAnn();
+  const painted = await waitFor(async () => {
+    const t = await tileInfo(mask.id, 1, 1);
+    return t.status === 200 && t.set > 100 ? t : null;
+  }, "the stroke is saved as a tile of the mask");
+  check(painted.set > 1000, `...a round brush of 24 px along 180 px (${painted.set} pixels)`);
+  // undo removes the stroke from the server, redo brings it back
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await tileInfo(mask.id, 1, 1)).status === 204, "Undo takes the stroke back");
+  await admin.keyboard.press("Control+Shift+z");
+  await waitFor(async () => (await tileInfo(mask.id, 1, 1)).status === 200, "Redo paints it again");
+  // eraser
+  await admin.locator('[data-testid="seg-tools"] button[aria-label="Eraser"]').click();
+  const e0 = await screenOf(admin, 300, 400);
+  const e1 = await screenOf(admin, 400, 400);
+  await admin.mouse.move(e0.x, e0.y);
+  await admin.mouse.down();
+  await admin.mouse.move(e1.x, e1.y, { steps: 8 });
+  await admin.mouse.up();
+  await waitFor(async () => {
+    const t = await tileInfo(mask.id, 1, 1);
+    return t.status === 200 && t.set < painted.set - 500;
+  }, "the eraser removes part of the mask");
+  // magic wand on the gradient image: a connected area of similar colour
+  await admin.locator('[data-testid="seg-tools"] button[aria-label="Wand"]').click();
+  await admin.locator('input[aria-label="Wand tolerance"]').fill("100");
+  const wp = await screenOf(admin, 3200, 2000);
+  await admin.mouse.click(wp.x, wp.y);
+  await waitFor(async () => {
+    let n = 0;
+    for (const [tx, ty] of [[12, 7], [12, 8], [13, 7], [13, 8], [11, 7], [11, 8]]) n += (await tileInfo(mask.id, tx, ty)).set;
+    return n > 500;
+  }, "the magic wand fills an area around the click", 30000);
+  // a reload shows the mask again
+  await openImage(admin);
+  await waitFor(() => admin.evaluate(() => (window.__masks?.layers.size ?? 0) === 1 && [...window.__masks.layers.values()].some((l) => l.tiles.size > 0)), "after a reload the mask is loaded for the visible part");
+  await admin.evaluate(async (id) => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    await fetch(`/api/v2/annotations/${id}`, { method: "DELETE", headers: { "x-csrf-token": csrf } });
+  }, mask.id);
   await openImage(admin);
 
   // ---------------------------------------------------------------------------------------- polygon

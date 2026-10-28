@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import OpenSeadragon from "openseadragon";
 import { api, listAll } from "../api/client";
 import type { Page } from "../api/client";
-import { ANNOTATION_FIELDS } from "../api/annotations";
+import { ANNOTATION_FIELDS, createAnnotation } from "../api/annotations";
 import type { Annotation, AnnotationType, ImageSummary, Registration } from "../api/types";
 import { useAnnotationActions } from "../hooks/useAnnotationActions";
 import { AnnotationLayer } from "../viewer-core/annotationLayer";
@@ -12,6 +12,8 @@ import { AnnotationEditor, vectorOfShape, type EditorHost, type PolyOp, type Too
 import { buildPalette, canConvert, isDrawable, oneClickCapable, type PaletteEntry } from "../viewer-core/palette";
 import { isTypingTarget, matchShortcut } from "../viewer-core/shortcuts";
 import { toShape } from "../viewer-core/shapes";
+import { MaskSet, type ToolState } from "../viewer-core/segmentation";
+import { SegmentationTool } from "../viewer-core/segmentationTool";
 import { clipboard, pasteVector } from "../viewer-core/clipboard";
 import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
 import { loadTileSource } from "../viewer-core/tileSource";
@@ -121,6 +123,12 @@ export function ViewerPage() {
   const [currentTypeId, setCurrentTypeId] = useState<number | null>(null);
   const [polyOp, setPolyOp] = useState<PolyOp | null>(null);
   const [menu, setMenu] = useState<{ shape: Shape; x: number; y: number } | null>(null);
+  const qc = useQueryClient();
+  const [segTypeId, setSegTypeId] = useState<number | null>(null);
+  const [planeDims, setPlaneDims] = useState<{ w: number; h: number } | null>(null);
+  const [maskOpacity, setMaskOpacity] = useState(0.55);
+  const masksRef = useRef<MaskSet | null>(null);
+  const segToolRef = useRef<SegmentationTool | null>(null);
   const [groupMenu, setGroupMenu] = useState<{ shapes: Shape[]; x: number; y: number } | null>(null);
   const [groupDelete, setGroupDelete] = useState<Shape[] | null>(null);
   const [dialog, setDialog] = useState<{ kind: "info" | "crop" | "delete" | "resize"; shape: Shape; typeId?: number } | null>(null);
@@ -286,6 +294,18 @@ export function ViewerPage() {
     layerRef.current = layer;
     const editor = new AnnotationEditor(viewer, layer, hostProxy(editorHostRef));
     editorRef.current = editor;
+    const masks = new MaskSet(() => layer.invalidate());
+    layer.setMasks(masks);
+    masksRef.current = masks;
+    (window as unknown as { __masks?: MaskSet }).__masks = masks; // used by the e2e tests
+    const segTool = new SegmentationTool(
+      viewer,
+      masks,
+      (c) => hostState.current.actions.history.push(c),
+      (m) => notify(m),
+      () => setTick((n) => n + 1),
+    );
+    segToolRef.current = segTool;
     // pixel under the pointer (and, for a crop, in the original)
     let moveRaf = 0;
     const onMove = (ev: PointerEvent) => {
@@ -316,9 +336,13 @@ export function ViewerPage() {
       ro.disconnect();
       cancelAnimationFrame(anim.current);
       cancelAnimationFrame(moveRaf);
+      segTool.destroy();
+      masks.destroy();
       editor.destroy();
       layer.destroy();
       viewer.destroy();
+      masksRef.current = null;
+      segToolRef.current = null;
       viewerRef.current = null;
       layerRef.current = null;
       editorRef.current = null;
@@ -343,6 +367,8 @@ export function ViewerPage() {
       blend,
       onReady: () => {
         viewer.viewport.goHome(true);
+        const first = viewer.world.getItemAt(0);
+        if (first) setPlaneDims({ w: Math.round(first.source.dimensions.x), h: Math.round(first.source.dimensions.y) });
         // opened from a crop: show where it lies in this image
         const region = search.get("region")?.split(",").map(Number);
         const item = viewer.world.getItemAt(0);
@@ -368,6 +394,62 @@ export function ViewerPage() {
       if (blenderRef.current === blender) blenderRef.current = null;
     };
   }, [id, z, frames, blend, image.data, meta.data]);
+
+  // ---- segmentation masks --------------------------------------------------------------------------------------------
+  const segTypes = useMemo(
+    () => (types.data ?? []).filter((t) => t.vector_type === VectorType.Segmentation && (!imageSet.data || imageSet.data.product_set.includes(t.product as number))).map((t) => ({ id: t.id, name: t.name, color: t.color_code })),
+    [types.data, imageSet.data],
+  );
+  const segFrame = frames > 1 && kind !== "none" ? Math.round(pos) : 0;
+  const planeIndex = hasPlanes ? plane : 0;
+  const planeFrames = hasPlanes ? (meta.data?.planes?.[plane]?.frames ?? 1) : 0;
+  // one mask layer per segmentation annotation of the image, for the slice or plane that is shown
+  useEffect(() => {
+    const masks = masksRef.current;
+    if (!masks || !planeDims) return;
+    const wanted = new Map<number, string>();
+    for (const a of annotations.data ?? []) {
+      if (a.deleted || a.id <= 0) continue;
+      const t = (types.data ?? []).find((x) => x.id === a.annotation_type);
+      if (t?.vector_type === VectorType.Segmentation) wanted.set(a.id, t.color_code);
+    }
+    masks.sync(wanted, (annotationId) => ({ annotationId, width: planeDims.w, height: planeDims.h, plane: planeIndex, frame: segFrame, ph: planeDims.h, nf: planeFrames }));
+    for (const [aid, layer] of masks.layers) {
+      const a = (annotations.data ?? []).find((x) => x.id === aid);
+      layer.visible = showAnnotations && !(a && hidden.has(a.annotation_type));
+      layer.opacity = maskOpacity;
+    }
+    layerRef.current?.invalidate();
+  }, [annotations.data, types.data, planeDims, planeIndex, segFrame, planeFrames, showAnnotations, hidden, maskOpacity]);
+  useEffect(() => setPlaneDims(null), [id, z]);
+
+  // the mask of the chosen type is the one that is painted (it is created with the first stroke's tool)
+  const segCreating = useRef(false);
+  useEffect(() => {
+    const masks = masksRef.current;
+    const tool = segToolRef.current;
+    const ed = editorRef.current;
+    if (!masks || !tool || !ed) return;
+    const a = segTypeId == null ? null : (annotations.data ?? []).find((x) => x.annotation_type === segTypeId && !x.deleted && x.id > 0);
+    masks.active = a?.id ?? null;
+    tool.enabled = segTypeId != null;
+    ed.suspended = segTypeId != null;
+    if (segTypeId != null) {
+      ed.select(null);
+      (viewerRef.current?.canvas as HTMLElement | undefined)?.style.removeProperty("cursor");
+    }
+    if (segTypeId != null && annotations.data && !a && image.data && !segCreating.current) {
+      segCreating.current = true;
+      createAnnotation({ image: id, annotation_type: segTypeId, vector: { tile_size: 256, width: planeDims?.w ?? image.data.width, height: planeDims?.h ?? image.data.height }, unique_identifier: crypto.randomUUID() })
+        .then(() => qc.invalidateQueries({ queryKey: ["annotations", id] }))
+        .catch((e: Error) => notify(`Could not create the mask: ${e.message}`))
+        .finally(() => {
+          segCreating.current = false;
+        });
+    }
+    setTick((n) => n + 1);
+  }, [segTypeId, annotations.data, id, image.data, planeDims, qc, notify]);
+  useEffect(() => setSegTypeId(null), [id]);
 
   // ---- playing a movie ----------------------------------------------------------------------------------------------
   const nativeFps = meta.data?.frame_rate ?? null;
@@ -419,6 +501,7 @@ export function ViewerPage() {
     [imageIds, id, navigate],
   );
   const startDrawing = useCallback((typeId: number) => {
+    setSegTypeId(null);
     setCurrentTypeId(typeId);
     setDrawing(true);
     const e = info(typeId);
@@ -569,6 +652,10 @@ export function ViewerPage() {
           if (ed?.finish()) ev.preventDefault();
           return;
         case "cancel":
+          if (segTypeId != null) {
+            setSegTypeId(null);
+            return;
+          }
           ed?.cancel();
           syncFromEditor();
           return;
@@ -656,7 +743,7 @@ export function ViewerPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard]);
+  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard, segTypeId]);
 
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
@@ -803,6 +890,8 @@ export function ViewerPage() {
           brushMode={editorRef.current?.brushMode ?? "off"}
           brushRadius={editorRef.current?.brushRadius ?? 18}
           reshapable={!!editorRef.current?.selected && editorRef.current.selected.vectorType === VectorType.Polygon && !((editorRef.current.selected && info(editorRef.current.selected.typeId)?.nodeCount) || 0)}
+          segTypes={segTypes}
+          seg={segTypeId == null ? null : { typeId: segTypeId, state: segToolRef.current?.state ?? ({ tool: "brush", size: 24, shape: "circle", tolerance: 24 } as ToolState), opacity: maskOpacity, tooMany: [...(masksRef.current?.layers.values() ?? [])].some((l) => l.tooMany), ready: !!masksRef.current?.editable }}
           group={editorRef.current && editorRef.current.group.length > 1 ? { count: editorRef.current.group.length, classes: classesFor(editorRef.current.groupShapes) } : null}
           multiMode={editorRef.current?.multiMode ?? false}
           canPaste={!!clipboard.get()}
@@ -814,7 +903,15 @@ export function ViewerPage() {
             select: () => {
               setDrawing(false);
               setPolyOp(null);
+              setSegTypeId(null);
             },
+            segment: (tid) => {
+              setDrawing(false);
+              setPolyOp(null);
+              setSegTypeId(tid);
+            },
+            segState: (p) => segToolRef.current?.setState(p),
+            maskOpacity: setMaskOpacity,
             polyOp: (op) => {
               setDrawing(false);
               setPolyOp((cur) => (cur === op ? null : op));

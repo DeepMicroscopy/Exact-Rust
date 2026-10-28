@@ -4,6 +4,7 @@ import { formatArea, formatLength, measureShape } from "../viewer-core/measure";
 import type { PaletteEntry } from "../viewer-core/palette";
 import { canConvert, hintFor, oneClickCapable } from "../viewer-core/palette";
 import type { Shape } from "../viewer-core/types";
+import type { ToolState, SegTool, BrushShape } from "../viewer-core/segmentation";
 import { VectorType } from "../viewer-core/types";
 
 export interface ToolboxProps {
@@ -23,6 +24,10 @@ export interface ToolboxProps {
   brushRadius: number;
   /** the selected annotation is a polygon whose shape may be changed by brush and operations */
   reshapable: boolean;
+  /** types of the image set that are painted as pixel masks */
+  segTypes: { id: number; name: string; color: string }[];
+  /** the segmentation tool, when it is on */
+  seg: { typeId: number; state: ToolState; opacity: number; tooMany: boolean; ready: boolean } | null;
   /** two or more annotations selected together */
   group: { count: number; classes: PaletteEntry[] } | null;
   /** touch: taps add or remove annotations from the selection, a drag draws a frame */
@@ -42,6 +47,9 @@ export interface ToolboxProps {
     finish(): void;
     cancel(): void;
     remove(): void;
+    segment(typeId: number): void;
+    segState(p: Partial<ToolState>): void;
+    maskOpacity(v: number): void;
     toggleMulti(): void;
     changeGroupType(typeId: number): void;
     copy(): void;
@@ -82,6 +90,8 @@ export function Toolbox(p: ToolboxProps) {
   const current = p.palette.find((e) => e.id === p.currentTypeId);
   const draw = p.drawing ? current : undefined;
   const typeItems: DropdownItem[] = p.palette.map((e) => ({ id: e.id, label: e.name, color: e.color, key: e.key, checked: p.drawing && e.id === p.currentTypeId }));
+  const segItems: DropdownItem[] = p.segTypes.map((t) => ({ id: `seg:${t.id}`, label: `▨ ${t.name}`, color: t.color, checked: p.seg?.typeId === t.id }));
+  const segCur = p.seg ? p.segTypes.find((t) => t.id === p.seg?.typeId) : undefined;
   const convertible: DropdownItem[] = sel
     ? p.palette.filter((e) => canConvert(sel.vectorType, e.vectorType) || e.id === sel.typeId).map((e) => ({ id: e.id, label: e.name, color: e.color, key: e.key, checked: e.id === sel.typeId }))
     : [];
@@ -113,19 +123,31 @@ export function Toolbox(p: ToolboxProps) {
         </button>
       </div>
       <span className="v-sep" role="separator" aria-orientation="vertical" />
-      <div className={`annotate-btn ${p.drawing ? "active" : ""}`} role="group" aria-label="Annotate with">
+      <div className={`annotate-btn ${p.drawing || p.seg ? "active" : ""}`} role="group" aria-label="Annotate with">
         <button
           className="annotate-label"
           onClick={() => p.currentTypeId != null && p.on.draw(p.currentTypeId)}
           disabled={p.palette.length === 0}
-          aria-pressed={p.drawing}
+          aria-pressed={p.drawing || !!p.seg}
           aria-label="Annotate with"
           title="Draw annotations of the type on the right (C)"
         >
           Annotate with:
         </button>
-        <Dropdown className="type-dd" name="types" items={typeItems} onPick={(id) => p.on.draw(Number(id))} disabled={p.palette.length === 0} title="Annotation type to draw (digit keys 1-9)">
-          {current ? (
+        <Dropdown
+          className="type-dd"
+          name="types"
+          items={[...typeItems, ...segItems]}
+          onPick={(id) => (String(id).startsWith("seg:") ? p.on.segment(Number(String(id).slice(4))) : p.on.draw(Number(id)))}
+          disabled={p.palette.length === 0 && p.segTypes.length === 0}
+          title="Annotation type to draw (digit keys 1-9); ▨ = pixel mask"
+        >
+          {segCur ? (
+            <>
+              {swatch(segCur.color)}
+              <span className="dd-label">▨ {segCur.name}</span>
+            </>
+          ) : current ? (
             <>
               {swatch(current.color)}
               {current.key != null && <kbd>{current.key}</kbd>}
@@ -137,6 +159,52 @@ export function Toolbox(p: ToolboxProps) {
         </Dropdown>
       </div>
       {p.palette.length === 0 && <span className="muted small">This image set has no annotation types (assign a product to it).</span>}
+
+      {p.seg && (
+        <div className="tool-group context seg-tools" data-testid="seg-tools">
+          <div className="seg" role="group" aria-label="Mask tool">
+            {(
+              [
+                ["brush", "Brush", "Paint (hold Alt to erase)"],
+                ["eraser", "Eraser", "Erase"],
+                ["wand", "Wand", "Magic wand: click to add the connected area of similar colour (Alt removes it)"],
+                ["pan", "Pan", "Move the image without painting"],
+              ] as [SegTool, string, string][]
+            ).map(([t, label, title]) => (
+              <button key={t} className={p.seg?.state.tool === t ? "active" : ""} onClick={() => p.on.segState({ tool: t })} title={title} aria-label={label}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {(p.seg.state.tool === "brush" || p.seg.state.tool === "eraser") && (
+            <>
+              <label className="toggle brush-size" title="Brush size in image pixels (Alt + mouse wheel)">
+                Size
+                <input type="range" min={2} max={300} value={p.seg.state.size} onChange={(e) => p.on.segState({ size: Number(e.target.value) })} aria-label="Brush size" />
+                <span className="muted small">{p.seg.state.size} px</span>
+              </label>
+              <div className="seg" role="group" aria-label="Brush shape">
+                {(["circle", "square"] as BrushShape[]).map((sh) => (
+                  <button key={sh} className={p.seg?.state.shape === sh ? "active" : ""} onClick={() => p.on.segState({ shape: sh })} aria-label={sh === "circle" ? "Round brush" : "Square brush"} title={sh === "circle" ? "Round brush" : "Square brush"}>
+                    {sh === "circle" ? "●" : "■"}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {p.seg.state.tool === "wand" && (
+            <label className="toggle brush-size" title="How different a colour may be to still belong to the area">
+              Tolerance
+              <input type="range" min={1} max={120} value={p.seg.state.tolerance} onChange={(e) => p.on.segState({ tolerance: Number(e.target.value) })} aria-label="Wand tolerance" />
+            </label>
+          )}
+          <label className="toggle brush-size" title="How strongly the masks show">
+            Opacity
+            <input type="range" min={0.1} max={1} step={0.05} value={p.seg.opacity} onChange={(e) => p.on.maskOpacity(Number(e.target.value))} aria-label="Mask opacity" />
+          </label>
+          {p.seg.tooMany && <span className="hint">Zoom in to paint: the mask is shown from about 1:4 on</span>}
+        </div>
+      )}
 
       {draw && (
         <div className="tool-group context">

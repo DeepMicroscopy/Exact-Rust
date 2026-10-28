@@ -131,6 +131,8 @@ export class AnnotationEditor {
   /** touch: a tap adds or removes an annotation, a drag draws a rubber band (instead of Ctrl / Shift) */
   multiMode = false;
   private previews: Shape[] = [];
+  /** the segmentation tool owns the pointer */
+  suspended = false;
   private session: Session | null = null;
   private draft: { typeId: number; points: Pt[]; op?: PolyOp } | null = null;
   brushMode: BrushMode = "off";
@@ -424,6 +426,7 @@ export class AnnotationEditor {
   // ---- pointer events ------------------------------------------------------------------------------------------
 
   private press(e: Ev): void {
+    if (this.suspended) return;
     this.touch = this.isTouch(e);
     this.consumedPress = false;
     const p = this.toImage(e.position);
@@ -483,6 +486,7 @@ export class AnnotationEditor {
   }
 
   private drag(e: Ev): void {
+    if (this.suspended) return;
     const s = this.session;
     if (!s) return;
     e.preventDefaultAction = true;
@@ -548,6 +552,7 @@ export class AnnotationEditor {
   }
 
   private release(e: Ev): void {
+    if (this.suspended) return;
     const s = this.session;
     this.session = null;
     const keep = this.preview;
@@ -596,6 +601,7 @@ export class AnnotationEditor {
   }
 
   private click(e: Ev): void {
+    if (this.suspended) return;
     if (this.consumedPress) {
       this.consumedPress = false;
       return;
@@ -635,6 +641,7 @@ export class AnnotationEditor {
   }
 
   private doubleClick(e: Ev): void {
+    if (this.suspended) return;
     e.preventDefaultAction = true; // never zoom on a double click
     if (this.draft) {
       this.finish();

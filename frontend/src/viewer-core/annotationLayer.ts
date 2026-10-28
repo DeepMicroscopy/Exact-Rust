@@ -1,5 +1,6 @@
 import OpenSeadragon from "openseadragon";
 import type { Box, Handle, Pt } from "./geometry";
+import type { MaskSet } from "./segmentation";
 import { VectorType, type Shape, type TypeStyle } from "./types";
 
 /** What the editor shows on top of the annotations: the selection with its handles, a shape being dragged, a shape being drawn. */
@@ -39,6 +40,7 @@ export class AnnotationLayer {
   /** a region of the image to point out (a crop's place in its original), dashed white */
   private mark: Box | null = null;
   private raf = 0;
+  private masks: MaskSet | null = null;
 
   constructor(private viewer: OpenSeadragon.Viewer) {
     this.canvas = document.createElement("canvas");
@@ -59,6 +61,17 @@ export class AnnotationLayer {
 
   setHiddenTypes(hidden: Set<number>): void {
     this.hidden = hidden;
+    this.schedule();
+  }
+
+  /** The pixel masks of segmentation annotations, drawn below the shapes. */
+  setMasks(m: MaskSet | null): void {
+    this.masks = m;
+    this.schedule();
+  }
+
+  /** Draws again (a mask tile arrived or changed). */
+  invalidate(): void {
     this.schedule();
   }
 
@@ -134,6 +147,8 @@ export class AnnotationLayer {
       ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
       ctx.setLineDash([]);
     }
+
+    this.masks?.draw(ctx, (x, y) => toPx(x, y) as [number, number], [vx0, vy0, vx1, vy1]);
 
     for (const committed of this.shapes) {
       if (this.hidden.has(committed.typeId)) continue;

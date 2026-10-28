@@ -80,6 +80,7 @@ pub fn router(state: AppState) -> Router {
         .merge(v2::image_sets::legacy_routes())
         .merge(v2::catalog::legacy_routes())
         .merge(v2::annotation_media::legacy_routes())
+        .merge(v2::segmentation::legacy_routes())
         .merge(v2::move_image::legacy_routes())
         .merge(v2::crop::legacy_routes())
         .merge(v2::registration::legacy_routes())
