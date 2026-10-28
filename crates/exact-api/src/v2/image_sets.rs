@@ -4,6 +4,8 @@
 //! - `PATCH /api/v2/image-sets/{id}`: needs `edit_set`.
 //! - `DELETE /api/v2/image-sets/{id}`: needs `delete_set`; removes everything that depends on the set and its folder.
 //! - `DELETE /api/v2/images/{id}`: needs `delete_images`, set not locked; removes the files too.
+//! - Auxiliary files (documents uploaded into a set): `GET /api/v2/image-sets/{id}/auxiliary-files`,
+//!   `GET /api/v2/auxiliary-files/{id}/download` (read), `DELETE /api/v2/auxiliary-files/{id}` (`delete_images`).
 
 use crate::{
     auth::{authenticate, require_user, AuthKind, Principal},
@@ -29,10 +31,140 @@ use serde_json::{json, Map, Value};
 use sqlx::Row;
 
 pub fn v2_routes() -> Router<AppState> {
-    Router::new().route(
-        "/api/v2/image-sets/{id}/settings",
-        axum::routing::get(settings_h),
+    Router::new()
+        .route(
+            "/api/v2/image-sets/{id}/settings",
+            axum::routing::get(settings_h),
+        )
+        .route(
+            "/api/v2/image-sets/{id}/auxiliary-files",
+            axum::routing::get(aux_list_h),
+        )
+        .route(
+            "/api/v2/auxiliary-files/{id}/download",
+            axum::routing::get(aux_download_h),
+        )
+        .route(
+            "/api/v2/auxiliary-files/{id}",
+            axum::routing::delete(aux_delete_h),
+        )
+}
+
+async fn aux_list_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(set): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let row = set_row(&s, set)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Not found."))?;
+    let pm = perms(&s, &p, &row).await?;
+    if !pm.read {
+        return Err(ApiError::not_found("Not found."));
+    }
+    let rows = sqlx::query(
+        "SELECT a.id, a.name, a.filesize, a.time, a.description, u.username FROM images_auxiliaryfile a \
+         LEFT JOIN users_user u ON u.id = a.creator_id WHERE a.image_set_id = $1 ORDER BY a.name, a.id",
     )
+    .bind(set)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let out: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            json!({"id": r.get::<i64, _>(0), "name": r.get::<String, _>(1), "filesize": r.get::<i32, _>(2),
+                   "time": r.get::<chrono::DateTime<chrono::Utc>, _>(3), "description": r.get::<Option<String>, _>(4),
+                   "creator": r.get::<Option<String>, _>(5)})
+        })
+        .collect();
+    Ok(Json(json!({"files": out, "can_delete": pm.delete_images})).into_response())
+}
+
+/// The set of an auxiliary file, its folder and name, once the caller may read the set.
+async fn aux_target(
+    s: &AppState,
+    p: &Principal,
+    id: i64,
+) -> ApiResult<(i64, String, crate::compat::perms::Perms)> {
+    let r = sqlx::query(
+        "SELECT a.image_set_id, a.name, st.path FROM images_auxiliaryfile a JOIN images_imageset st ON st.id = a.image_set_id WHERE a.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(db_err)?
+    .ok_or_else(|| ApiError::not_found("Not found."))?;
+    let set: i64 = r.get(0);
+    let (name, dir): (String, Option<String>) = (r.get(1), r.get(2));
+    let row = set_row(s, set)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Not found."))?;
+    let pm = perms(s, p, &row).await?;
+    if !pm.read {
+        return Err(ApiError::not_found("Not found."));
+    }
+    if name.contains("..") || name.starts_with('/') {
+        return Err(ApiError::not_found("Not found."));
+    }
+    let path = s
+        .slides
+        .root()
+        .join(dir.unwrap_or_default())
+        .join(&name)
+        .to_string_lossy()
+        .to_string();
+    Ok((set, path, pm))
+}
+
+async fn aux_download_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let (_, path, _) = aux_target(&s, &p, id).await?;
+    let f = tokio::fs::File::open(&path)
+        .await
+        .map_err(|_| ApiError::not_found("The file is missing on the server."))?;
+    let len = f.metadata().await.map(|m| m.len()).unwrap_or(0);
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().replace(['"', '\r', '\n'], "_"))
+        .unwrap_or_default();
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_LENGTH, len.to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{name}\""),
+            ),
+        ],
+        axum::body::Body::from_stream(tokio_util::io::ReaderStream::new(f)),
+    )
+        .into_response())
+}
+
+async fn aux_delete_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::DELETE).await?)?;
+    let (_, path, pm) = aux_target(&s, &p, id).await?;
+    if !pm.delete_images {
+        return Err(ApiError::detail(
+            StatusCode::FORBIDDEN,
+            "permission for deleting files in this image set missing.",
+        ));
+    }
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
+    cascade::delete_rows(&mut tx, "images_auxiliaryfile", &[id]).await?;
+    tx.commit().await.map_err(db_err)?;
+    let _ = tokio::fs::remove_file(path).await;
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 pub fn legacy_routes() -> Router<AppState> {

@@ -6,6 +6,7 @@ import type { Product, SetImage, SetSettings, Tag } from "../api/types";
 import { Dropdown } from "../components/Dropdown";
 import { NameConflictDialog } from "../components/NameConflictDialog";
 import { UploadTile } from "../components/UploadTile";
+import { AuxFilesDialog } from "../components/AuxFilesDialog";
 import { ExportDialog } from "../components/ExportDialog";
 import { ManualRegistration } from "../components/ManualRegistration";
 import { NewRegistrationDialog, RegistrationPanel } from "../components/Registrations";
@@ -14,7 +15,7 @@ import { Thumb } from "../components/Thumb";
 import { useUploads } from "../hooks/useUploads";
 
 type Sort = "name" | "newest" | "size";
-type Dialog = "export" | "settings" | "delete-set" | "move" | "delete-images" | "register" | null;
+type Dialog = "export" | "files" | "settings" | "delete-set" | "move" | "delete-images" | "register" | null;
 
 export function ImageSetPage() {
   const id = Number(useParams().setId);
@@ -145,6 +146,11 @@ export function ImageSetPage() {
               Upload images
             </button>
           </>
+        )}
+        {!!s?.auxiliary_file_count && can?.read && (
+          <button className="btn" onClick={() => setDialog("files")}>
+            Files ({s.auxiliary_file_count})
+          </button>
         )}
         {can?.read && (
           <button className="btn" onClick={() => setDialog("export")}>
@@ -304,6 +310,7 @@ export function ImageSetPage() {
       {uploads.conflict && <NameConflictDialog key={uploads.conflict.file.name + uploads.conflict.suggestion} conflict={uploads.conflict} onResolve={uploads.resolve} />}
       {dragging && <div className="drop-hint">Drop the files to upload them</div>}
       {dialog === "settings" && s && <SetSettingsDialog settings={s} onClose={() => setDialog(null)} onSaved={refresh} />}
+      {dialog === "files" && <AuxFilesDialog setId={id} onChanged={refresh} onClose={() => setDialog(null)} />}
       {dialog === "export" && <ExportDialog setId={id} canCreate={!!can?.create_export} canDelete={!!can?.edit_set} onClose={() => setDialog(null)} />}
       {dialog === "delete-set" && s && <DeleteSetDialog settings={s} onClose={() => setDialog(null)} onDeleted={() => navigate("/", { replace: true })} />}
       {dialog === "move" && <MoveImagesDialog images={chosen} from={id} onClose={() => setDialog(null)} onDone={refresh} />}
