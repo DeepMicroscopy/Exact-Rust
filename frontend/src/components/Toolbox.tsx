@@ -98,25 +98,28 @@ export function Toolbox(p: ToolboxProps) {
         </button>
       </div>
       <span className="v-sep" role="separator" aria-orientation="vertical" />
-      <div className="add-group">
-        <div className="seg" role="group">
-          <button className={p.drawing ? "active" : ""} onClick={() => p.currentTypeId != null && p.on.draw(p.currentTypeId)} disabled={p.palette.length === 0} aria-label="Add annotation" title="Add annotations of the type on the right (C)">
-            ＋ Add annotation
-          </button>
-        </div>
-      {(p.drawing || !sel) && (
-      <Dropdown className="type-dd" name="types" items={typeItems} onPick={(id) => p.on.draw(Number(id))} disabled={p.palette.length === 0} title="Annotation type to draw (digit keys 1-9)">
-        {current ? (
-          <>
-            {swatch(current.color)}
-            {current.key != null && <kbd>{current.key}</kbd>}
-            <span className="dd-label">{current.name}</span>
-          </>
-        ) : (
-          <span className="muted">No types</span>
-        )}
-      </Dropdown>
-      )}
+      <div className={`annotate-btn ${p.drawing ? "active" : ""}`} role="group" aria-label="Annotate with">
+        <button
+          className="annotate-label"
+          onClick={() => p.currentTypeId != null && p.on.draw(p.currentTypeId)}
+          disabled={p.palette.length === 0}
+          aria-pressed={p.drawing}
+          aria-label="Annotate with"
+          title="Draw annotations of the type on the right (C)"
+        >
+          Annotate with:
+        </button>
+        <Dropdown className="type-dd" name="types" items={typeItems} onPick={(id) => p.on.draw(Number(id))} disabled={p.palette.length === 0} title="Annotation type to draw (digit keys 1-9)">
+          {current ? (
+            <>
+              {swatch(current.color)}
+              {current.key != null && <kbd>{current.key}</kbd>}
+              <span className="dd-label">{current.name}</span>
+            </>
+          ) : (
+            <span className="muted">No types</span>
+          )}
+        </Dropdown>
       </div>
       {p.palette.length === 0 && <span className="muted small">This image set has no annotation types (assign a product to it).</span>}
 

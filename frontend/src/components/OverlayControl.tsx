@@ -4,6 +4,7 @@ import type OpenSeadragon from "openseadragon";
 import { api } from "../api/client";
 import type { Page } from "../api/client";
 import type { Registration } from "../api/types";
+import { Ring } from "./UploadTile";
 import { affineOf, invertAffine, overlayPlacement, RegistrationOverlay, type Affine } from "../viewer-core/overlay";
 
 interface Other {
@@ -26,6 +27,7 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
   const [picked, setPicked] = useState<number | null>(null);
   const [opacity, setOpacity] = useState(0.5);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const overlay = useRef<RegistrationOverlay | null>(null);
 
   const regs = useQuery({
@@ -61,10 +63,11 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
     const viewer = viewerRef.current;
     if (!viewer || !chosen) return;
     setError(null);
-    const o = new RegistrationOverlay(viewer, chosen.id, overlayPlacement(chosen.map, chosen.width, chosen.height, width), opacityRef.current, (e) => setError(e.message));
+    const o = new RegistrationOverlay(viewer, chosen.id, overlayPlacement(chosen.map, chosen.width, chosen.height, width), opacityRef.current, (e) => setError(e.message), setLoading);
     overlay.current = o;
     (window as unknown as { __overlay?: RegistrationOverlay | null }).__overlay = o; // used by the e2e tests
     return () => {
+      setLoading(false);
       o.destroy();
       overlay.current = null;
     };
@@ -87,6 +90,11 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
       </select>
       {chosen && (
         <input type="range" min={0} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} aria-label="Overlay opacity" title={`Opacity ${Math.round(opacity * 100)} %`} />
+      )}
+      {chosen && loading && (
+        <span className="overlay-loading" role="status" aria-label="Loading the overlay" data-testid="overlay-loading">
+          <Ring progress={0} spinning />
+        </span>
       )}
       {error && <span className="error small">{error}</span>}
     </div>

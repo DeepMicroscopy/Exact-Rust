@@ -675,5 +675,15 @@ Not yet: side-by-side viewing of a registered pair, auxiliary files, export, sta
 - ConfirmResize shows the old (dashed) and new (solid) box around the common centre.
 - Build note: with macOS 27 the default SDK breaks the ffmpeg link step; `SDKROOT=.../MacOSX26.5.sdk` helps (scripts/run-e2e.sh uses the Xcode SDK).
 
+### 5ae. UI polish; annotation export (2026-10-28)
+- Registration dialog picks images by preview (`ImagePicker`); manual registration is a full-screen page with a crosshair in the viewer that takes the next point (the other points stay visible); the toolbox has a pointer icon for "select" and a separator before "Add annotation" + type list.
+- **Export** (`v2/export.rs`): the template engine of `annotations/views.py: export_format` in Rust (all placeholders, `%%if...%%endif`, per-image aggregation, Python number/date/dict formatting: `py_float`, `py_repr`, `py_time`; quirks kept, e.g. fixed-size boxes have no centre). Endpoints: `GET /api/v2/image-sets/{id}/export-formats`, `GET|POST .../exports`, `GET /api/v2/exports/{id}/download`, `DELETE /api/v2/exports/{id}`, `POST|DELETE /api/v2/export-formats` (team members). UI: "Export" on the image set page. Not done: format editor UI (create via API for now), comparison of the text with Django's output on real data (to do with the production backup; the unit tests pin the number formats), verification-based filters (`min_verifications`).
+
+### 5af. UI: uploads as cards, name clashes, search, review of registrations (2026-10-28)
+- Uploads are cards in the image grid (circular progress while sending, a spinning ring while the server reads the file, error cards with Dismiss); a finished card is replaced by the real one as soon as the list has the image. A name that exists in the set (or earlier in the same drop) opens a dialog: new name or cancel.
+- Toolbox: "Annotate with:" button around the type drop-down. Overlay selector shows a spinning ring while the overlay loads.
+- Start page: no "All image sets" entry (a team is a toggle), the search also finds images (`name__icontains` filter on `/api/v2/images`, case-insensitive) and image set descriptions.
+- Manual registration: after saving, the source is laid over the target (slider) to check the result; "Review" in the registration list opens that view for any registration; a manual registration reopens with its stored points (`GET /api/v2/registrations/{id}/points`, also reads Django's stored format).
+
 ### Optimization backlog (later)
 - **NIfTI loading** (`exact-wsi/src/nifti.rs`): `Nifti::open` is fully in-memory: the whole file is read, a `.gz` is inflated completely into a second buffer, and the volume is converted to one `Vec<f32>` (4 bytes per voxel, plus the window estimate), before the first slice can be shown. Ideas: memory-map uncompressed files and decode voxels per slice on demand (keep the dtype, convert only the requested slice); for `.nii.gz` inflate on a background thread / cache an uncompressed sidecar in the media cache so later opens are instant; compute the display window from a sparse sample of slices instead of the whole volume; cache rendered slices (LRU).

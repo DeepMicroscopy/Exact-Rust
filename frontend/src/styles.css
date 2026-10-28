@@ -308,3 +308,26 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .img-pick[aria-checked="true"] { border-color: var(--purple); background: rgba(150, 100, 255, 0.15); }
 .img-pick .thumb { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px; }
 .img-pick .name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-tile { display: flex; flex-direction: column; gap: 4px; padding: 8px; }
+.upload-tile .upload-body { aspect-ratio: 4 / 3; display: grid; place-items: center; background: rgba(255, 255, 255, 0.05); border-radius: 6px; }
+.upload-tile.error { border-color: #8a2b22; }
+.upload-fail { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: #8a2b22; color: #fff; font-weight: 700; font-size: 22px; }
+.ring-bg { fill: none; stroke: rgba(255, 255, 255, 0.15); stroke-width: 6; }
+.ring-fg { fill: none; stroke: var(--purple); stroke-width: 6; stroke-linecap: round; transition: stroke-dasharray 0.2s linear; }
+.ring.spin { animation: ring-spin 0.9s linear infinite; }
+.ring-text { fill: var(--text); font: 600 14px system-ui; }
+@keyframes ring-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ring.spin { animation-duration: 3s; } }
+.toolbox .annotate-btn { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: 8px; padding: 0 2px 0 0; }
+.toolbox .annotate-btn.active { background: var(--purple-d); border-color: var(--purple); }
+.toolbox .annotate-btn .annotate-label { background: transparent; border: 0; color: var(--text); font: inherit; cursor: pointer; padding: 5px 4px 5px 12px; min-height: 34px; white-space: nowrap; }
+.toolbox .annotate-btn.active .annotate-label { color: #fff; }
+.toolbox .annotate-btn .type-dd .trigger { border-color: transparent; background: rgba(0, 0, 0, 0.25); }
+@media (pointer: coarse) { .toolbox .annotate-btn .annotate-label { min-height: 44px; } }
+.overlay-loading .ring { width: 22px; height: 22px; display: block; }
+.reg-check { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.reg-check-bar { display: flex; align-items: center; gap: 12px; }
+.reg-check-bar label { display: inline-flex; align-items: center; gap: 8px; }
+.reg-check-bar input[type="range"] { width: 240px; }
+.reg-check-bar .ring { width: 22px; height: 22px; display: block; }
+.reg-check-osd { flex: 1; min-height: 0; background: #111; border: 2px solid var(--border); border-radius: 8px; position: relative; }

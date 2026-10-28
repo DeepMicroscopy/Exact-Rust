@@ -304,6 +304,7 @@ pub static IMAGE: Spec = Spec {
         inl!("id__in", T::Num, "t.id"),
         eq!("name", T::Str, "t.name"),
         cont!("name__contains", "t.name"),
+        flt!("name__icontains", Shape::Contains, "t.name ILIKE {} ESCAPE '\\'"),
         inl!("name__in", T::Str, "t.name"),
         eq!("filename", T::Str, "t.filename"),
         cont!("filename__contains", "t.filename"),

@@ -4,6 +4,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import type { Product, SetImage, SetSettings, Tag } from "../api/types";
 import { Dropdown } from "../components/Dropdown";
+import { NameConflictDialog } from "../components/NameConflictDialog";
+import { UploadTile } from "../components/UploadTile";
+import { ExportDialog } from "../components/ExportDialog";
 import { ManualRegistration } from "../components/ManualRegistration";
 import { NewRegistrationDialog, RegistrationPanel } from "../components/Registrations";
 import { DeleteImagesDialog, DeleteSetDialog, MoveImagesDialog, SetSettingsDialog } from "../components/SetDialogs";
@@ -11,9 +14,7 @@ import { Thumb } from "../components/Thumb";
 import { useUploads } from "../hooks/useUploads";
 
 type Sort = "name" | "newest" | "size";
-type Dialog = "settings" | "delete-set" | "move" | "delete-images" | "register" | null;
-
-const fmtBytes = (n: number) => (n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`);
+type Dialog = "export" | "settings" | "delete-set" | "move" | "delete-images" | "register" | null;
 
 export function ImageSetPage() {
   const id = Number(useParams().setId);
@@ -26,7 +27,7 @@ export function ImageSetPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [dialog, setDialog] = useState<Dialog>(null);
   const [regPair, setRegPair] = useState<{ source?: number; target?: number }>({});
-  const [manual, setManual] = useState<{ source: number; target: number; names: [string, string] } | null>(null);
+  const [manual, setManual] = useState<{ source: number; target: number; names: [string, string]; review?: boolean } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +51,15 @@ export function ImageSetPage() {
     void qc.invalidateQueries({ queryKey: ["image-sets"] });
     setSelected(new Set());
   }, [qc, id]);
-  const uploads = useUploads(id, refresh);
+  const existingNames = useCallback(() => (images.data ?? []).map((i) => i.name), [images.data]);
+  const uploaded = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["images", id] });
+    void qc.invalidateQueries({ queryKey: ["set-settings", id] });
+    void qc.invalidateQueries({ queryKey: ["image-sets"] });
+  }, [qc, id]);
+  const uploads = useUploads(id, uploaded, existingNames);
+  // a finished upload gives way to the real card as soon as the list has the image
+  const shownUploads = uploads.items.filter((u) => !(u.state === "done" && u.imageId != null && (images.data ?? []).some((i) => i.id === u.imageId)));
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -128,11 +137,19 @@ export function ImageSetPage() {
         <span className="spacer" />
         {canUpload && (
           <>
-            <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files && uploads.add(e.target.files)} />
+            <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
+                if (e.target.files) uploads.add(e.target.files);
+                e.target.value = "";
+              }} />
             <button className="btn primary" onClick={() => fileInput.current?.click()}>
               Upload images
             </button>
           </>
+        )}
+        {can?.read && (
+          <button className="btn" onClick={() => setDialog("export")}>
+            Export
+          </button>
         )}
         {can?.edit_set && (
           <button className="btn" onClick={() => setDialog("settings")}>
@@ -194,32 +211,6 @@ export function ImageSetPage() {
         </button>
       </div>
 
-      {uploads.items.length > 0 && (
-        <div className="uploads glass">
-          <div className="toolbar">
-            <strong>Uploads</strong>
-            <span className="spacer" />
-            <button className="btn ghost small" onClick={uploads.clear} disabled={uploads.busy && uploads.items.every((i) => i.state !== "done" && i.state !== "error")}>
-              Clear finished
-            </button>
-          </div>
-          {uploads.items.map((u) => (
-            <div key={u.key} className={`upload ${u.state}`}>
-              <span className="name" title={u.name}>
-                {u.name}
-              </span>
-              <span className="muted small">{fmtBytes(u.size)}</span>
-              {u.state === "error" ? (
-                <span className="error small">{u.message}</span>
-              ) : (
-                <progress max={1} value={u.state === "processing" ? undefined : u.progress} />
-              )}
-              <span className="small">{u.state === "done" ? "✓" : u.state === "processing" ? "reading…" : u.state === "waiting" ? "waiting" : ""}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {tab === "images" && (
         <>
           <div className="toolbar">
@@ -267,13 +258,16 @@ export function ImageSetPage() {
           </div>
           {images.isLoading && <p className="muted">Loading…</p>}
           {images.error && <p className="error">Could not load images.</p>}
-          {images.data && images.data.length === 0 && (
+          {images.data && images.data.length === 0 && shownUploads.length === 0 && (
             <div className="empty glass">
               <p>This image set is empty.</p>
               {canUpload ? <p className="muted">Drop image files here, or use “Upload images”. ZIP files are unpacked.</p> : <p className="muted">{locked ? "It is locked." : "You cannot add images to it."}</p>}
             </div>
           )}
           <div className="grid">
+            {shownUploads.map((u) => (
+              <UploadTile key={`u${u.key}`} item={u} onDismiss={() => uploads.dismiss(u.key)} />
+            ))}
             {visible.map((i) => (
               <div key={i.id} className={`tile glass ${selected.has(i.id) ? "selected" : ""}`}>
                 <label className="tile-check" onClick={(e) => e.stopPropagation()}>
@@ -299,7 +293,7 @@ export function ImageSetPage() {
         <RegistrationPanel
           images={images.data ?? []}
           canEdit={!!can?.edit_set}
-          onManual={(source, target) => setManual({ source, target, names: [images.data?.find((i) => i.id === source)?.name ?? `image ${source}`, images.data?.find((i) => i.id === target)?.name ?? `image ${target}`] })}
+          onManual={(source, target, review) => setManual({ source, target, review, names: [images.data?.find((i) => i.id === source)?.name ?? `image ${source}`, images.data?.find((i) => i.id === target)?.name ?? `image ${target}`] })}
           onNew={() => {
             setRegPair({});
             setDialog("register");
@@ -307,8 +301,10 @@ export function ImageSetPage() {
         />
       )}
 
+      {uploads.conflict && <NameConflictDialog key={uploads.conflict.file.name + uploads.conflict.suggestion} conflict={uploads.conflict} onResolve={uploads.resolve} />}
       {dragging && <div className="drop-hint">Drop the files to upload them</div>}
       {dialog === "settings" && s && <SetSettingsDialog settings={s} onClose={() => setDialog(null)} onSaved={refresh} />}
+      {dialog === "export" && <ExportDialog setId={id} canCreate={!!can?.create_export} canDelete={!!can?.edit_set} onClose={() => setDialog(null)} />}
       {dialog === "delete-set" && s && <DeleteSetDialog settings={s} onClose={() => setDialog(null)} onDeleted={() => navigate("/", { replace: true })} />}
       {dialog === "move" && <MoveImagesDialog images={chosen} from={id} onClose={() => setDialog(null)} onDone={refresh} />}
       {dialog === "delete-images" && <DeleteImagesDialog images={chosen} onClose={() => setDialog(null)} onDone={refresh} />}

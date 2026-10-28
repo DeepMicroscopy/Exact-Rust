@@ -121,7 +121,7 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
 const STATUS: Record<RegistrationJob["status"], string> = { queued: "waiting for a worker", running: "computing…", done: "done", failed: "failed" };
 
 /** Registrations of the images of an image set and the jobs that compute them. */
-export function RegistrationPanel({ images, canEdit, onNew, onManual }: { images: SetImage[]; canEdit: boolean; onNew(): void; onManual(source: number, target: number): void }) {
+export function RegistrationPanel({ images, canEdit, onNew, onManual }: { images: SetImage[]; canEdit: boolean; onNew(): void; onManual(source: number, target: number, review?: boolean): void }) {
   const qc = useQueryClient();
   const ids = useMemo(() => images.map((i) => i.id), [images]);
   const byId = useMemo(() => new Map(images.map((i) => [i.id, i])), [images]);
@@ -243,6 +243,9 @@ export function RegistrationPanel({ images, canEdit, onNew, onManual }: { images
                 )}
                 <button className="btn small" onClick={() => redo.mutate({ source: r.source_image, target: r.target_image })} title="Compute it again automatically">
                   Recompute
+                </button>
+                <button className="btn small" onClick={() => onManual(r.source_image, r.target_image, true)} title="Lay the source image over the target to check the registration">
+                  Review
                 </button>
                 {byId.has(r.source_image) && (
                   <button className="btn small" onClick={() => onManual(r.source_image, r.target_image)} title="Set it by picking points">

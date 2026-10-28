@@ -225,6 +225,8 @@ def test_manual_registration_from_point_pairs():
     assert abs(m["t_00"] - 2) < 1e-9 and abs(m["t_12"] - 5) < 1e-9 and r.json()["registration_error"] < 1e-9
     inv = c.get(f"/api/v2/registrations?source_image={JTGT}&target_image={JSRC}").json()["items"][0]
     assert abs(inv["transformation_matrix"]["t_00"] - 0.5) < 1e-9
+    pts = c.get(f"/api/v2/registrations/{r.json()['id']}/points").json()["points"]
+    assert len(pts) == 4 and pts[1] == {"source": [100, 0], "target": [210, 5]}
     # a second one replaces both (one pair = a shift)
     r2 = c.post("/api/v2/registrations/manual", json={"source_image": JSRC, "target_image": JTGT, "inverse": True, "points": [{"source": [1, 1], "target": [4, 5]}]})
     assert r2.status_code == 201 and r2.json()["id"] == r.json()["id"]

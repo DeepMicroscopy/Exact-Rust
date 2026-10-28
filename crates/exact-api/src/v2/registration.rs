@@ -52,6 +52,7 @@ pub fn v2_routes() -> Router<AppState> {
         )
         .route("/api/v2/registrations/{id}/inverse", post(v2_inverse))
         .route("/api/v2/registrations/manual", post(manual))
+        .route("/api/v2/registrations/{id}/points", get(points_of))
 }
 
 pub fn legacy_routes() -> Router<AppState> {
@@ -903,6 +904,45 @@ async fn v1_inverse(
         Json(registration_json(&s, &p, &headers, new, false).await?),
     )
         .into_response())
+}
+
+/// Our points are `[{"source": [x, y], "target": [x, y]}]`; Django's manual registration stores `{"0": "x1:..,y1:..,x2:..,y2:.."}`
+/// with the target point first and the source point second.
+fn normalize_points(v: Value) -> Value {
+    let Value::Object(m) = v else { return v };
+    let mut out = Vec::new();
+    for t in m.values().filter_map(Value::as_str) {
+        let kv: std::collections::HashMap<&str, f64> = t
+            .split(',')
+            .filter_map(|p| p.split_once(':'))
+            .filter_map(|(k, v)| Some((k.trim(), v.trim().parse().ok()?)))
+            .collect();
+        if let (Some(x1), Some(y1), Some(x2), Some(y2)) =
+            (kv.get("x1"), kv.get("y1"), kv.get("x2"), kv.get("y2"))
+        {
+            out.push(json!({"source": [x2, y2], "target": [x1, y1]}));
+        }
+    }
+    Value::Array(out)
+}
+
+/// `GET /api/v2/registrations/{id}/points`: the point pairs a manual registration was made from (`null` for an automatic one).
+async fn points_of(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    visible_registration(&s, &p, &headers, id, true).await?;
+    let points: Option<Value> = sqlx::query_scalar(
+        "SELECT registration_points FROM images_imageregistration WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(db_err)?
+    .flatten();
+    Ok(Json(json!({ "id": id, "points": points.map(normalize_points) })).into_response())
 }
 
 async fn v2_inverse(

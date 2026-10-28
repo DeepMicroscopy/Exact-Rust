@@ -117,7 +117,7 @@ try {
   // ---------------------------------------------------------------------------------------- upload
   await page.setInputFiles('input[type="file"]', files.slice(0, 2));
   await waitFor(async () => (await page.locator(".grid .tile").count()) === 2, "two uploaded images appear in the grid");
-  check((await page.locator(".upload.done").count()) === 2, "the upload list shows both as done");
+  await waitFor(async () => (await page.locator('[data-testid="upload-tile"]').count()) === 0, "finished uploads have turned into ordinary cards");
   // a dropped file (drag and drop): dispatch the events with a DataTransfer
   const dropData = fs.readFileSync(files[2]).toString("base64");
   await page.evaluate(async ([b64, fname]) => {
@@ -129,11 +129,31 @@ try {
     target.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
   }, [dropData, path.basename(files[2])]);
   await waitFor(async () => (await page.locator(".grid .tile").count()) === 3, "a dropped file is uploaded too");
-  // the same file again: the server refuses a duplicate, the list says so
+  // the same file again: a dialog offers another name or cancelling
   await page.setInputFiles('input[type="file"]', [files[0]]);
-  await waitFor(async () => (await page.locator(".upload.error").count()) === 1, "a duplicate is reported");
-  check((await page.locator(".upload.error").innerText()).includes("already exists"), "...with the server's reason");
-  await page.locator(".uploads .btn", { hasText: "Clear finished" }).click();
+  await page.waitForSelector(".modal input[aria-label='New name']");
+  check((await page.locator(".modal").innerText()).includes(path.basename(files[0])), "a name clash opens a dialog naming the file");
+  await page.locator(".modal .btn", { hasText: "Cancel upload" }).click();
+  await page.waitForTimeout(500);
+  check((await page.locator('[data-testid="upload-tile"]').count()) === 0 && (await page.locator(".grid .tile").count()) === 3, "cancelling uploads nothing");
+  // ... or a new name: the card appears at once and shows progress
+  await page.setInputFiles('input[type="file"]', [files[0]]);
+  await page.waitForSelector(".modal input[aria-label='New name']");
+  const renamed = `renamed-${Date.now()}.png`;
+  await page.fill(".modal input[aria-label='New name']", renamed);
+  await page.route("**/api/v2/image-sets/*/images", async (route) => {
+    await new Promise((r) => setTimeout(r, 1500)); // slow enough to see the card
+    await route.continue().catch(() => {});
+  });
+  await page.locator(".modal .btn.primary").click();
+  await page.waitForSelector('[data-testid="upload-tile"] .ring');
+  check((await page.locator('[data-testid="upload-tile"]').innerText()).includes(renamed), "an upload card with a progress ring appears at once");
+  await page.unroute("**/api/v2/image-sets/*/images");
+  await waitFor(async () => (await page.locator(".grid .tile:not(.upload-tile)", { hasText: renamed }).count()) === 1, "the file is uploaded under the new name");
+  const extra = (await apiCall(root, "GET", `/api/v2/images?image_set=${setId}&fields=id,name&limit=100`)).body.items.find((i) => i.name.includes(renamed.replace(".png", "")));
+  await apiCall(root, "DELETE", `/api/v2/images/${extra.id}`);
+  await page.reload();
+  await waitFor(async () => (await page.locator(".grid .tile").count()) === 3, "the extra image is removed again");
   check((await page.locator(".grid .tile").count()) === 3, "the grid still has three images");
   await page.screenshot({ path: shots ? `${shots}/s2-grid.png` : undefined });
 
@@ -146,9 +166,21 @@ try {
   const productChips = await page.locator(".tag.product").count();
   check(products === 0 || productChips >= 1, `the product chosen at creation is on the set (${productChips})`);
 
+  // ---------------------------------------------------------------------------------------- search across sets and images
+  await page.goto(base);
+  await page.waitForSelector(".cards");
+  check((await page.locator(".side-item", { hasText: "All image sets" }).count()) === 0, "there is no 'All image sets' entry among the teams");
+  await page.fill("input[aria-label=Search]", "IMG-2");
+  await page.waitForSelector('[data-testid="image-hits"] .card');
+  check((await page.locator('[data-testid="image-hits"] .card', { hasText: "img-2" }).count()) >= 1, "the search finds images (case-insensitive) as well as image sets");
+  await page.fill("input[aria-label=Search]", name.slice(0, 12));
+  await waitFor(async () => (await page.locator(".cards .card", { hasText: name }).count()) >= 1, "...and still finds image sets");
+  await page.goto(`${base}/sets/${setId}`);
+  await page.waitForSelector(".tabs");
   // ---------------------------------------------------------------------------------------- filter, sort, select
+  await waitFor(async () => (await page.locator(".grid .tile").count()) === 3, "the set page shows its three images");
   await page.fill(".search[placeholder^='Filter']", "img-2");
-  check((await page.locator(".grid .tile").count()) === 1, "the filter narrows the grid");
+  await waitFor(async () => (await page.locator(".grid .tile").count()) === 1, "the filter narrows the grid");
   await page.fill(".search[placeholder^='Filter']", "");
   await page.locator(".tile", { hasText: "img-1" }).locator("input[type=checkbox]").check({ force: true });
   await page.locator(".tile", { hasText: "img-2" }).locator("input[type=checkbox]").check({ force: true });
@@ -233,14 +265,27 @@ try {
   const saved = await page.locator('[data-testid="manual-saved"]').innerText();
   const err = Number(/error ([\d.]+)/.exec(saved)?.[1]);
   check(err < 3, `the manual registration is saved with a small error (${saved})`);
+  await page.waitForSelector('[data-testid="reg-check"] canvas');
+  await waitFor(() => page.evaluate(() => window.__reg_check?.world.getItemCount() >= 2), "after saving, the source is laid over the target for checking");
+  await waitFor(async () => (await page.locator('[data-testid="check-loading"]').count()) === 0, "...and its loading indicator goes away");
+  await page.locator(".reg-full .btn", { hasText: "Edit the points" }).click();
+  check((await page.locator(".reg-pairs .chip").count()) === 3, "the points can be edited after the check");
+  await page.locator(".reg-full .btn", { hasText: "Back to the overlay" }).click();
   await page.locator(".reg-full .btn", { hasText: "Close" }).click();
   const regs = (await apiCall(root, "GET", `/api/v2/registrations?source_image=${i1.id}&target_image=${i2.id}`)).body.items;
   check(regs.length === 1 && Math.abs(regs[0].transformation_matrix.t_00 - 0.5) < 0.02 && Math.abs(regs[0].transformation_matrix.t_02 - 20) < 8, "the stored matrix has the picked scale and shift");
+  await page.locator(".reg", { hasText: "img-1" }).first().locator(".btn", { hasText: "Review" }).click();
+  await page.waitForSelector('[data-testid="reg-check"] canvas');
+  check((await page.locator('[data-testid="manual-saved"]').count()) === 0, "a registration can be reviewed from the list");
+  await page.locator(".reg-full .btn", { hasText: "Edit the points" }).click();
+  await waitFor(async () => (await page.locator(".reg-pairs .chip").count()) === 3, "a manual registration shows its stored points when reopened");
+  await page.locator(".reg-full > header .btn").click();
   // the viewer of img-1 offers img-2 as an overlay, placed through the inverse
   await page.goto(`${base}/images/${i1.id}`);
   await page.waitForSelector('[data-testid="overlay-control"]');
   await page.selectOption("#overlay-pick", String(i2.id));
   await waitFor(() => page.evaluate(() => window.__overlay && window.__viewer.world.getItemCount() >= 2), "the overlay image is added");
+  await waitFor(async () => (await page.locator('[data-testid="overlay-loading"]').count()) === 0, "the loading indicator of the overlay goes away when it is drawn");
   const placed = await page.evaluate(() => {
     const v = window.__viewer;
     const top = v.world.getItemAt(v.world.getItemCount() - 1);
@@ -264,6 +309,16 @@ try {
   await page.goto(`${base}/sets/${setId}`);
   await page.waitForSelector(".tabs");
   await page.locator(".tile", { hasText: "img-1" }).locator("input[type=checkbox]").check({ force: true });
+  // ---------------------------------------------------------------------------------------- export
+  const fmt = (await apiCall(root, "POST", "/api/v2/export-formats", { name: `e2e ${String(Date.now()).slice(-8)}`, team: 1, public: true, base_format: "set %%imageset%%content" })).body;
+  await page.locator(".toolbar .btn", { hasText: "Export" }).click();
+  await page.waitForSelector('select[aria-label="Export format"]');
+  await page.selectOption('select[aria-label="Export format"]', String(fmt.id));
+  await page.locator(".modal .btn.primary", { hasText: "Create export" }).click();
+  await waitFor(async () => (await page.locator('[data-testid="exports"] a').count()) === 1, "an export is created and listed");
+  check((await page.locator('[data-testid="exports"] a').getAttribute("href")).includes("/download"), "...with a download link");
+  await page.locator(".modal .btn", { hasText: "Close" }).first().click();
+  await apiCall(root, "DELETE", `/api/v2/export-formats/${fmt.id}`);
   // ---------------------------------------------------------------------------------------- move
   await page.locator(".tabs button", { hasText: "Images" }).click();
   await page.locator(".toolbar .btn", { hasText: "Clear" }).click(); // the two images of the registration are still selected

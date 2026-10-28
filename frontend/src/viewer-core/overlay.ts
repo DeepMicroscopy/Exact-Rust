@@ -50,7 +50,10 @@ export class RegistrationOverlay {
     placement: ReturnType<typeof overlayPlacement>,
     opacity: number,
     onError: (e: Error) => void,
+    /** true until the overlay has been drawn completely for the first time */
+    onLoading: (loading: boolean) => void = () => {},
   ) {
+    onLoading(true);
     loadTileSource(imageId, 0, 0)
       .then((tileSource) => {
         if (this.gone) return;
@@ -64,12 +67,25 @@ export class RegistrationOverlay {
             else {
               this.item = e.item;
               this.keepOnTop();
+              const done = (e2: { fullyLoaded: boolean }) => {
+                if (!e2.fullyLoaded) return;
+                this.item?.removeHandler("fully-loaded-change", done);
+                onLoading(false);
+              };
+              if (e.item.getFullyLoaded()) onLoading(false);
+              else e.item.addHandler("fully-loaded-change", done as (ev: unknown) => void);
             }
           },
-          error: () => onError(new Error("Cannot load the overlay image")),
+          error: () => {
+            onLoading(false);
+            onError(new Error("Cannot load the overlay image"));
+          },
         });
       })
-      .catch(onError);
+      .catch((e: Error) => {
+        onLoading(false);
+        onError(e);
+      });
     viewer.world.addHandler("add-item", this.keepOnTop);
   }
 
