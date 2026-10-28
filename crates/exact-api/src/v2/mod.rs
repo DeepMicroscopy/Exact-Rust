@@ -41,6 +41,7 @@ pub fn routes() -> Router<AppState> {
         .merge(admin::routes())
         .merge(move_image::v2_routes())
         .merge(crop::v2_routes())
+        .merge(image_sets::v2_routes())
         .merge(registration::v2_routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))

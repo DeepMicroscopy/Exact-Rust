@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { listAll } from "../api/client";
+import { NewSetDialog } from "../components/SetDialogs";
 import type { ImageSet, Team } from "../api/types";
 import { Thumb } from "../components/Thumb";
 
 export function Index() {
   const [teamId, setTeamId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
+  const navigate = useNavigate();
   const teams = useQuery({ queryKey: ["teams"], queryFn: () => listAll<Team>("/api/v2/teams", { fields: "id,name" }) });
   const sets = useQuery({
     queryKey: ["image-sets"],
@@ -36,7 +40,11 @@ export function Index() {
       <section className="main">
         <div className="toolbar">
           <h2>Image sets</h2>
+          <span className="spacer" />
           <input className="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <button className="btn primary" onClick={() => setCreating(true)} disabled={!teams.data?.length}>
+            New image set
+          </button>
         </div>
         {sets.isLoading && <p className="muted">Loading…</p>}
         {sets.error && <p className="error">Could not load image sets.</p>}
@@ -55,6 +63,7 @@ export function Index() {
         </div>
         {sets.data && visible.length === 0 && <p className="muted">No image sets found.</p>}
       </section>
+      {creating && teams.data && <NewSetDialog teams={teams.data} defaultTeam={teamId} onClose={() => setCreating(false)} onCreated={(id) => navigate(`/sets/${id}`)} />}
     </div>
   );
 }

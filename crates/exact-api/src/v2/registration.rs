@@ -274,20 +274,42 @@ fn target_of(d: &Map<String, Value>) -> ApiResult<i64> {
     }
 }
 
+/// The caller may edit the image set of the image (members of the team may), no Django model permission needed.
+async fn editable_image(s: &AppState, p: &Principal, image: i64) -> ApiResult<()> {
+    let set: Option<i64> =
+        sqlx::query_scalar("SELECT image_set_id FROM images_image WHERE id = $1")
+            .bind(image)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?;
+    let Some(set) = set else {
+        return Err(ApiError::not_found("No Image matches the given query."));
+    };
+    let row = set_row(s, set)
+        .await?
+        .ok_or_else(|| ApiError::not_found("No Image matches the given query."))?;
+    let pm = perms(s, p, &row).await?;
+    if !pm.read {
+        return Err(ApiError::not_found("No Image matches the given query."));
+    }
+    if pm.edit_set {
+        Ok(())
+    } else {
+        Err(ApiError::detail(
+            StatusCode::FORBIDDEN,
+            "permission for editing this image set missing.",
+        ))
+    }
+}
+
 async fn v2_register(
     State(s): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<i64>,
     body: Bytes,
 ) -> ApiResult<Response> {
-    let p = require_model_perm(
-        &s,
-        authenticate(&s, &headers, &Method::POST).await?,
-        &Method::POST,
-        "images",
-        "imageregistration",
-    )
-    .await?;
+    let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    editable_image(&s, &p, id).await?;
     let d = parse_object(&body)?;
     let job = enqueue(&s, &p, id, target_of(&d)?, job_params(&d)).await?;
     Ok((StatusCode::ACCEPTED, Json(job_json(&s, job).await?)).into_response())
@@ -646,6 +668,40 @@ async fn insert_inverse(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: i64)
     .map_err(db_err)
 }
 
+async fn source_of(s: &AppState, registration: i64) -> ApiResult<i64> {
+    sqlx::query_scalar("SELECT source_image_id FROM images_imageregistration WHERE id = $1")
+        .bind(registration)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?
+        .ok_or_else(|| ApiError::not_found("Not found."))
+}
+
+/// `DELETE /api/v2/registrations/{id}`: members who may edit the image set of the source image (no model permission needed);
+/// the pickled quad tree goes with it.
+pub async fn delete_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::DELETE).await?)?;
+    visible_registration(&s, &p, &headers, id, true).await?;
+    editable_image(&s, &p, source_of(&s, id).await?).await?;
+    let file: Option<String> =
+        sqlx::query_scalar("SELECT file FROM images_imageregistration WHERE id = $1")
+            .bind(id)
+            .fetch_one(&s.pool)
+            .await
+            .map_err(db_err)?;
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
+    crate::cascade::delete_rows(&mut tx, "images_imageregistration", &[id]).await?;
+    tx.commit().await.map_err(db_err)?;
+    if let Some(f) = file.filter(|f| !f.is_empty()) {
+        crate::media::remove(&s, &f).await;
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 async fn inverse_of(s: &AppState, id: i64) -> ApiResult<i64> {
     let mut tx = s.pool.begin().await.map_err(db_err)?;
     let new = insert_inverse(&mut tx, id).await?;
@@ -853,15 +909,9 @@ async fn v2_inverse(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> ApiResult<Response> {
-    let p = require_model_perm(
-        &s,
-        authenticate(&s, &headers, &Method::POST).await?,
-        &Method::POST,
-        "images",
-        "imageregistration",
-    )
-    .await?;
+    let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
     visible_registration(&s, &p, &headers, id, true).await?;
+    editable_image(&s, &p, source_of(&s, id).await?).await?;
     let new = inverse_of(&s, id).await?;
     Ok((
         StatusCode::CREATED,

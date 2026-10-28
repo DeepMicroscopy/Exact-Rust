@@ -60,3 +60,71 @@ export interface Annotation {
   deleted?: boolean;
   unique_identifier?: string;
 }
+
+export interface SetSettings {
+  id: number;
+  name: string;
+  description: string | null;
+  location: string | null;
+  public: boolean;
+  public_collaboration: boolean;
+  image_lock: boolean;
+  priority: number;
+  collaboration_type: number;
+  main_annotation_type: number | null;
+  team: number | null;
+  team_name: string | null;
+  time: string;
+  creator: number | null;
+  image_count: number;
+  auxiliary_file_count: number;
+  permissions: { read: boolean; annotate: boolean; edit_set: boolean; delete_set: boolean; delete_images: boolean; create_export: boolean };
+}
+
+export interface SetImage {
+  id: number;
+  name: string;
+  width: number;
+  height: number;
+  mpp: number;
+  frames: number;
+  image_set: number;
+  time: string;
+  crop_source: number | null;
+}
+
+export interface Product {
+  id: number;
+  name: string;
+  team: number | null;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+}
+
+export interface Registration {
+  id: number;
+  source_image: number;
+  target_image: number;
+  registration_error: number;
+  runtime: number;
+  rotation_angle: number | null;
+  get_scale: [number, number] | null;
+  transformation_matrix: Record<string, number> | null;
+}
+
+export interface RegistrationJob {
+  id: number;
+  source_image: number;
+  target_image: number;
+  params: Record<string, unknown>;
+  status: "queued" | "running" | "done" | "failed";
+  error: string | null;
+  worker: string | null;
+  registration: number | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}

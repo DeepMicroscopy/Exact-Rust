@@ -6,6 +6,10 @@ export function setCsrfToken(t: string | null): void {
   csrfToken = t;
 }
 
+export function getCsrfToken(): string | null {
+  return csrfToken;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

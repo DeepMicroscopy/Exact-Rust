@@ -115,6 +115,10 @@ pub fn routes() -> Router<AppState> {
                 .delete(super::admin::user_delete),
         )
         .route(
+            "/api/v2/registrations/{id}",
+            get(registrations_detail).delete(super::registration::delete_h),
+        )
+        .route(
             "/api/v2/annotation-media-files/{id}",
             get(media_files_detail).delete(super::annotation_media::delete_h),
         )
@@ -428,4 +432,13 @@ async fn users_detail(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     detail_h(s, headers, uri, Path(("users".into(), id))).await
+}
+
+async fn registrations_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("registrations".into(), id))).await
 }

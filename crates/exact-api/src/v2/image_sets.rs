@@ -28,6 +28,13 @@ use axum::{
 use serde_json::{json, Map, Value};
 use sqlx::Row;
 
+pub fn v2_routes() -> Router<AppState> {
+    Router::new().route(
+        "/api/v2/image-sets/{id}/settings",
+        axum::routing::get(settings_h),
+    )
+}
+
 pub fn legacy_routes() -> Router<AppState> {
     Router::new().route("/images/api/imageset/create/", post(legacy_create))
 }
@@ -527,4 +534,54 @@ pub async fn delete_image(s: &AppState, p: &Principal, id: i64) -> ApiResult<()>
         }
     }
     Ok(())
+}
+
+/// `GET /api/v2/image-sets/{id}/settings`: what the image set page needs beyond the resource representation: the flags (public,
+/// locked, ...), the number of images, and what the caller may do with the set.
+async fn settings_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let row = set_row(&s, id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Not found."))?;
+    let pm = perms(&s, &p, &row).await?;
+    if !pm.read {
+        return Err(ApiError::not_found("Not found."));
+    }
+    let r = sqlx::query(
+        "SELECT st.name, st.description, st.location, st.public, st.public_collaboration, st.image_lock, st.priority, st.collaboration_type, \
+         st.main_annotation_type_id, st.team_id, t.name, st.time, st.creator_id, \
+         (SELECT count(*) FROM images_image WHERE image_set_id = st.id), (SELECT count(*) FROM images_auxiliaryfile WHERE image_set_id = st.id) \
+         FROM images_imageset st LEFT JOIN users_team t ON t.id = st.team_id WHERE st.id = $1",
+    )
+    .bind(id)
+    .fetch_one(&s.pool)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(json!({
+        "id": id,
+        "name": r.get::<String, _>(0),
+        "description": r.get::<Option<String>, _>(1),
+        "location": r.get::<Option<String>, _>(2),
+        "public": r.get::<bool, _>(3),
+        "public_collaboration": r.get::<bool, _>(4),
+        "image_lock": r.get::<bool, _>(5),
+        "priority": r.get::<i32, _>(6),
+        "collaboration_type": r.get::<i32, _>(7),
+        "main_annotation_type": r.get::<Option<i64>, _>(8),
+        "team": r.get::<Option<i64>, _>(9),
+        "team_name": r.get::<Option<String>, _>(10),
+        "time": r.get::<chrono::DateTime<chrono::Utc>, _>(11).to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+        "creator": r.get::<Option<i64>, _>(12),
+        "image_count": r.get::<i64, _>(13),
+        "auxiliary_file_count": r.get::<i64, _>(14),
+        "permissions": {
+            "read": pm.read, "annotate": pm.annotate, "edit_set": pm.edit_set, "delete_set": pm.delete_set,
+            "delete_images": pm.delete_images, "create_export": pm.create_export,
+        },
+    }))
+    .into_response())
 }

@@ -107,3 +107,15 @@ def test_exact_sync_create_with_nested_ids():
     j = r.json()
     assert j["name"] == name and j["team"]["id"] == TEAM and [p["id"] for p in j["products"]] == [1]
     client("rt_teamadmin").delete(f"/api/v2/image-sets/{j['id']}")
+
+
+def test_settings_endpoint_has_flags_counts_and_my_permissions():
+    c = client("rt_teamadmin")
+    s = new_set(c)
+    st = c.get(f"/api/v2/image-sets/{s['id']}/settings").json()
+    assert st["name"] == s["name"] and st["image_lock"] is False and st["public"] is False and st["image_count"] == 0
+    assert st["permissions"]["edit_set"] and st["permissions"]["delete_set"] and st["team_name"]
+    c.patch(f"/api/v2/image-sets/{s['id']}", json={"image_lock": True})
+    assert c.get(f"/api/v2/image-sets/{s['id']}/settings").json()["image_lock"] is True
+    assert client("rt_outsider").get(f"/api/v2/image-sets/{s['id']}/settings").status_code == 404
+    c.delete(f"/api/v2/image-sets/{s['id']}")

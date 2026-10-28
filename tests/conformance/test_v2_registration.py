@@ -199,3 +199,17 @@ def test_real_worker_registers_and_the_helper_converts_through_the_pickle():
     conv = c.get(f"/api/v2/registrations/{reg['id']}/convert", params={"vector": '{"x1": 100, "y1": 100}'})
     assert conv.status_code == 200, conv.text
     assert set(conv.json()) == {"x1", "y1"}
+
+
+def test_team_members_manage_registrations_without_model_permissions():
+    t, a = client("rt_teamadmin"), client()
+    j = t.post("/api/v2/images/6/register", json={"target_image": 11})  # rt_teamadmin has no Django model permissions, only the team
+    assert j.status_code == 202, j.text
+    assert fake_worker(a, "w1")["id"] == j.json()["id"]
+    reg = a.get("/api/v2/registrations", params={"source_image": 6, "target_image": 11}).json()["items"][0]["id"]
+    inv = t.post(f"/api/v2/registrations/{reg}/inverse")
+    assert inv.status_code == 201, inv.text
+    assert client("rt_outsider").delete(f"/api/v2/registrations/{reg}").status_code == 404
+    assert t.delete(f"/api/v2/registrations/{inv.json()['id']}").status_code == 204
+    assert t.delete(f"/api/v2/registrations/{reg}").status_code == 204
+    assert t.get(f"/api/v2/registrations/{reg}").status_code == 404
