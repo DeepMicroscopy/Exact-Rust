@@ -1,17 +1,90 @@
 //! NIfTI-1/2 volumes (`.nii`, `.nii.gz`): port of `util/nifti.py`. Data is reoriented to the closest RAS+
 //! orientation (`nibabel.as_closest_canonical`), displayed radiologically and windowed to the 1st..99th percentile.
+//!
+//! The voxels stay in their file dtype and are decoded per slice: an uncompressed file is memory-mapped, a `.nii.gz` is
+//! inflated once (streaming) into a sidecar in the cache directory that later opens map directly.
 
 use crate::{err, Result, Slide, WsiError};
 use image::RgbaImage;
-use std::{collections::HashMap, io::Read};
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    io::{Read, Write},
+    path::PathBuf,
+};
 
 /// Pixel lookup `(column, row) -> value` of one rendered slice.
 type Pixel<'a> = Box<dyn Fn(usize, usize) -> f32 + 'a>;
 
+/// The uncompressed file, mapped from disk.
+struct Raw(memmap2::Mmap);
+
+impl std::ops::Deref for Raw {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// Where the voxels are and how to decode and reorient them.
+struct Voxels {
+    raw: Raw,
+    body: usize,
+    bytes_per: usize,
+    kind: char,
+    le: bool,
+    slope: f64,
+    inter: f64,
+    /// input axis feeding each output axis, and whether it runs backwards
+    src_of: [usize; 3],
+    flip: [bool; 3],
+    /// reoriented spatial size and the number of extra (time) volumes
+    out_dims: [usize; 3],
+    extra: usize,
+    in_stride: [usize; 3],
+    volume: usize,
+}
+
+impl Voxels {
+    /// Value at (x, y, z) of the reoriented volume; z runs over spatial z major, extra volume minor.
+    fn at(&self, x: usize, y: usize, z: usize) -> f32 {
+        let (o2, t) = (z / self.extra, z % self.extra);
+        let o = [x, y, o2];
+        let mut off = 0;
+        #[allow(clippy::needless_range_loop)]
+        for ax in 0..3 {
+            let idx = if self.flip[ax] {
+                self.out_dims[ax] - 1 - o[ax]
+            } else {
+                o[ax]
+            };
+            off += idx * self.in_stride[self.src_of[ax]];
+        }
+        let at = self.body + (off + t * self.volume) * self.bytes_per;
+        let rd = Reader {
+            b: &self.raw,
+            le: self.le,
+        };
+        let v: f64 = match (self.kind, self.bytes_per) {
+            ('u', 1) => self.raw[at] as f64,
+            ('i', 1) => self.raw[at] as i8 as f64,
+            ('i', 2) => rd.i16(at) as f64,
+            ('u', 2) => u16::from_le_bytes(rd.arr(at)) as f64,
+            ('i', 4) => rd.i32(at) as f64,
+            ('u', 4) => u32::from_le_bytes(rd.arr(at)) as f64,
+            ('f', 4) => rd.f32(at),
+            ('i', 8) => rd.i64(at) as f64,
+            ('u', 8) => u64::from_le_bytes(rd.arr(at)) as f64,
+            _ => rd.f64(at),
+        };
+        (v * self.slope + self.inter) as f32
+    }
+}
+
 pub struct Nifti {
-    /// (X, Y, Z) after reorientation, row-major with X fastest
+    /// (X, Y, Z) after reorientation
     shape: (usize, usize, usize),
-    data: Vec<f32>,
+    vox: Voxels,
     spacing: (f64, f64, f64),
     ax: (u32, u32),
     cor: (u32, u32),
@@ -101,22 +174,64 @@ fn quat_affine(b: f64, c: f64, d: f64, off: [f64; 3], zooms: [f64; 3], qfac: f64
     m
 }
 
+fn map(f: &std::fs::File) -> std::io::Result<memmap2::Mmap> {
+    // SAFETY: the file is only read; the sidecar is replaced by rename, never modified in place
+    unsafe { memmap2::Mmap::map(f) }
+}
+
+/// Where the inflated copy of a `.nii.gz` lives: `$EXACT_NIFTI_CACHE` or the system temp directory, keyed by the path,
+/// size and modification time of the source.
+fn sidecar(path: &str) -> Result<PathBuf> {
+    let meta = std::fs::metadata(path).map_err(|e| WsiError(format!("{path}: {e}")))?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (path, meta.len(), meta.modified().ok()).hash(&mut h);
+    let dir = std::env::var_os("EXACT_NIFTI_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("exact-nifti"));
+    std::fs::create_dir_all(&dir).map_err(|e| WsiError(e.to_string()))?;
+    Ok(dir.join(format!("{:016x}.nii", h.finish())))
+}
+
+/// Inflates `src` into `dst` without holding it in memory; written under a private name and renamed, so a concurrent
+/// open never maps a half-written file.
+fn inflate_to(src: &str, dst: &std::path::Path) -> Result<()> {
+    let tmp = dst.with_extension(format!("tmp{}", std::process::id()));
+    let io = |e: std::io::Error| WsiError(e.to_string());
+    let run = || -> std::io::Result<()> {
+        let mut dec = flate2::read::MultiGzDecoder::new(std::io::BufReader::new(
+            std::fs::File::open(src)?,
+        ));
+        let mut out = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&tmp)?);
+        std::io::copy(&mut dec, &mut out)?;
+        out.flush()
+    };
+    if let Err(e) = run() {
+        std::fs::remove_file(&tmp).ok();
+        return Err(io(e));
+    }
+    std::fs::rename(&tmp, dst).map_err(io)
+}
+
 impl Nifti {
     pub fn open(path: &str) -> Result<Self> {
-        let raw = std::fs::read(path).map_err(|e| WsiError(format!("{path}: {e}")))?;
-        let bytes = if raw.starts_with(&[0x1f, 0x8b]) {
-            let mut out = Vec::new();
-            flate2::read::MultiGzDecoder::new(&raw[..])
-                .read_to_end(&mut out)
-                .map_err(|e| WsiError(e.to_string()))?;
-            out
+        let e = |e: std::io::Error| WsiError(format!("{path}: {e}"));
+        let mut f = std::fs::File::open(path).map_err(e)?;
+        let mut head = [0u8; 2];
+        let gz = f.read_exact(&mut head).is_ok() && head == [0x1f, 0x8b];
+        let raw = if gz {
+            let side = sidecar(path)?;
+            if !side.exists() {
+                inflate_to(path, &side)?;
+            }
+            Raw(map(&std::fs::File::open(&side).map_err(e)?).map_err(e)?)
         } else {
-            raw
+            Raw(map(&f).map_err(e)?)
         };
-        Self::parse(&bytes)
+        Self::parse(raw)
     }
 
-    pub fn parse(b: &[u8]) -> Result<Self> {
+    fn parse(raw: Raw) -> Result<Self> {
+        let b: &[u8] = &raw;
         if b.len() < 348 {
             return err("not a NIfTI file");
         }
@@ -207,32 +322,14 @@ impl Nifti {
             64 => (8, 'f'),
             _ => return err(format!("unsupported NIfTI datatype {dtype}")),
         };
-        let body = b
-            .get(vox_offset..vox_offset + total * bytes_per)
-            .ok_or_else(|| WsiError("truncated NIfTI data".into()))?;
+        if b.len() < vox_offset || b.len() - vox_offset < total * bytes_per {
+            return err("truncated NIfTI data");
+        }
         let (slope, inter) = if slope.is_finite() && slope != 0.0 {
             (slope, if inter.is_finite() { inter } else { 0.0 })
         } else {
             (1.0, 0.0)
         };
-        let rd = Reader { b: body, le };
-        let mut vals = Vec::with_capacity(total);
-        for i in 0..total {
-            let o = i * bytes_per;
-            let v: f64 = match (kind, bytes_per) {
-                ('u', 1) => body[o] as f64,
-                ('i', 1) => body[o] as i8 as f64,
-                ('i', 2) => rd.i16(o) as f64,
-                ('u', 2) => u16::from_le_bytes(rd.arr(o)) as f64,
-                ('i', 4) => rd.i32(o) as f64,
-                ('u', 4) => u32::from_le_bytes(rd.arr(o)) as f64,
-                ('f', 4) => rd.f32(o),
-                ('i', 8) => rd.i64(o) as f64,
-                ('u', 8) => u64::from_le_bytes(rd.arr(o)) as f64,
-                _ => rd.f64(o),
-            };
-            vals.push((v * slope + inter) as f32);
-        }
         // io_orientation: for each input axis the output axis it mostly points to and its sign
         let zoom_in: Vec<f64> = (0..3)
             .map(|j| {
@@ -277,26 +374,21 @@ impl Nifti {
         let in_stride = [1usize, dx, dx * dy];
         // time/extra dimensions are flattened into z after the spatial axes: z_out = z * extra + t
         let (nx, ny, nz) = (out_dims[0], out_dims[1], out_dims[2] * extra);
-        let mut data = vec![0f32; nx * ny * nz];
-        for t in 0..extra {
-            for o2 in 0..out_dims[2] {
-                for o1 in 0..out_dims[1] {
-                    for o0 in 0..out_dims[0] {
-                        let o = [o0, o1, o2];
-                        let mut off = 0;
-                        for ax in 0..3 {
-                            let idx = if flip[ax] {
-                                out_dims[ax] - 1 - o[ax]
-                            } else {
-                                o[ax]
-                            };
-                            off += idx * in_stride[src_of[ax]];
-                        }
-                        data[o0 + nx * (o1 + ny * (o2 * extra + t))] = vals[off + t * dx * dy * dz];
-                    }
-                }
-            }
-        }
+        let vox = Voxels {
+            raw,
+            body: vox_offset,
+            bytes_per,
+            kind,
+            le,
+            slope,
+            inter,
+            src_of,
+            flip,
+            out_dims,
+            extra,
+            in_stride,
+            volume: dx * dy * dz,
+        };
         // squeeze: a singleton axis does not change the layout used below (single z frame for 2D)
         let plane = |s1: f64, s2: f64, n1: usize, n2: usize| {
             let reference = s1.min(s2);
@@ -309,8 +401,11 @@ impl Nifti {
         let cor = plane(spacing[0], spacing[2], nx, nz);
         let sag = plane(spacing[1], spacing[2], ny, nz);
         // window from a sparse sample
-        let step = (data.len() / 100_000).max(1);
-        let mut sample: Vec<f32> = data.iter().step_by(step).copied().collect();
+        let step = (nx * ny * nz / 100_000).max(1);
+        let mut sample: Vec<f32> = (0..nx * ny * nz)
+            .step_by(step)
+            .map(|i| vox.at(i % nx, i / nx % ny, i / (nx * ny)))
+            .collect();
         let min = sample.iter().cloned().fold(f32::INFINITY, f32::min);
         sample.retain(|v| *v > min);
         sample.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -328,7 +423,7 @@ impl Nifti {
         }
         Ok(Self {
             shape: (nx, ny, nz),
-            data,
+            vox,
             spacing: (spacing[0], spacing[1], spacing[2]),
             ax,
             cor,
@@ -351,7 +446,7 @@ impl Nifti {
     /// sagittal: Superior at top, Posterior on the left.
     fn render(&self, plane: u32, frame: u32) -> RgbaImage {
         let (nx, ny, nz) = self.shape;
-        let at = |x: usize, y: usize, z: usize| self.data[x + nx * (y + ny * z)];
+        let at = |x: usize, y: usize, z: usize| self.vox.at(x, y, z);
         let (w, h, f): (usize, usize, Pixel) = match plane {
             1 => {
                 let y = (frame as usize).min(ny - 1);
@@ -485,5 +580,62 @@ impl Slide for Nifti {
             w,
             h,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 4x3x2 int16 volume, voxel (x, y, z) = 100 * z + 10 * y + x, identity orientation.
+    fn volume() -> Vec<u8> {
+        let mut h = vec![0u8; 352];
+        h[0..4].copy_from_slice(&348i32.to_le_bytes());
+        for (i, d) in [3i16, 4, 3, 2].iter().enumerate() {
+            h[40 + 2 * i..42 + 2 * i].copy_from_slice(&d.to_le_bytes());
+        }
+        h[70..72].copy_from_slice(&4i16.to_le_bytes());
+        for i in 0..4 {
+            h[76 + 4 * i..80 + 4 * i].copy_from_slice(&1f32.to_le_bytes());
+        }
+        h[108..112].copy_from_slice(&352f32.to_le_bytes());
+        h[254..256].copy_from_slice(&1i16.to_le_bytes());
+        for i in 0..3 {
+            h[280 + 16 * i + 4 * i..284 + 16 * i + 4 * i].copy_from_slice(&1f32.to_le_bytes());
+        }
+        for z in 0..2i16 {
+            for y in 0..3i16 {
+                for x in 0..4i16 {
+                    h.extend((100 * z + 10 * y + x).to_le_bytes());
+                }
+            }
+        }
+        h
+    }
+
+    #[test]
+    fn plain_and_gzipped_volumes_render_alike() {
+        let dir = std::env::temp_dir().join(format!("exact-nifti-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("EXACT_NIFTI_CACHE", dir.join("cache"));
+        let plain = dir.join("v.nii");
+        std::fs::write(&plain, volume()).unwrap();
+        let gz = dir.join("v.nii.gz");
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        enc.write_all(&volume()).unwrap();
+        std::fs::write(&gz, enc.finish().unwrap()).unwrap();
+        let a = Nifti::open(plain.to_str().unwrap()).unwrap();
+        let b = Nifti::open(gz.to_str().unwrap()).unwrap();
+        assert_eq!(a.shape, (4, 3, 2));
+        // the voxel (3, 2, 1) is 123, read through the orientation of the volume
+        assert_eq!(a.vox.at(3, 2, 1), 123.0);
+        assert_eq!(b.vox.at(3, 2, 1), 123.0);
+        for p in 0..3 {
+            assert_eq!(a.render(p, 1).as_raw(), b.render(p, 1).as_raw());
+        }
+        // the second open of the gz finds the inflated sidecar
+        assert!(sidecar(gz.to_str().unwrap()).unwrap().exists());
+        assert!(Nifti::open(gz.to_str().unwrap()).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
