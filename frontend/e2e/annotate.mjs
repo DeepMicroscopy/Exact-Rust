@@ -147,6 +147,18 @@ try {
   // click selects it; a handle resizes, the body moves
   await admin.keyboard.press("c");
   check((await admin.locator(".toolbox .seg button.active, .toolbox .annotate-btn.active .annotate-label").getAttribute("aria-label")) === "Select", "C returns to the select tool");
+  // the tools are exclusive: select, select several, annotate
+  const on = () => admin.locator('.toolbox [aria-pressed="true"][aria-label="Select"], .toolbox [aria-pressed="true"][aria-label="Select several"], .toolbox [aria-pressed="true"][aria-label="Annotate with"]').evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+  check(JSON.stringify(await on()) === '["Select"]', "only Select is on after C");
+  await admin.locator('.toolbox [aria-label="Select several"]').click();
+  check(JSON.stringify(await on()) === '["Select several"]', "Select several switches Select off");
+  await admin.keyboard.press("c");
+  check(JSON.stringify(await on()) === '["Annotate with"]', "C turns annotating on and select several off");
+  await admin.locator('.toolbox .annotate-label').click();
+  check(JSON.stringify(await on()) === '["Select"]', "clicking Annotate with while annotating goes back to Select");
+  await admin.keyboard.press("c");
+  await admin.keyboard.press("c");
+  check(JSON.stringify(await on()) === '["Select"]', "C twice toggles annotating off again");
   const inside = await screenOf(admin, 1000, 1100);
   await admin.mouse.click(inside.x, inside.y);
   await waitFor(() => admin.evaluate((id) => window.__editor.selectedId === id, box.id), "clicking the box selects it");

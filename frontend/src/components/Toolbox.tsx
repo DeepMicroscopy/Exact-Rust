@@ -110,7 +110,7 @@ export function Toolbox(p: ToolboxProps) {
   return (
     <div className="toolbox glass" role="toolbar" aria-label="Annotation tools">
       <div className="seg" role="group">
-        <button className={!p.drawing ? "active" : ""} onClick={p.on.select} aria-label="Select" title="Select and edit annotations (C)">
+        <button className={!p.drawing && !p.seg && !p.multiMode ? "active" : ""} onClick={p.on.select} aria-label="Select" aria-pressed={!p.drawing && !p.seg && !p.multiMode} title="Select and edit annotations">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
             <path d="M5 3l14 8-6.2 1.6L9.6 19z" fill="currentColor" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
           </svg>
@@ -126,11 +126,11 @@ export function Toolbox(p: ToolboxProps) {
       <div className={`annotate-btn ${p.drawing || p.seg ? "active" : ""}`} role="group" aria-label="Annotate with">
         <button
           className="annotate-label"
-          onClick={() => p.currentTypeId != null && p.on.draw(p.currentTypeId)}
+          onClick={() => (p.drawing || p.seg ? p.on.select() : p.currentTypeId != null && p.on.draw(p.currentTypeId))}
           disabled={p.palette.length === 0}
           aria-pressed={p.drawing || !!p.seg}
           aria-label="Annotate with"
-          title="Draw annotations of the type on the right (C)"
+          title="Draw annotations of the type on the right; click again to go back to selecting (C)"
         >
           Annotate with:
         </button>

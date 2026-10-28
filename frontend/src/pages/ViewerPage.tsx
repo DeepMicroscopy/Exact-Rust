@@ -500,13 +500,18 @@ export function ViewerPage() {
     },
     [imageIds, id, navigate],
   );
+  /** The tools are exclusive: select, select several, or annotate (shapes or masks). */
+  const exitMulti = useCallback(() => {
+    if (editorRef.current?.multiMode) editorRef.current.setMultiMode(false);
+  }, []);
   const startDrawing = useCallback((typeId: number) => {
+    exitMulti();
     setSegTypeId(null);
     setCurrentTypeId(typeId);
     setDrawing(true);
     const e = info(typeId);
     if (e && !oneClickCapable(e.vectorType)) setOneClick(false);
-  }, [info]);
+  }, [info, exitMulti]);
   const toggleGlobal = useCallback(
     (typeId: number) => {
       const existing = (annotations.data ?? []).find((a) => a.annotation_type === typeId && !a.deleted && a.id > 0);
@@ -690,8 +695,10 @@ export function ViewerPage() {
           }
           return;
         case "toggleDrawing":
-          if (drawing) setDrawing(false);
-          else if (currentTypeId != null) setDrawing(true);
+          if (drawing || segTypeId != null) {
+            setDrawing(false);
+            setSegTypeId(null);
+          } else if (currentTypeId != null) startDrawing(currentTypeId);
           return;
         case "toggleAnnotations":
           setShowAnnotations((v) => !v);
@@ -702,9 +709,9 @@ export function ViewerPage() {
           return;
         case "toggleOneClick": {
           const e = drawable.find((x) => x.id === currentTypeId);
-          if (e && oneClickCapable(e.vectorType)) {
+          if (e && oneClickCapable(e.vectorType) && currentTypeId != null) {
             setOneClick((v) => !v);
-            setDrawing(true);
+            startDrawing(currentTypeId);
           }
           return;
         }
@@ -901,11 +908,13 @@ export function ViewerPage() {
           imageMpp={mpp}
           on={{
             select: () => {
+              exitMulti();
               setDrawing(false);
               setPolyOp(null);
               setSegTypeId(null);
             },
             segment: (tid) => {
+              exitMulti();
               setDrawing(false);
               setPolyOp(null);
               setSegTypeId(tid);
@@ -929,7 +938,16 @@ export function ViewerPage() {
               syncFromEditor();
             },
             remove: () => editorRef.current?.deleteSelection(),
-            toggleMulti: () => editorRef.current?.setMultiMode(!editorRef.current.multiMode),
+            toggleMulti: () => {
+              const ed = editorRef.current;
+              if (!ed) return;
+              if (!ed.multiMode) {
+                setDrawing(false);
+                setPolyOp(null);
+                setSegTypeId(null);
+              }
+              ed.setMultiMode(!ed.multiMode);
+            },
             changeGroupType: (tid) => editorRef.current && changeGroup(editorRef.current.groupShapes, tid),
             copy: copySelection,
             paste: () => void pasteClipboard(),
