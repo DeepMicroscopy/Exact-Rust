@@ -119,3 +119,18 @@ def test_product_crud_with_copy_of_annotation_types():
     assert all(t["product"] is None for t in left)  # SET_NULL: the copied types stay, unassigned
     for t in left:
         c.delete(f"/api/v2/annotation-types/{t['id']}")
+
+
+def test_annotation_type_names_are_unique_within_a_product():
+    c = client("aubreville")
+    name = f"u-{uuid.uuid4().hex[:6]}"
+    a = c.post("/api/v2/annotation-types", json={"name": name, "vector_type": 1, "product": 1}).json()
+    dup = c.post("/api/v2/annotation-types", json={"name": name, "vector_type": 1, "product": 1})
+    assert dup.status_code == 400 and "name" in dup.json()["errors"]
+    other = c.post("/api/v2/annotation-types", json={"name": name, "vector_type": 1, "product": 3})  # another product may reuse it
+    assert other.status_code == 201
+    b = c.post("/api/v2/annotation-types", json={"name": name + "x", "vector_type": 1, "product": 1}).json()
+    assert c.patch(f"/api/v2/annotation-types/{b['id']}", json={"name": name}).status_code == 400
+    assert c.patch(f"/api/v2/annotation-types/{b['id']}", json={"name": name + "y"}).status_code == 200
+    for t in (a, other.json(), b):
+        c.delete(f"/api/v2/annotation-types/{t['id']}")

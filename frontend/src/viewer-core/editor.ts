@@ -1,0 +1,483 @@
+import OpenSeadragon from "openseadragon";
+import { AnnotationLayer, EMPTY_OVERLAY, type Overlay } from "./annotationLayer";
+import {
+  boxBetween,
+  boxVector,
+  centeredBox,
+  clampPoint,
+  dist,
+  DEBOUNCE_PX,
+  distanceToShape,
+  handleAt,
+  handlesFor,
+  hitShape,
+  insertVertex,
+  isBoxType,
+  isPathType,
+  minVertices,
+  moveVertex,
+  movePoints,
+  removeVertex,
+  resizeBox,
+  vectorOf,
+  type Box,
+  type Handle,
+  type Pt,
+} from "./geometry";
+import { toShape } from "./shapes";
+import { VectorType, type Shape } from "./types";
+
+export interface TypeInfo {
+  id: number;
+  name: string;
+  vectorType: number;
+  closed: boolean;
+  color: string;
+  /** exact number of nodes of a polygon (0: free) */
+  nodeCount: number;
+  /** default size in image pixels (fixed-size types, one-click mode) */
+  width: number | null;
+  height: number | null;
+}
+
+export type Tool = { kind: "select" } | { kind: "draw"; typeId: number; oneClick: boolean };
+
+export interface EditorHost {
+  /** annotations that are shown (hidden types left out) */
+  shapes(): Shape[];
+  type(id: number): TypeInfo | undefined;
+  image(): { width: number; height: number };
+  onCreate(typeId: number, vector: Record<string, number>): void;
+  onUpdate(shape: Shape, vector: Record<string, number>): void;
+  onDelete(shape: Shape): void;
+  /** tool, selection or draft changed */
+  onState(): void;
+}
+
+interface Ev {
+  position: OpenSeadragon.Point;
+  pointerType?: string;
+  quick?: boolean;
+  preventDefaultAction: boolean;
+}
+
+type Session =
+  | { kind: "move"; shape: Shape; start: Pt; moved: boolean }
+  | { kind: "handle"; shape: Shape; handle: Handle; moved: boolean; points: Pt[]; box: Box }
+  | { kind: "drag"; typeId: number; start: Pt; cur: Pt };
+
+const TOUCH_SLOP = 18;
+const MOUSE_SLOP = 7;
+const CLOSE_SLOP = 12;
+const CLICK_DEBOUNCE_MS = 220;
+
+const NEW_ID = -1;
+
+/** The vector of a shape as the server stores it. */
+export function vectorOfShape(s: Shape): Record<string, number> {
+  return isBoxType(s.vectorType) ? boxVector(s.bbox) : vectorOf(s.points);
+}
+
+function reshape(base: Shape, box: Box | null, points: Pt[] | null): Shape {
+  const v = box ? boxVector(box) : vectorOf(points ?? base.points);
+  return { ...(toShape(base.id, base.typeId, base.vectorType, base.closed, v) as Shape), verified: base.verified };
+}
+
+/**
+ * Selecting, moving, resizing and drawing of annotations on an OpenSeadragon viewer.
+ *
+ * Select tool: a click selects the annotation under the pointer (smallest first), a drag that starts on the *selected*
+ * annotation or one of its handles edits it, every other drag pans. Draw tool: drag (boxes, lines), click (points, fixed-size
+ * boxes, one-click mode) or a series of clicks (polygons, polylines). Mouse, pen and touch use the same pointer events.
+ */
+export class AnnotationEditor {
+  tool: Tool = { kind: "select" };
+  selectedId: number | null = null;
+  selectedVertex: number | null = null;
+  private session: Session | null = null;
+  private draft: { typeId: number; points: Pt[] } | null = null;
+  private preview: Shape | null = null;
+  private hover: Pt | null = null;
+  private touch = false;
+  private consumedPress = false;
+  private lastCreate = { t: 0, at: [0, 0] as [number, number] };
+  private cleanup: (() => void)[] = [];
+
+  constructor(
+    private viewer: OpenSeadragon.Viewer,
+    private layer: AnnotationLayer,
+    private host: EditorHost,
+  ) {
+    const on = <T>(name: string, fn: (e: T) => void) => {
+      const h = fn as unknown as OpenSeadragon.EventHandler<OpenSeadragon.ViewerEvent>;
+      viewer.addHandler(name as keyof OpenSeadragon.ViewerEventMap, h);
+      this.cleanup.push(() => viewer.removeHandler(name as keyof OpenSeadragon.ViewerEventMap, h));
+    };
+    on<Ev>("canvas-press", (e) => this.press(e));
+    on<Ev>("canvas-drag", (e) => this.drag(e));
+    on<Ev>("canvas-release", (e) => this.release(e));
+    on<Ev>("canvas-click", (e) => this.click(e));
+    on<Ev>("canvas-double-click", (e) => this.doubleClick(e));
+    on<unknown>("canvas-pinch", () => this.abortSession());
+    const el = viewer.canvas as HTMLElement;
+    const move = (ev: PointerEvent) => this.pointerMoved(ev);
+    el.addEventListener("pointermove", move);
+    this.cleanup.push(() => el.removeEventListener("pointermove", move));
+  }
+
+  destroy(): void {
+    this.cleanup.forEach((c) => c());
+  }
+
+  // ---- state the toolbox shows ---------------------------------------------------------------------------------
+
+  get selected(): Shape | null {
+    return this.host.shapes().find((s) => s.id === this.selectedId) ?? null;
+  }
+
+  get drafting(): boolean {
+    return !!this.draft;
+  }
+
+  get draftPoints(): number {
+    return this.draft?.points.length ?? 0;
+  }
+
+  setTool(tool: Tool): void {
+    this.cancelDraft();
+    this.abortSession();
+    this.tool = tool;
+    if (tool.kind === "draw") this.selectedId = this.selectedVertex = null;
+    this.refresh();
+  }
+
+  select(id: number | null): void {
+    this.selectedId = id;
+    this.selectedVertex = null;
+    this.refresh();
+  }
+
+  /** Re-checks the selection after the annotations changed (deleted or moved by somebody else). */
+  sync(): void {
+    if (this.selectedId !== null && !this.host.shapes().some((s) => s.id === this.selectedId)) this.selectedId = this.selectedVertex = null;
+    this.refresh();
+  }
+
+  /** Enter / V: completes a polygon or polyline in progress. */
+  finish(): boolean {
+    const d = this.draft;
+    if (!d) return false;
+    const info = this.host.type(d.typeId);
+    const pts = d.points.filter((p, i) => i === 0 || dist(p, d.points[i - 1]) > 0.5); // a double click adds the point twice
+    if (!info || pts.length < minVertices(info.vectorType)) return false;
+    this.draft = null;
+    this.create(d.typeId, vectorOf(pts));
+    this.refresh();
+    return true;
+  }
+
+  /** Escape: draft, then drag, then selection, then the draw tool. */
+  cancel(): void {
+    if (this.draft || this.session) {
+      this.cancelDraft();
+      this.abortSession();
+    } else if (this.selectedId !== null) {
+      this.select(null);
+      return;
+    } else if (this.tool.kind === "draw") {
+      this.tool = { kind: "select" };
+    }
+    this.refresh();
+  }
+
+  /** Delete: the selected vertex of a polygon, else the selected annotation. */
+  deleteSelection(): void {
+    const s = this.selected;
+    if (!s) return;
+    if (this.selectedVertex !== null && isPathType(s.vectorType)) {
+      this.removeVertexOf(s, this.selectedVertex);
+      return;
+    }
+    this.host.onDelete(s);
+    this.select(null);
+  }
+
+  // ---- geometry helpers ----------------------------------------------------------------------------------------
+
+  private item(): OpenSeadragon.TiledImage | null {
+    return this.viewer.world.getItemCount() ? this.viewer.world.getItemAt(0) : null;
+  }
+
+  private toImage(pos: OpenSeadragon.Point): Pt | null {
+    const item = this.item();
+    if (!item) return null;
+    const p = item.viewerElementToImageCoordinates(pos);
+    return [p.x, p.y];
+  }
+
+  /** Screen pixels per image pixel. */
+  private zoom(): number {
+    const item = this.item();
+    return item ? item.viewportToImageZoom(this.viewer.viewport.getZoom(true)) : 1;
+  }
+
+  private tol(pointer?: string): number {
+    return ((pointer === "touch" ? TOUCH_SLOP : MOUSE_SLOP) / this.zoom()) || MOUSE_SLOP;
+  }
+
+  private isTouch(e: Ev): boolean {
+    return (e.pointerType ?? "mouse") === "touch";
+  }
+
+  private editableHandles(s: Shape): Handle[] {
+    const info = this.host.type(s.typeId);
+    const fixedNodes = !!info && info.nodeCount > 0 && s.vectorType === VectorType.Polygon;
+    return handlesFor(s).filter((h) => !(fixedNodes && h.kind === "mid"));
+  }
+
+  // ---- pointer events ------------------------------------------------------------------------------------------
+
+  private press(e: Ev): void {
+    this.touch = this.isTouch(e);
+    this.consumedPress = false;
+    const p = this.toImage(e.position);
+    if (!p) return;
+    const t = this.tol(e.pointerType);
+    if (this.tool.kind === "draw") {
+      const info = this.host.type(this.tool.typeId);
+      if (info && this.dragDrawn(info) && !this.tool.oneClick) {
+        this.session = { kind: "drag", typeId: info.id, start: clampPoint(p, this.host.image()), cur: p };
+        e.preventDefaultAction = true;
+        this.consumedPress = true;
+      }
+      return;
+    }
+    const sel = this.selected;
+    if (!sel) return;
+    const h = handleAt(this.editableHandles(sel), p, t);
+    if (h) {
+      this.session = { kind: "handle", shape: sel, handle: h, moved: false, points: sel.points.map((q) => [...q] as Pt), box: sel.bbox };
+      e.preventDefaultAction = true;
+      this.consumedPress = true;
+      return;
+    }
+    const under = hitShape(this.host.shapes(), p, t);
+    if (under && under.id === sel.id && distanceToShape(sel, p) <= t) {
+      this.session = { kind: "move", shape: sel, start: p, moved: false };
+      e.preventDefaultAction = true;
+      this.consumedPress = true;
+    }
+  }
+
+  private drag(e: Ev): void {
+    const s = this.session;
+    if (!s) return;
+    e.preventDefaultAction = true;
+    const p = this.toImage(e.position);
+    if (!p) return;
+    const bounds = this.host.image();
+    if (s.kind === "drag") {
+      s.cur = clampPoint(p, bounds);
+      const info = this.host.type(s.typeId);
+      const shape =
+        info?.vectorType === VectorType.Line
+          ? toShape(NEW_ID, s.typeId, VectorType.Line, false, vectorOf([s.start, s.cur]))
+          : toShape(NEW_ID, s.typeId, info?.vectorType ?? VectorType.BoundingBox, true, boxVector(boxBetween(s.start, s.cur)));
+      this.preview = shape;
+    } else if (s.kind === "move") {
+      const [dx, dy] = [p[0] - s.start[0], p[1] - s.start[1]];
+      if (!s.moved && Math.hypot(dx, dy) * this.zoom() < 3) return;
+      s.moved = true;
+      const base = isBoxType(s.shape.vectorType) ? ([[s.shape.bbox[0], s.shape.bbox[1]], [s.shape.bbox[2], s.shape.bbox[3]]] as Pt[]) : s.shape.points;
+      const moved = movePoints(base, dx, dy, bounds);
+      this.preview = isBoxType(s.shape.vectorType) ? reshape(s.shape, [moved[0][0], moved[0][1], moved[1][0], moved[1][1]], null) : reshape(s.shape, null, moved);
+    } else {
+      const h = s.handle;
+      if (!s.moved && dist(p, h.at) * this.zoom() < 3) return;
+      if (!s.moved && h.kind === "mid") {
+        s.points = insertVertex(s.points, h.index, p);
+        s.handle = { kind: "vertex", index: h.index + 1, at: p };
+        this.selectedVertex = h.index + 1;
+      }
+      s.moved = true;
+      const cur = s.handle;
+      if (cur.kind === "corner" || cur.kind === "edge") {
+        s.box = resizeBox(s.shape.bbox, cur, p, bounds);
+        this.preview = reshape(s.shape, s.box, null);
+      } else if (cur.kind === "vertex") {
+        s.points = moveVertex(s.points, cur.index, p, bounds);
+        this.preview = reshape(s.shape, null, s.points);
+      }
+    }
+    this.refresh();
+  }
+
+  private release(e: Ev): void {
+    const s = this.session;
+    this.session = null;
+    const keep = this.preview;
+    this.preview = null;
+    if (!s) return;
+    if (s.kind === "drag") {
+      const info = this.host.type(s.typeId);
+      if (keep && info) {
+        const tiny = dist(s.start, s.cur) * this.zoom() < 4;
+        if (!tiny) this.create(s.typeId, vectorOfShape(keep));
+      }
+    } else if (s.kind === "handle" && !s.moved && s.handle.kind === "vertex" && isPathType(s.shape.vectorType)) {
+      this.selectedVertex = s.handle.index; // a click on a vertex selects it (Delete removes it)
+    } else if ((s.kind === "move" || s.kind === "handle") && keep && s.moved) {
+      this.host.onUpdate(s.shape, vectorOfShape(keep));
+    }
+    void e;
+    this.refresh();
+  }
+
+  private click(e: Ev): void {
+    if (this.consumedPress) {
+      this.consumedPress = false;
+      return;
+    }
+    if (e.quick === false) return;
+    const p = this.toImage(e.position);
+    if (!p) return;
+    if (this.tool.kind === "select") {
+      const hit = hitShape(this.host.shapes(), p, this.tol(e.pointerType));
+      this.select(hit?.id ?? null);
+      e.preventDefaultAction = true;
+      return;
+    }
+    const info = this.host.type(this.tool.typeId);
+    if (!info) return;
+    const at = clampPoint(p, this.host.image());
+    if (isPathType(info.vectorType)) {
+      this.addPathPoint(info, at, e);
+      e.preventDefaultAction = true;
+      return;
+    }
+    if (this.dragDrawn(info) && !this.tool.oneClick) return; // boxes and lines are drawn by dragging
+    if (this.debounced(e.position)) return;
+    this.placeByClick(info, at);
+    e.preventDefaultAction = true;
+  }
+
+  private doubleClick(e: Ev): void {
+    e.preventDefaultAction = true; // never zoom on a double click
+    if (this.draft) {
+      this.finish();
+      return;
+    }
+    if (this.tool.kind !== "select") return;
+    const s = this.selected;
+    const p = this.toImage(e.position);
+    if (s && p && isPathType(s.vectorType)) {
+      const h = handleAt(this.editableHandles(s), p, this.tol(e.pointerType));
+      if (h?.kind === "vertex") this.removeVertexOf(s, h.index);
+    }
+  }
+
+  private pointerMoved(ev: PointerEvent): void {
+    this.touch = ev.pointerType === "touch";
+    const el = this.viewer.canvas as HTMLElement;
+    const r = el.getBoundingClientRect();
+    const p = this.toImage(new OpenSeadragon.Point(ev.clientX - r.left, ev.clientY - r.top));
+    this.hover = p;
+    let cursor = "";
+    if (this.tool.kind === "draw") cursor = "crosshair";
+    else if (p) {
+      const sel = this.selected;
+      const t = this.tol(ev.pointerType);
+      const h = sel ? handleAt(this.editableHandles(sel), p, t) : null;
+      if (h) cursor = h.kind === "vertex" || h.kind === "mid" ? "pointer" : h.id === "n" || h.id === "s" ? "ns-resize" : h.id === "e" || h.id === "w" ? "ew-resize" : h.id === "nw" || h.id === "se" ? "nwse-resize" : "nesw-resize";
+      else if (sel && hitShape(this.host.shapes(), p, t)?.id === sel.id) cursor = "move";
+      else if (hitShape(this.host.shapes(), p, t)) cursor = "pointer";
+    }
+    el.style.cursor = cursor;
+    if (this.tool.kind === "draw" && !this.session) this.refresh();
+  }
+
+  // ---- actions -------------------------------------------------------------------------------------------------
+
+  private dragDrawn(info: TypeInfo): boolean {
+    return info.vectorType === VectorType.BoundingBox || info.vectorType === VectorType.Line;
+  }
+
+  private debounced(pos: OpenSeadragon.Point): boolean {
+    const now = performance.now();
+    const same = Math.hypot(pos.x - this.lastCreate.at[0], pos.y - this.lastCreate.at[1]) < DEBOUNCE_PX;
+    if (same && now - this.lastCreate.t < CLICK_DEBOUNCE_MS) return true;
+    this.lastCreate = { t: now, at: [pos.x, pos.y] };
+    return false;
+  }
+
+  /** One click, one annotation: boxes of the type's default size, points. */
+  private placeByClick(info: TypeInfo, at: Pt): void {
+    if (info.vectorType === VectorType.Point) {
+      this.create(info.id, vectorOf([at]));
+    } else if (isBoxType(info.vectorType)) {
+      const [w, h] = [info.width ?? 50, info.height ?? 50];
+      this.create(info.id, boxVector(centeredBox(at, w, h, this.host.image())));
+    }
+  }
+
+  private addPathPoint(info: TypeInfo, at: Pt, e: Ev): void {
+    if (!this.draft || this.draft.typeId !== info.id) this.draft = { typeId: info.id, points: [] };
+    const pts = this.draft.points;
+    if (info.vectorType === VectorType.Polygon && pts.length >= 3 && dist(at, pts[0]) * this.zoom() <= (this.isTouch(e) ? TOUCH_SLOP : CLOSE_SLOP)) {
+      this.finish();
+      return;
+    }
+    pts.push(at);
+    if (info.vectorType === VectorType.Polygon && info.nodeCount > 0 && pts.length >= info.nodeCount) {
+      this.finish();
+      return;
+    }
+    this.refresh();
+  }
+
+  private create(typeId: number, vector: Record<string, number>): void {
+    this.host.onCreate(typeId, vector);
+  }
+
+  private removeVertexOf(s: Shape, index: number): void {
+    const info = this.host.type(s.typeId);
+    if (info && info.nodeCount > 0 && s.vectorType === VectorType.Polygon) return; // the type fixes the number of nodes
+    const pts = removeVertex(s.points, index, minVertices(s.vectorType));
+    if (pts.length === s.points.length) return;
+    this.selectedVertex = null;
+    this.host.onUpdate(s, vectorOf(pts));
+  }
+
+  private cancelDraft(): void {
+    this.draft = null;
+  }
+
+  private abortSession(): void {
+    this.session = null;
+    this.preview = null;
+    this.refresh();
+  }
+
+  // ---- what is drawn -------------------------------------------------------------------------------------------
+
+  refresh(): void {
+    const sel = this.selected;
+    const shown = this.preview && this.preview.id === this.selectedId ? this.preview : sel;
+    const o: Overlay = { ...EMPTY_OVERLAY, touch: this.touch };
+    o.selectedId = this.selectedId;
+    o.selectedVertex = this.selectedVertex;
+    o.preview = this.preview;
+    if (shown && this.tool.kind === "select") o.handles = this.editableHandles(shown);
+    if (this.draft) {
+      const info = this.host.type(this.draft.typeId);
+      o.draft = { points: this.draft.points, closed: info?.vectorType === VectorType.Polygon, cursor: this.hover, color: info?.color ?? "#fff" };
+    }
+    if (this.tool.kind === "draw" && !this.draft && !this.session && this.hover) {
+      const info = this.host.type(this.tool.typeId);
+      const sized = info && isBoxType(info.vectorType) && (info.vectorType === VectorType.FixedSizeBoundingBox || this.tool.oneClick);
+      if (info && sized) o.ghost = { box: centeredBox(this.hover, info.width ?? 50, info.height ?? 50, this.host.image()), color: info.color };
+    }
+    this.layer.setOverlay(o);
+    this.host.onState();
+  }
+}

@@ -27,8 +27,8 @@ sweep:           ## format sweep + tile latency, label via LABEL=
 
 ui:             ## build the frontend (served by the server from frontend/dist)
 	cd frontend && pnpm install && pnpm build
-e2e:            ## browser smoke test against a running server (system Chrome), screenshots in /tmp/shots
-	cd frontend && SHOTS=/tmp/shots node e2e/smoke.mjs
+e2e:            ## browser tests against a running server (system Chrome): smoke (viewer, frames) and annotation tools; screenshots in /tmp/shots
+	cd frontend && SHOTS=/tmp/shots node e2e/smoke.mjs && SHOTS=/tmp/shots node e2e/annotate.mjs
 e2e-repair:     ## browser test of the one-time image repair on a scratch copy (needs make ui)
 	scripts/e2e-repair.sh
 schema-sync:    ## shared tables must have the same structure whichever side (EXACT/Django or this port) creates them

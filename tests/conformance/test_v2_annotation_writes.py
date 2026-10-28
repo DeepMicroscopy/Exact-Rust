@@ -120,3 +120,21 @@ def test_requires_authentication_and_csrf():
     c = client()
     del c.headers["X-CSRF-Token"]
     assert c.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": BBOX_TYPE, "vector": BB}).status_code == 403
+
+
+def test_global_annotation_exists_once_and_is_switched_on_again():
+    admin = client("aubreville")
+    t = admin.post("/api/v2/annotation-types", json={"name": f"glob-{uuid.uuid4().hex[:6]}", "vector_type": 7, "product": 1}).json()
+    c = client("rt_member")
+    try:
+        first = c.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": t["id"], "vector": None, "unique_identifier": str(uuid.uuid4())})
+        assert first.status_code == 201 and first.json()["vector"] is None
+        again = c.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": t["id"], "vector": None, "unique_identifier": str(uuid.uuid4())})
+        assert again.status_code == 200 and again.json()["id"] == first.json()["id"]
+        assert c.delete(f"/api/v2/annotations/{first.json()['id']}").status_code == 204  # switched off
+        back = c.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": t["id"], "vector": None, "unique_identifier": str(uuid.uuid4())})
+        assert back.status_code == 200 and back.json()["id"] == first.json()["id"] and back.json()["deleted"] is False
+    finally:
+        for a in admin.get("/api/v2/annotations", params={"annotation_type": t["id"]}).json()["items"]:
+            admin.delete(f"/api/v2/annotations/{a['id']}", params={"hard": "true"})
+        admin.delete(f"/api/v2/annotation-types/{t['id']}")

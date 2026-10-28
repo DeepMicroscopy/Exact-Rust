@@ -1,0 +1,303 @@
+// End-to-end test of the annotation tools in the system Chrome: draw, select, move, resize, polygon editing, undo / redo,
+// one-click mode, shortcuts, touch (tablet) and the phone layout. Needs a freshly restored scratch database.
+// Usage: node e2e/annotate.mjs [baseUrl]   (env: CHROME, SHOTS=dir)
+import { chromium } from "playwright-core";
+import fs from "node:fs";
+
+const base = process.argv[2] ?? "http://127.0.0.1:8002";
+const chrome = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const shots = process.env.SHOTS;
+if (shots) fs.mkdirSync(shots, { recursive: true });
+let IMAGE = 0; // an image uploaded for the test into a new image set of team 1 (product 1: bounding box, 2.25 mm and 3 mm fixed-size types)
+let SET = 0;
+
+const browser = await chromium.launch({ executablePath: chrome, headless: true });
+const errors = [];
+const check = (cond, msg) => {
+  if (!cond) throw new Error("FAILED: " + msg);
+  console.log("ok  -", msg);
+};
+
+async function login(context, user, { quiet = false } = {}) {
+  const page = await context.newPage();
+  if (!quiet) {
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => m.type() === "error" && !/401|409/.test(m.text()) && errors.push(m.text()));
+  }
+  await page.goto(base);
+  await page.waitForSelector("form.login");
+  await page.fill('input[autocomplete="username"]', user);
+  await page.fill('input[type="password"]', "rust-test-pw");
+  await page.click("button.primary");
+  await page.waitForSelector(".cards .card");
+  return page;
+}
+
+const annotations = (page) => page.evaluate(async (id) => (await (await fetch(`/api/v2/annotations?image=${id}&deleted=false&limit=1000`)).json()).items, IMAGE);
+
+/** A fresh 4000 x 3000 image in a new image set of team 1 with product 1, so that no earlier annotations are in the way. */
+async function setup(page) {
+  return page.evaluate(async () => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const h = { "x-csrf-token": csrf };
+    const set = await (await fetch("/api/v2/image-sets", { method: "POST", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify({ name: `e2e-${Date.now()}`, team: 1 }) })).json();
+    await fetch(`/api/v2/image-sets/${set.id}/products/1`, { method: "PUT", headers: h });
+    const c = document.createElement("canvas");
+    c.width = 4000;
+    c.height = 3000;
+    const g = c.getContext("2d");
+    const grad = g.createLinearGradient(0, 0, 4000, 3000);
+    grad.addColorStop(0, "#5a4a7a");
+    grad.addColorStop(1, "#c9a27a");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 4000, 3000);
+    for (let i = 0; i < 400; i++) {
+      g.fillStyle = `rgba(${(i * 37) % 255},${(i * 91) % 255},${(i * 53) % 255},0.5)`;
+      g.beginPath();
+      g.arc((i * 733) % 4000, (i * 457) % 3000, 20 + (i % 40), 0, 7);
+      g.fill();
+    }
+    const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+    const fd = new FormData();
+    fd.append("file", blob, `e2e-${Date.now()}.png`);
+    const up = await (await fetch(`/api/v2/image-sets/${set.id}/images`, { method: "POST", headers: h, body: fd })).json();
+    return { set: set.id, image: up.items[0].id };
+  });
+}
+const waitFor = async (fn, msg, ms = 8000) => {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() - t0 > ms) throw new Error("FAILED (timeout): " + msg);
+    await new Promise((r) => setTimeout(r, 120));
+  }
+};
+
+/** Screen position of an image pixel. */
+const screenOf = (page, x, y) =>
+  page.evaluate(([x, y]) => {
+    const v = window.__viewer;
+    const item = v.world.getItemAt(0);
+    const p = item.imageToViewerElementCoordinates(new window.__osd.Point(x, y));
+    const r = v.canvas.getBoundingClientRect();
+    return { x: r.left + p.x, y: r.top + p.y };
+  }, [x, y]);
+
+async function openImage(page) {
+  await page.goto(`${base}/images/${IMAGE}`);
+  await page.waitForSelector(".viewer-body .osd");
+  await waitFor(() => page.evaluate(() => window.__viewer?.world.getItemCount() > 0), "viewer opened the image");
+  await page.waitForTimeout(1200);
+}
+
+try {
+  // ---------------------------------------------------------------------------------------- desktop: mouse and keyboard
+  const desktop = await browser.newContext({ viewport: { width: 1400, height: 850 } });
+  // a polygon type for product 1, created by the superuser (the toolbox offers the types of the set's products)
+  const root = await login(await browser.newContext(), "aubreville", { quiet: true }); // may answer 400: the type exists from an earlier run
+  await root.evaluate(async () => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const r = await fetch("/api/v2/annotation-types", {
+      method: "POST",
+      headers: { "x-csrf-token": csrf, "content-type": "application/json" },
+      body: JSON.stringify({ name: "e2e polygon", vector_type: 5, color_code: "#22aa44", product: 1, sort_order: 9 }),
+    });
+    if (!r.ok && !(await r.text()).includes("exists")) throw new Error("cannot create the polygon type");
+  });
+  const admin = await login(desktop, "rt_teamadmin");
+  ({ set: SET, image: IMAGE } = await setup(admin));
+  await openImage(admin);
+  const before = (await annotations(admin)).length;
+  const chips = await admin.locator(".toolbox .chip").allInnerTexts();
+  check(chips.length >= 4 && chips.some((c) => c.includes("e2e polygon")), `toolbox offers the types of the set (${chips.join(" | ").replace(/\n/g, " ")})`);
+  check((await admin.locator(".toolbox .hint").first().innerText()).includes("Click an annotation"), "idle hint: select or pick a type");
+
+  // draw a bounding box with key 1 and a drag
+  await admin.keyboard.press("1");
+  check((await admin.locator(".toolbox .seg button.active").innerText()) === "Draw", "digit 1 enters the draw tool");
+  check((await admin.locator(".toolbox .hint").first().innerText()).includes("Drag to draw a box"), "hint tells how to draw the box");
+  const [a, b] = [await screenOf(admin, 800, 900), await screenOf(admin, 1300, 1300)];
+  await admin.mouse.move(a.x, a.y);
+  await admin.mouse.down();
+  await admin.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 5 });
+  await admin.mouse.move(b.x, b.y, { steps: 5 });
+  await admin.mouse.up();
+  let list = await waitFor(async () => ((await annotations(admin)).length === before + 1 ? await annotations(admin) : null), "the box was saved");
+  const box = list.at(-1);
+  check(Math.abs(box.vector.x1 - 800) < 12 && Math.abs(box.vector.y2 - 1300) < 12 && box.verified_by_user === true, `box drawn by drag (${JSON.stringify(box.vector)}), verified by its creator`);
+  await admin.screenshot({ path: shots ? `${shots}/a1-drawn.png` : undefined });
+
+  // click selects it; a handle resizes, the body moves
+  await admin.keyboard.press("c");
+  check((await admin.locator(".toolbox .seg button.active").innerText()) === "Select", "C returns to the select tool");
+  const inside = await screenOf(admin, 1000, 1100);
+  await admin.mouse.click(inside.x, inside.y);
+  await waitFor(() => admin.evaluate((id) => window.__editor.selectedId === id, box.id), "clicking the box selects it");
+  check((await admin.locator(".toolbox .selection").count()) === 1 && (await admin.locator(".toolbox .selection .btn.danger").count()) === 1, "the toolbox shows the tools of a selected annotation");
+  const se = await screenOf(admin, box.vector.x2, box.vector.y2);
+  const to = await screenOf(admin, box.vector.x2 + 200, box.vector.y2 + 100);
+  await admin.mouse.move(se.x, se.y);
+  await admin.mouse.down();
+  await admin.mouse.move(to.x, to.y, { steps: 8 });
+  await admin.mouse.up();
+  let cur = await waitFor(async () => ((await annotations(admin)).find((x) => x.id === box.id).vector.x2 > box.vector.x2 + 150 ? (await annotations(admin)).find((x) => x.id === box.id) : null), "resize saved");
+  check(cur.vector.x1 === box.vector.x1 && Math.abs(cur.vector.x2 - (box.vector.x2 + 200)) < 12, "dragging the south-east handle resized the box and left the opposite corner alone");
+  const body = await screenOf(admin, (cur.vector.x1 + cur.vector.x2) / 2, (cur.vector.y1 + cur.vector.y2) / 2);
+  const body2 = await screenOf(admin, (cur.vector.x1 + cur.vector.x2) / 2 + 150, (cur.vector.y1 + cur.vector.y2) / 2 - 80);
+  await admin.mouse.move(body.x, body.y);
+  await admin.mouse.down();
+  await admin.mouse.move(body2.x, body2.y, { steps: 8 });
+  await admin.mouse.up();
+  const moved = await waitFor(async () => ((await annotations(admin)).find((x) => x.id === box.id).vector.x1 > cur.vector.x1 + 100 ? (await annotations(admin)).find((x) => x.id === box.id) : null), "move saved");
+  check(moved.vector.x2 - moved.vector.x1 === cur.vector.x2 - cur.vector.x1 && moved.vector.y1 < cur.vector.y1 - 50, "dragging the body moved the box without changing its size");
+  await admin.screenshot({ path: shots ? `${shots}/a2-selected.png` : undefined });
+
+  // a drag that starts away from the selection pans instead of editing (zoomed in: at home the whole image is in view)
+  await admin.evaluate(() => window.__viewer.viewport.zoomBy(2, undefined, true));
+  await admin.waitForTimeout(400);
+  const emptySpot = await screenOf(admin, 2600, 1900);
+  const emptySpot2 = await screenOf(admin, 2450, 1800);
+  const center0 = await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x);
+  await admin.mouse.move(emptySpot.x, emptySpot.y);
+  await admin.mouse.down();
+  await admin.mouse.move(emptySpot2.x, emptySpot2.y, { steps: 5 });
+  await admin.mouse.up();
+  await admin.waitForTimeout(600);
+  check(Math.abs((await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x)) - center0) > 0.001, "a drag on empty space pans");
+  check(JSON.stringify((await annotations(admin)).find((x) => x.id === box.id).vector) === JSON.stringify(moved.vector), "...and does not touch the annotation");
+  await admin.evaluate(() => window.__viewer.viewport.goHome(true));
+  await admin.waitForTimeout(400);
+
+  // verify toggles; Delete removes; Ctrl+Z restores; Ctrl+Shift+Z deletes again
+  await admin.locator(".toolbox .selection .btn", { hasText: "Verified" }).click();
+  await waitFor(async () => (await annotations(admin)).find((x) => x.id === box.id).verified_by_user === false, "un-verify");
+  await admin.keyboard.press("Delete");
+  await waitFor(async () => !(await annotations(admin)).some((x) => x.id === box.id), "Delete removed the annotation");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).some((x) => x.id === box.id), "Ctrl+Z brought it back");
+  await admin.keyboard.press("Control+Shift+z");
+  await waitFor(async () => !(await annotations(admin)).some((x) => x.id === box.id), "Ctrl+Shift+Z deleted it again");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).some((x) => x.id === box.id), "undo again");
+
+  // undo of the edits: the move, then the resize
+  await admin.keyboard.press("Control+z");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => JSON.stringify((await annotations(admin)).find((x) => x.id === box.id).vector) === JSON.stringify(box.vector), "undoing move and resize restores the drawn box");
+
+  // ---------------------------------------------------------------------------------------- one-click mode
+  await openImage(admin);
+  const n0 = (await annotations(admin)).length;
+  await admin.keyboard.press("2"); // the 2.25 mm fixed-size type
+  check((await admin.locator(".toolbox .hint").first().innerText()).includes("Click to place a box"), "fixed-size type: click to place");
+  for (const [x, y] of [[300, 300], [600, 300], [900, 300]]) {
+    const p = await screenOf(admin, x, y);
+    await admin.mouse.click(p.x, p.y);
+    await admin.waitForTimeout(350);
+  }
+  list = await waitFor(async () => ((await annotations(admin)).length === n0 + 3 ? await annotations(admin) : null), "three clicks, three annotations");
+  const sizes = new Set(list.slice(-3).map((x) => `${x.vector.x2 - x.vector.x1}x${x.vector.y2 - x.vector.y1}`));
+  check(sizes.size === 1, `all three have the type's size (${[...sizes]})`);
+  const dp = await screenOf(admin, 1200, 300);
+  await admin.mouse.click(dp.x, dp.y);
+  await admin.mouse.click(dp.x, dp.y); // an immediate second click at the same spot is one click (debounce)
+  await admin.waitForTimeout(800);
+  check((await annotations(admin)).length === n0 + 4, "a double click places one annotation");
+  // one-click mode for the variable-size bounding box type
+  await admin.keyboard.press("1");
+  await admin.keyboard.press("a");
+  check(await admin.locator(".toolbox .toggle input").isChecked(), "A switches one-click mode on");
+  const op = await screenOf(admin, 1500, 600);
+  await admin.mouse.click(op.x, op.y);
+  await waitFor(async () => (await annotations(admin)).length === n0 + 5, "one-click mode places a box with a click for a drag type");
+  await admin.keyboard.press("a");
+  await admin.keyboard.press("Escape");
+  check((await admin.locator(".toolbox .seg button.active").innerText()) === "Select", "Escape leaves the draw tool");
+
+  // ---------------------------------------------------------------------------------------- polygon
+  await openImage(admin);
+  const polyChip = admin.locator(".toolbox .chip", { hasText: "e2e polygon" });
+  await polyChip.click();
+  check((await admin.locator(".toolbox .hint").first().innerText()).includes("Click to add points"), "polygon type: click to add points");
+  const corners = [[2000, 1200], [2600, 1200], [2600, 1800], [2000, 1800]]; // the toolbox covers the lower edge of the image
+  for (const [x, y] of corners) {
+    const p = await screenOf(admin, x, y);
+    await admin.mouse.click(p.x, p.y);
+    await admin.waitForTimeout(200);
+  }
+  check((await admin.locator(".toolbox .btn", { hasText: "Finish" }).count()) === 1, `Finish shows while a polygon is in progress (draft points: ${await admin.evaluate(() => window.__editor.draftPoints)}, tool ${await admin.evaluate(() => JSON.stringify(window.__editor.tool))})`);
+  await admin.keyboard.press("Enter");
+  const poly = await waitFor(async () => (await annotations(admin)).find((x) => x.vector?.x4 != null && x.annotation_type !== 1), "polygon saved with four vertices");
+  check(poly.vector.x3 === Math.round(poly.vector.x3) && Math.abs(poly.vector.x1 - 2000) < 12 && Math.abs(poly.vector.y1 - 1200) < 12, `polygon created (${JSON.stringify(poly.vector)})`);
+  await admin.keyboard.press("c");
+  const inPoly = await screenOf(admin, 2300, 1500);
+  await admin.mouse.click(inPoly.x, inPoly.y);
+  await waitFor(() => admin.evaluate((id) => window.__editor.selectedId === id, poly.id), "clicking inside the polygon selects it");
+  // drag the dot between vertices 1 and 2: a new vertex appears
+  const mid = await screenOf(admin, 2300, 1200);
+  const mid2 = await screenOf(admin, 2300, 1000);
+  await admin.mouse.move(mid.x, mid.y);
+  await admin.mouse.down();
+  await admin.mouse.move(mid2.x, mid2.y, { steps: 6 });
+  await admin.mouse.up();
+  const five = await waitFor(async () => (await annotations(admin)).find((x) => x.id === poly.id && x.vector.x5 != null), "dragging a midpoint added a fifth vertex");
+  check(Math.abs(five.vector.y2 - 1000) < 15, `the new vertex sits where it was dropped (${five.vector.x2},${five.vector.y2})`);
+  // click the new vertex and remove it with Delete
+  const nv = await screenOf(admin, five.vector.x2, five.vector.y2);
+  await admin.mouse.click(nv.x, nv.y);
+  await waitFor(() => admin.evaluate(() => window.__editor.selectedVertex === 1), "clicking a vertex selects it");
+  check((await admin.locator(".toolbox .btn", { hasText: "Remove vertex" }).count()) === 1, "toolbox offers to remove the vertex");
+  await admin.keyboard.press("Delete");
+  await waitFor(async () => (await annotations(admin)).find((x) => x.id === poly.id && x.vector.x5 == null), "Delete removed the vertex, not the polygon");
+  await admin.screenshot({ path: shots ? `${shots}/a3-polygon.png` : undefined });
+
+  // shortcuts: keyboard focus in a text field does not trigger tools; Y hides annotations
+  await admin.keyboard.press("y");
+  check((await admin.locator(".toolbox .btn", { hasText: "Show" }).count()) === 1, "Y hides the annotations");
+  await admin.keyboard.press("y");
+  const kinds = await admin.evaluate(() => [...document.querySelectorAll(".toolbox kbd")].map((k) => k.textContent));
+  check(kinds.includes("1") && kinds.includes("2"), "the type chips show their digit keys");
+
+  // ---------------------------------------------------------------------------------------- tablet: touch
+  const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: false });
+  const tp = await login(tablet, "rt_teamadmin");
+  await openImage(tp);
+  const nt = (await annotations(tp)).length;
+  await tp.locator(".toolbox .chip", { hasText: "2.25mm" }).first().tap();
+  const t1 = await screenOf(tp, 1700, 1500);
+  await tp.touchscreen.tap(t1.x, t1.y);
+  await waitFor(async () => (await annotations(tp)).length === nt + 1, "a tap places a fixed-size annotation on a touch screen");
+  await tp.locator(".toolbox .seg button", { hasText: "Select" }).tap();
+  const created = (await annotations(tp)).at(-1);
+  const tc = await screenOf(tp, (created.vector.x1 + created.vector.x2) / 2, (created.vector.y1 + created.vector.y2) / 2);
+  await tp.touchscreen.tap(tc.x, tc.y);
+  await waitFor(() => tp.evaluate((id) => window.__editor.selectedId === id, created.id), "a tap selects it");
+  check((await tp.locator(".toolbox .btn").first().boundingBox()).height >= 36, "tool buttons are large enough for fingers");
+  await tp.screenshot({ path: shots ? `${shots}/a4-tablet.png` : undefined });
+
+  // ---------------------------------------------------------------------------------------- phone: viewing first
+  const phone = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
+  const pp = await login(phone, "rt_member");
+  await openImage(pp);
+  check(!(await pp.locator(".viewer-side").isVisible()), "phone: the type list is closed until asked for");
+  check(!(await pp.locator(".toolbox").count()), "phone: the tools are closed until asked for");
+  await pp.locator(".tools-toggle").tap();
+  check(await pp.locator(".toolbox").isVisible(), "phone: the tools open with the pencil button");
+  await pp.locator(".tools-toggle").tap();
+  await pp.locator(".side-toggle").tap();
+  check(await pp.locator(".viewer-side").isVisible(), "phone: the type list opens");
+  check((await pp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)), "phone: no horizontal page scroll");
+  await pp.screenshot({ path: shots ? `${shots}/a5-phone.png` : undefined });
+
+  check(errors.length === 0, "no console errors: " + errors.join(" | "));
+} finally {
+  if (SET) {
+    const cleaner = await login(await browser.newContext(), "rt_teamadmin", { quiet: true }).catch(() => null);
+    await cleaner?.evaluate(async (set) => {
+      const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+      await fetch(`/api/v2/image-sets/${set}`, { method: "DELETE", headers: { "x-csrf-token": csrf } });
+    }, SET);
+  }
+  await browser.close();
+}

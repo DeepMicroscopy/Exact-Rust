@@ -110,7 +110,7 @@ try {
   check(afterKey.includes("7 / 16") || afterKey.includes("8 / 16"), `z-stack: Page Up steps to the next plane (${afterKey.replace(/\n/g, " ")})`);
 
   // jumping along the stack keeps the zoom and position (a jump beyond the preloaded planes must not reset the view)
-  await page.evaluate(() => { const v = window.__viewer.viewport; v.zoomTo(v.getHomeZoom() * 3, undefined, true); const P = v.getCenter().constructor; v.panTo(new P(0.3, 0.2 * v.getHomeBounds().height), true); });
+  await page.evaluate(() => { const v = window.__viewer.viewport; v.zoomTo(v.getHomeZoom() * 3, undefined, true); v.panTo(new window.__osd.Point(0.3, 0.2 * v.getHomeBounds().height), true); });
   await page.waitForTimeout(400);
   const view0 = await page.evaluate(() => { const v = window.__viewer.viewport; return { z: v.getZoom(true), c: v.getCenter(true) }; });
   await page.locator(".zslider input").fill("14");

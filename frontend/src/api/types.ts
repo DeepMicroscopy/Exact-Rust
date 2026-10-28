@@ -27,6 +27,7 @@ export interface ImageSummary {
   frames: number;
   depth: number;
   image_set: number;
+  mpp?: number;
 }
 
 export interface AnnotationType {
@@ -35,6 +36,12 @@ export interface AnnotationType {
   vector_type: number;
   color_code: string;
   closed: boolean;
+  node_count?: number;
+  default_width?: number;
+  default_height?: number;
+  size_unit?: string;
+  sort_order?: number;
+  product?: number | null;
 }
 
 export type Vector = Record<string, number | undefined>;
@@ -44,4 +51,9 @@ export interface Annotation {
   annotation_type: number;
   vector: Vector | null;
   image: number;
+  last_edit_time?: string;
+  /** whether the signed-in user verified it */
+  verified_by_user?: boolean;
+  deleted?: boolean;
+  unique_identifier?: string;
 }

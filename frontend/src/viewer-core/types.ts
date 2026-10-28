@@ -14,6 +14,8 @@ export interface Shape {
   typeId: number;
   vectorType: number;
   closed: boolean;
+  /** the signed-in user verified it (drawn solid; others dashed) */
+  verified?: boolean;
   /** vertex list in image pixels */
   points: [number, number][];
   /** bounding box in image pixels for culling */

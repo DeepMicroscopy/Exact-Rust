@@ -48,11 +48,15 @@ export interface Page<T> {
 }
 
 /** Walks a cursor-paginated list endpoint to the end (bounded by `maxItems`). */
-export async function listAll<T>(path: string, params: Record<string, string | number | boolean> = {}, maxItems = 100_000): Promise<T[]> {
+export async function listAll<T>(path: string, params: Record<string, string | number | boolean | (string | number)[]> = {}, maxItems = 100_000): Promise<T[]> {
   const out: T[] = [];
   let cursor: string | null = null;
   do {
-    const q = new URLSearchParams(Object.entries({ limit: 1000, ...params }).map(([k, v]) => [k, String(v)]));
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries({ limit: 1000, ...params })) {
+      if (Array.isArray(v)) v.forEach((x) => q.append(k, String(x))); // repeated parameter: any of
+      else q.set(k, String(v));
+    }
     if (cursor) q.set("cursor", cursor);
     const page: Page<T> = await api<Page<T>>(`${path}?${q}`);
     out.push(...page.items);

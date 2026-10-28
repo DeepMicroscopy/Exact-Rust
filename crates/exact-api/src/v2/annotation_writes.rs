@@ -85,10 +85,8 @@ pub async fn create_h(
                 .ok_or_else(|| field_err("unique_identifier", "Must be a valid UUID."))?,
         ),
     };
-    let existing: Option<i64> = if let Some(u) = uid {
-        sqlx::query_scalar("SELECT id FROM annotations_annotation WHERE image_id = $1 AND unique_identifier = $2 ORDER BY id LIMIT 1")
-            .bind(image).bind(u).fetch_optional(&s.pool).await.map_err(db_err)?
-    } else if atype.vector_type == vector::GLOBAL {
+    // a global annotation exists once per image and type (and user in competitive sets): it is switched on again, not duplicated
+    let existing: Option<(i64, bool)> = if atype.vector_type == vector::GLOBAL {
         let competitive = sqlx::query_scalar::<_, i32>(
             "SELECT collaboration_type FROM images_imageset WHERE id = $1",
         )
@@ -97,12 +95,33 @@ pub async fn create_h(
         .await
         .map_err(db_err)?
             != 0;
-        sqlx::query_scalar("SELECT id FROM annotations_annotation WHERE image_id = $1 AND annotation_type_id = $2 AND (NOT $3 OR user_id = $4) AND NOT deleted ORDER BY id LIMIT 1")
-            .bind(image).bind(type_id).bind(competitive).bind(p.user.id).fetch_optional(&s.pool).await.map_err(db_err)?
+        sqlx::query_as("SELECT id, deleted FROM annotations_annotation WHERE image_id = $1 AND annotation_type_id = $2 AND (NOT $3 OR user_id = $4) ORDER BY deleted, id LIMIT 1")
+            .bind(image)
+            .bind(type_id)
+            .bind(competitive)
+            .bind(p.user.id)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?
+    } else if let Some(u) = uid {
+        sqlx::query_as("SELECT id, false FROM annotations_annotation WHERE image_id = $1 AND unique_identifier = $2 ORDER BY id LIMIT 1")
+            .bind(image)
+            .bind(u)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?
     } else {
         None
     };
-    if let Some(id) = existing {
+    if let Some((id, deleted)) = existing {
+        if deleted {
+            sqlx::query("UPDATE annotations_annotation SET deleted = false, last_editor_id = $2, last_edit_time = now() WHERE id = $1")
+                .bind(id)
+                .bind(p.user.id)
+                .execute(&s.pool)
+                .await
+                .map_err(db_err)?;
+        }
         return Ok((StatusCode::OK, Json(one(&s, &p, &headers, id).await?)).into_response());
     }
     let mut tx = s.pool.begin().await.map_err(db_err)?;

@@ -602,3 +602,23 @@ The v2 claim now also skips jobs that have a result (QueueRunner's `job.result i
 QueueRunner (not applied, the user's checkout has local changes) and three findings in exact-sync (broken `create_plugin`, `PluginJob.result`
 never filled, no multipart for bitmaps). The real QueueRunner as a manual smoke test remains for the cutover checklist (§5a).
 Phase 5.2 is complete.
+
+### 5x. UI: annotation tools (2026-10-28)
+Built to the requirements of §5m. `viewer-core/`: `geometry.ts` (pure: hit tests, handles, move/resize/vertex editing, vectors, unit conversion of type sizes with the
+image resolution; 13 tests), `editor.ts` (`AnnotationEditor`: select tool and draw tool on OpenSeadragon's pointer events, so mouse, pen and touch behave the same),
+`annotationLayer.ts` (selection glow + handles, preview while dragging, polygon in progress, ghost of the box a click would place, dashed outline = not verified by
+you), `history.ts` (undo/redo, serialised, 4 tests), `shortcuts.ts` (the old key table as a pure matcher, 7 tests), `palette.ts` (types of the image set by digit key,
+conversion rules, hints; 4 tests). `hooks/useAnnotationActions.ts`: optimistic create / update / delete / change type / verify against the v2 endpoints, conditional
+edits (409 -> "somebody else changed it", reload), history commands. `components/Toolbox.tsx`: contextual (select / draw, type chips with their keys, hints,
+one-click toggle, selection tools: type, size, verify, delete, remove vertex; image labels for global types; undo/redo; show/hide).
+Behaviour: click selects (smallest annotation first); only a drag that starts on the *selected* annotation or a handle edits (every other drag pans); box handles resize,
+fixed-size boxes and points move, polygon / polyline vertices drag, the dot between two vertices adds one, click a vertex + Delete removes it; types with a fixed node count
+keep their vertices. Drawing: drag (box, line), click (point, fixed-size box), clicks + Enter / double-click / click on the first point (polygon, polyline), one-click mode (A) places
+the type's default size (converted from mm / µm with the resolution) with every click, debounced; the ghost outline shows where. Keys as the old UI: 1-9 type (changes the class
+of the selected annotation), Shift+1-9 global labels, C draw/select, Enter/V finish, Esc cancel, Delete/Backspace/X delete, Y show/hide, Ctrl+Z / Ctrl+Shift+Z, E/Q image,
+Shift+E/Q frame; new: A one-click. OpenSeadragon's own keys are switched off (no more R/F collisions); arrows, Shift+arrows, +/-, 0 are provided by the shortcut table.
+Layout: tablet (touch targets >= 44 px, tool bar wraps), phone (type list and tools open on demand, no horizontal scroll). Server: global annotations (vector null) are
+switched on again instead of duplicated; annotation type names are unique per product (400 instead of 500).
+Tests: `frontend/e2e/annotate.mjs` (system Chrome, own image in a new image set: drag-draw, select, resize, move, pan-vs-edit, verify, delete, undo/redo, one-click, polygon incl.
+midpoint insert and vertex delete, hide, tablet touch taps, phone layout), `make e2e`.
+Not yet: brush union / scissors / glue / knife of polygons (old S, G, D keys), segmentation tool, "add area" to a polygon, drawing with a stylus pressure, multi-select, copy/paste.

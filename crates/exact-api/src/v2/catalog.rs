@@ -576,7 +576,35 @@ async fn check_product(s: &AppState, f: &TypeFields) -> ApiResult<()> {
     Ok(())
 }
 
+/// The name of a type is unique within its product (database constraint); say so instead of failing with a 500.
+async fn check_unique_name(
+    s: &AppState,
+    name: &str,
+    product: Option<i64>,
+    except: Option<i64>,
+) -> ApiResult<()> {
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM annotations_annotationtype WHERE name = $1 AND product_id IS NOT DISTINCT FROM $2 AND ($3::bigint IS NULL OR id <> $3))",
+    )
+    .bind(name)
+    .bind(product)
+    .bind(except)
+    .fetch_one(&s.pool)
+    .await
+    .map_err(db_err)?;
+    if taken {
+        return Err(field_err(
+            "name",
+            "An annotation type with this name exists in the product.",
+        ));
+    }
+    Ok(())
+}
+
 async fn insert_type(s: &AppState, f: TypeFields) -> ApiResult<i64> {
+    if let Some(n) = &f.name {
+        check_unique_name(s, n, f.product.flatten(), None).await?;
+    }
     sqlx::query_scalar(
         "INSERT INTO annotations_annotationtype (name, active, node_count, vector_type, enable_blurred, enable_concealed, \
          color_code, default_height, default_width, sort_order, closed, product_id, area_hit_test, multi_frame, size_unit) \
@@ -754,6 +782,22 @@ pub async fn type_patch_h(
     .await?;
     let f = type_fields(&object(&body)?)?;
     check_product(&s, &f).await?;
+    if f.name.is_some() || f.product.is_some() {
+        let (cur_name, cur_product): (String, Option<i64>) =
+            sqlx::query_as("SELECT name, product_id FROM annotations_annotationtype WHERE id = $1")
+                .bind(id)
+                .fetch_optional(&s.pool)
+                .await
+                .map_err(db_err)?
+                .ok_or_else(|| ApiError::not_found("Not found."))?;
+        check_unique_name(
+            &s,
+            f.name.as_deref().unwrap_or(&cur_name),
+            f.product.unwrap_or(cur_product),
+            Some(id),
+        )
+        .await?;
+    }
     let n = sqlx::query(
         "UPDATE annotations_annotationtype SET name = COALESCE($2, name), active = COALESCE($3, active), \
          node_count = COALESCE($4, node_count), enable_blurred = COALESCE($5, enable_blurred), \
