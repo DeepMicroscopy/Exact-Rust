@@ -464,7 +464,7 @@ export function ViewerPage() {
     });
   }, [frames, setPos]);
   useEffect(() => {
-    if (blenderRef.current) blenderRef.current.ahead = playing ? 6 : 2; // load further ahead while playing
+    if (blenderRef.current) blenderRef.current.ahead = playing ? 6 : kind === "volume" ? 1 : 2; // load further ahead while playing; a volume slice is expensive
     if (!playing) return;
     let raf = 0;
     let last = performance.now();
@@ -488,7 +488,7 @@ export function ViewerPage() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, fps, frames, setPos]);
+  }, [playing, fps, frames, setPos, kind]);
   useEffect(() => setPlaying(false), [id]);
 
   // ---- keyboard ---------------------------------------------------------------------------------------------------

@@ -6,11 +6,13 @@
 
 use crate::{err, Result, Slide, WsiError};
 use image::RgbaImage;
+use moka::sync::Cache;
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
     io::{Read, Write},
     path::PathBuf,
+    sync::Arc,
 };
 
 /// Pixel lookup `(column, row) -> value` of one rendered slice.
@@ -85,6 +87,8 @@ pub struct Nifti {
     /// (X, Y, Z) after reorientation
     shape: (usize, usize, usize),
     vox: Voxels,
+    /// rendered slices by (plane, frame): a slice is cut into many tiles and each tile asks for it again
+    slices: Cache<(u32, u32), Arc<RgbaImage>>,
     spacing: (f64, f64, f64),
     ax: (u32, u32),
     cor: (u32, u32),
@@ -423,6 +427,10 @@ impl Nifti {
         Ok(Self {
             shape: (nx, ny, nz),
             vox,
+            slices: Cache::builder()
+                .weigher(|_, v: &Arc<RgbaImage>| (v.as_raw().len() / 1024).max(1) as u32)
+                .max_capacity(192 * 1024) // 192 MB of rendered slices
+                .build(),
             spacing: (spacing[0], spacing[1], spacing[2]),
             ax,
             cor,
@@ -443,7 +451,13 @@ impl Nifti {
     /// One slice at physical pixel size in radiological orientation, as RGBA:
     /// axial: Anterior at top, Right on the left; coronal: Superior at top, Right on the left;
     /// sagittal: Superior at top, Posterior on the left.
-    fn render(&self, plane: u32, frame: u32) -> RgbaImage {
+    fn render(&self, plane: u32, frame: u32) -> Arc<RgbaImage> {
+        let key = (plane, frame.min(self.plane_frames(plane) - 1));
+        self.slices
+            .get_with(key, || Arc::new(self.render_uncached(key.0, key.1)))
+    }
+
+    fn render_uncached(&self, plane: u32, frame: u32) -> RgbaImage {
         let (nx, ny, nz) = self.shape;
         let at = |x: usize, y: usize, z: usize| self.vox.at(x, y, z);
         let (w, h, f): (usize, usize, Pixel) = match plane {
