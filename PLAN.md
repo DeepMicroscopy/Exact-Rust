@@ -576,3 +576,19 @@ without an `id` column (sessions) and keeps image sets alive when their team goe
 The v2 `Team` / `User` representations are Django's serializers (no website / names yet; to be extended when the admin screens need them).
 Not ported: password-reset mail (`send-password-reset`), user creation by an admin (users arrive through invitations). Tests: `test_v2_admin.py`.
 Open in 5.2: registration worker, QueueRunner v2.
+
+### 5v. Phase 5.2: registration jobs, worker, conversion (2026-10-28)
+Rust owns the queue (`exact_rust_registration_job`, migration 0006; results land in the shared `images_imageregistration`), permissions, the job
+lifecycle and the geometry; the compute stays in Python (`qt-wsi-registration`, unchanged). v2: `POST /api/v2/images/{id}/register` (202, answers
+the job; an open job of the pair is reused), `GET /api/v2/registration-jobs[/{id}]`, worker API `POST .../claim` (SKIP LOCKED, 30 minute lease,
+answers the image paths on the server and the parameters), `.../{id}/complete` (matrix, error, runtime, pickled quad tree as multipart file;
+creates or updates the registration of the pair, optionally the inverse), `.../{id}/fail`; `GET|POST /api/v2/registrations/{id}/convert`,
+`POST .../inverse`. exact-sync v1: `POST images/images/{id}/register_images/` (waits for the worker, `REGISTRATION_WAIT_SECONDS`, default 900:
+201 new / 202 recomputed, 202 with the job when the wait ran out), `registration/{id}/convert_coodinates/` (202), `.../create_inverse_registration/`
+(201; inverse as `cv2.invertAffineTransform`, singular -> zeros; an existing inverse answers 409 where Django fails with a 500).
+Conversion: matrix registrations natively (no perspective division, like Django), registrations with a quad tree pickle through
+`helpers/registration_helper.py` (`REGISTRATION_PYTHON`, `REGISTRATION_EXACT_DIR`: the pickle holds EXACT's slide classes). Worker: `helpers/registration_worker.py`
+(stdlib only except qt_wsi_reg; `--once`, several workers side by side). Differences: registering an image onto itself is refused (400).
+Tests: `test_v2_registration.py`, plus with `REG_E2E=1` (set by `make verify` when qt_wsi_reg imports) the real worker registers images 43 -> 2
+through the API and the helper converts a point through the stored pickle (verified: 10 s).
+Open in 5.2: QueueRunner v2 (mock worker with exact-sync, two-worker race test; the real QueueRunner as a manual smoke test).

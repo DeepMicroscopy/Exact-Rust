@@ -8,6 +8,9 @@ PY="$ROOT/reference/.venv/bin/python"
 export DYLD_FALLBACK_LIBRARY_PATH="${FFMPEG_LIB_DIR:-/opt/miniconda3/envs/env311/lib}"
 export SDKROOT="${SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
 export SQL_DATABASE=exact_rust_test DB_CONNECT_TIMEOUT=60
+# registration worker / helper: the Python with qt-wsi-registration (the real worker test runs when it is importable)
+export REGISTRATION_PYTHON="${REGISTRATION_PYTHON:-/opt/miniconda3/envs/env311/bin/python}" REGISTRATION_HELPER="$ROOT/helpers/registration_helper.py" REGISTRATION_EXACT_DIR="${REGISTRATION_EXACT_DIR:-$HOME/code/Exact/exact}"
+"$REGISTRATION_PYTHON" -c 'import qt_wsi_reg' 2>/dev/null && export REG_E2E=1
 fail=0
 step() { echo; echo "=== $*"; }
 
@@ -30,7 +33,7 @@ EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_conformance.py 2>&1 | grep
 step "Rust: exact-sync interface (read-only)"
 EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_exact_sync.py 2>&1 | grep -E "^FAILED|passed|failed" | cut -c1-200
 step "Rust: v2 auth, passkeys, invitations (mutating)"
-EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_v2_auth.py test_v2_passkeys.py test_v2_invitations.py test_v2_resources.py test_v2_annotation_writes.py test_v2_upload.py test_v2_image_sets.py test_v2_catalog.py test_v2_processing.py test_v2_move_image.py test_v2_admin.py 2>&1 | grep -E "^FAILED|passed|failed" | cut -c1-200
+EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_v2_auth.py test_v2_passkeys.py test_v2_invitations.py test_v2_resources.py test_v2_annotation_writes.py test_v2_upload.py test_v2_image_sets.py test_v2_catalog.py test_v2_processing.py test_v2_move_image.py test_v2_admin.py test_v2_registration.py 2>&1 | grep -E "^FAILED|passed|failed" | cut -c1-200
 cd "$ROOT"; pkill -f "target/debug/exact-server"; pkill -f "manage.py runserver"
 step "schema sync: shared tables, both creation orders"
 PGBIN="${PGBIN:-/Applications/Postgres.app/Contents/Versions/latest/bin}" scripts/check-schema-sync.sh 2>&1 | grep -E "^(ok|FAIL)" || fail=1

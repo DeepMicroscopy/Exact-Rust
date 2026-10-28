@@ -10,6 +10,7 @@ mod invitations;
 pub mod move_image;
 pub mod passkeys;
 pub mod processing;
+pub mod registration;
 pub mod resources;
 
 use crate::{
@@ -38,6 +39,7 @@ pub fn routes() -> Router<AppState> {
         .merge(annotation_media::v2_routes())
         .merge(admin::routes())
         .merge(move_image::v2_routes())
+        .merge(registration::v2_routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))
         .route("/api/v2/auth/stop-impersonating", post(stop_impersonating))
