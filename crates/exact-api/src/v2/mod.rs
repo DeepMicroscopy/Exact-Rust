@@ -12,6 +12,7 @@ mod invitations;
 pub mod jobs;
 pub mod move_image;
 pub mod passkeys;
+pub mod plugins;
 pub mod processing;
 pub mod registration;
 pub mod resources;
@@ -47,6 +48,7 @@ pub fn routes() -> Router<AppState> {
         .merge(crop::v2_routes())
         .merge(image_sets::v2_routes())
         .merge(jobs::v2_routes())
+        .merge(plugins::v2_routes())
         .merge(registration::v2_routes())
         .merge(export::v2_routes())
         .merge(segmentation::v2_routes())

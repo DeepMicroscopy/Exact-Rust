@@ -227,8 +227,19 @@ try {
   const setImages = (await apiCall(root, "GET", `/api/v2/images?image_set=${setId}&fields=id,name,width,height&limit=100`)).body.items;
   const [i1, i2, i3] = ["img-1", "img-2", "img-3"].map((n) => setImages.find((i) => i.name.includes(n)));
   // replace the registration of the pair by a manual one with scale 0.5 and a shift (20, 10): target = 0.5 * source + (20, 10)
+  // two registration methods are registered: the dialog offers them with the parameters of the chosen one
+  const methodA = (await apiCall(root, "POST", "/api/v2/plugins/register", { name: "E2E method A", package: "e2e_a", plugin_type: 2, parameters_schema: [{ name: "alpha", type: "int", label: "Alpha steps", default: 7, min: 1, max: 20 }] })).body;
+  const methodB = (await apiCall(root, "POST", "/api/v2/plugins/register", { name: "E2E method B", package: "e2e_b", plugin_type: 2, parameters_schema: [{ name: "style", type: "choice", label: "Style", choices: ["quick", "slow"], default: "quick" }, { name: "sharp", type: "bool", label: "Sharp", default: false }] })).body;
   await page.locator("button", { hasText: "New registration" }).click();
   await page.waitForSelector(".modal");
+  await page.waitForSelector('.modal select[aria-label="Registration method"]');
+  const methods = await page.locator('.modal select[aria-label="Registration method"] option').allInnerTexts();
+  check(methods.length >= 2 && methods.some((m) => m.includes("E2E method A")) && methods.some((m) => m.includes("(default)")), `the registration method can be chosen (${methods.join(" | ")})`);
+  await page.selectOption('.modal select[aria-label="Registration method"]', { label: "E2E method B" });
+  await page.locator(".modal .btn", { hasText: "Parameters" }).click();
+  check((await page.locator('.modal select[aria-label="Style"]').count()) === 1 && (await page.locator('.modal input[aria-label="Sharp"]').count()) === 1 && (await page.locator('.modal input[aria-label="Alpha steps"]').count()) === 0, "the parameters of the chosen method are offered");
+  await apiCall(root, "DELETE", `/api/v2/plugins/${methodA.id}`);
+  await apiCall(root, "DELETE", `/api/v2/plugins/${methodB.id}`);
   await page.locator('.modal [role=radiogroup][aria-label="Source image"] [role=radio]', { hasText: "img-1" }).click();
   check((await page.locator('.modal [role=radiogroup][aria-label="Source image"] .thumb').count()) >= 2, "images are chosen by their previews");
   const setOptions = await page.locator('.modal select[aria-label="Target image set"] option').allInnerTexts();

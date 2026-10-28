@@ -160,6 +160,23 @@ try {
   await waitFor(async () => (await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitotic figure" }).count()) === 0, "an annotation type can be deleted");
   await root.locator(".btn", { hasText: "Delete product" }).click();
   await waitFor(async () => (await root.locator(".side-item", { hasText: "E2E product" }).count()) === 0, "...and the product with it");
+  // ---- plugins: registered algorithms and what they did
+  await root.evaluate(async () => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const r = await fetch("/api/v2/plugins/register", { method: "POST", headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: JSON.stringify({ name: "E2E overview method", package: "e2e_ov", plugin_type: 2, parameters_schema: [{ name: "n", type: "int", default: 3, help: "a number" }] }) });
+    if (r.status !== 201) throw new Error("register " + r.status);
+  });
+  await root.locator(".tabs button", { hasText: "Plugins" }).click();
+  await root.waitForSelector('[data-testid="plugins"]');
+  await waitFor(async () => (await root.locator('[data-testid="plugins"] tr', { hasText: "E2E overview method" }).count()) === 1, "a registered plugin is listed in the overview");
+  const pluginRow = root.locator('[data-testid="plugins"] tr', { hasText: "E2E overview method" });
+  check((await pluginRow.innerText()).includes("Registration") && (await pluginRow.innerText()).includes("1 parameters"), "...as a registration plugin with its parameters");
+  check((await pluginRow.locator('[data-testid="served-by"]').innerText()).includes("no worker connected"), "...and says that no worker serves it");
+  await root.evaluate(async () => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const list = await (await fetch("/api/v2/plugins?fields=id,name&limit=1000")).json();
+    for (const p of list.items.filter((x) => x.name === "E2E overview method")) await fetch(`/api/v2/plugins/${p.id}`, { method: "DELETE", headers: { "x-csrf-token": csrf } });
+  });
   // ---- jobs: registrations and image analyses in one list
   await root.evaluate(async () => {
     const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;

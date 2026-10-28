@@ -1,3 +1,4 @@
+import { ParamFields, changedOf, defaultsOf, type ParamSpec, type ParamValues } from "./ParamFields";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
@@ -6,6 +7,15 @@ import type { Registration, RegistrationJob, SetImage } from "../api/types";
 import { ImagePicker } from "./ImagePicker";
 import { Modal } from "./Modal";
 import { Thumb } from "./Thumb";
+
+export interface RegistrationPlugin {
+  id: number;
+  name: string;
+  author: string;
+  package: string;
+  default: boolean;
+  parameters_schema: ParamSpec[] | null;
+}
 
 const msg = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e));
 
@@ -20,8 +30,8 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
   const [target, setTarget] = useState<number>(initialTarget ?? images.find((i) => i.id !== (initialSource ?? images[0]?.id))?.id ?? 0);
   const [inverse, setInverse] = useState(true);
   const [advanced, setAdvanced] = useState(false);
-  const [features, setFeatures] = useState(512);
-  const [ratio, setRatio] = useState(0.7);
+  const [plugin, setPlugin] = useState<number | null>(null);
+  const [values, setValues] = useState<ParamValues>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sets = useQuery({ queryKey: ["image-set-names"], queryFn: () => listAll<{ id: number; name: string }>("/api/v2/image-sets", { fields: "id,name" }) });
@@ -30,6 +40,10 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
     enabled: targetSet !== setId,
     queryFn: () => listAll<SetImage>("/api/v2/images", { image_set: targetSet, fields: "id,name,width,height,mpp,frames,image_set,time,crop_source" }),
   });
+  const plugins = useQuery({ queryKey: ["registration-plugins"], queryFn: () => api<{ items: RegistrationPlugin[] }>("/api/v2/registration-plugins"), staleTime: 0 });
+  const chosen = plugins.data?.items.find((p) => p.id === plugin) ?? plugins.data?.items.find((p) => p.default) ?? plugins.data?.items[0] ?? null;
+  const schema = chosen?.parameters_schema ?? [];
+  useEffect(() => setValues(defaultsOf(schema)), [chosen?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const candidates = (targetSet === setId ? images : (other.data ?? [])).filter((i) => i.id !== source);
   // keep the target valid when the set or the source changes
   useEffect(() => {
@@ -47,7 +61,7 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
     }
     setBusy(true);
     try {
-      await api(`/api/v2/images/${source}/register`, { json: { target_image: target, create_inverse_registration: inverse, ...(advanced ? { maxFeatures: features, ratio } : {}) } });
+      await api(`/api/v2/images/${source}/register`, { json: { target_image: target, create_inverse_registration: inverse, ...(chosen ? { plugin: chosen.id, ...changedOf(schema, values) } : {}) } });
       onStarted();
       onClose();
     } catch (e) {
@@ -88,20 +102,27 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
           <label className="check">
             <input type="checkbox" checked={inverse} onChange={(e) => setInverse(e.target.checked)} /> Also create the inverse registration (target onto source)
           </label>
-          <button className="btn ghost small" onClick={() => setAdvanced((a) => !a)}>
-            {advanced ? "▾" : "▸"} Parameters
-          </button>
-          {advanced && (
-            <div className="params">
-              <label className="field">
-                <span>Features per tile</span>
-                <input type="number" min={32} max={4096} value={features} onChange={(e) => setFeatures(Number(e.target.value))} />
-              </label>
-              <label className="field">
-                <span>Match ratio</span>
-                <input type="number" min={0.1} max={1} step={0.05} value={ratio} onChange={(e) => setRatio(Number(e.target.value))} />
-              </label>
-            </div>
+          {(plugins.data?.items.length ?? 0) > 1 && (
+            <label className="field">
+              <span>Registration method</span>
+              <select aria-label="Registration method" value={chosen?.id ?? ""} onChange={(e) => setPlugin(Number(e.target.value))}>
+                {plugins.data?.items.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.default ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {(plugins.data?.items.length ?? 0) === 1 && chosen && <p className="muted small">Method: {chosen.name}</p>}
+          {schema.length > 0 && (
+            <>
+              <button className="btn ghost small" onClick={() => setAdvanced((a) => !a)}>
+                {advanced ? "▾" : "▸"} Parameters
+              </button>
+              {advanced && <ParamFields schema={schema} values={values} onChange={setValues} />}
+            </>
           )}
         </>
       )}

@@ -130,6 +130,7 @@ export function JobsPage() {
                 {j.kind === "registration" ? (
                   <>
                     <Link to={`/images/${j.image}`}>{name(j.image)}</Link> → <Link to={`/images/${j.target_image}`}>{name(j.target_image)}</Link>
+                    {j.plugin_name && <span className="muted small"> · {j.plugin_name}</span>}
                   </>
                 ) : (
                   <>

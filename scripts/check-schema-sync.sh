@@ -6,20 +6,22 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 PGBIN="${PGBIN:-/Applications/Postgres.app/Contents/Versions/16/bin}"
-SHARED_TABLES="${SHARED_TABLES:-images_pyramidregistration}"
+SHARED_TABLES="${SHARED_TABLES:-images_pyramidregistration processing_plugin processing_pluginjob}"
 PY="$ROOT/reference/.venv/bin/python"
 # an EXACT checkout that contains the shared-table migration (default: ~/code/Exact; until the EXACT PR is merged use a worktree
 # of its branch: git -C ~/code/Exact worktree add /tmp/exact-pr fix-slideio-level-registration, then copy the local,
 # untracked exact/exact/settings.py into it)
 EXACT_DIR="${EXACT_DIR:-$HOME/code/Exact}"
-ls "$EXACT_DIR"/exact/exact/images/migrations/0041_pyramidregistration.py >/dev/null 2>&1 || { echo "SKIP - $EXACT_DIR has no images/0041_pyramidregistration migration (set EXACT_DIR to a checkout that does); the Django side was not tested"; exit 0; }
+ls "$EXACT_DIR"/exact/exact/images/migrations/0041_pyramidregistration.py "$EXACT_DIR"/exact/exact/processing/migrations/0015_registration_plugins.py >/dev/null 2>&1 || { echo "SKIP - $EXACT_DIR has no images/0041_pyramidregistration and processing/0015_registration_plugins migrations (set EXACT_DIR to a checkout that does, e.g. a worktree of the registration-plugins branch); the Django side was not tested"; exit 0; }
 export SDKROOT="${SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
 fail=0
 
-django() {  # run manage.py migrate against database $1
-  (cd "$EXACT_DIR/exact" && PYTHONPATH="$ROOT/reference:$EXACT_DIR/exact" DJANGO_SETTINGS_MODULE=settings_ref_db \
-     DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib SQL_HOST=127.0.0.1 SQL_DATABASE="$1" SQL_USER=exact SQL_PASSWORD=exact \
-     "$PY" manage.py migrate images --noinput 2>&1 | grep -E "Applying images|No migrations to apply|Error" | sed 's/^/    /')
+django() {  # run manage.py migrate (the apps with shared tables) against database $1
+  for app in images processing; do
+    (cd "$EXACT_DIR/exact" && PYTHONPATH="$ROOT/reference:$EXACT_DIR/exact" DJANGO_SETTINGS_MODULE=settings_ref_db \
+       DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib SQL_HOST=127.0.0.1 SQL_DATABASE="$1" SQL_USER=exact SQL_PASSWORD=exact \
+       "$PY" manage.py migrate $app --noinput 2>&1 | grep -E "Applying (images|processing)|No migrations to apply|Error" | sed 's/^/    /')
+  done
 }
 rust() {    # run the Rust migrations against database $1
   SQL_DATABASE="$1" cargo run -q -p exact-cli -- migrate --confirm-db "$1" 2>&1 | sed 's/^/    /'
@@ -37,9 +39,11 @@ for t in $SHARED_TABLES; do
   else
     echo "FAIL - $t differs:"; diff <(columns exact_sync_a "$t") <(columns exact_sync_b "$t") || true; fail=1
   fi
-  for db in exact_sync_a exact_sync_b; do
-    n=$("$PGBIN/psql" -h 127.0.0.1 -d $db -Atc "select count(*) from django_migrations where app='images' and name like '0041_%'")
-    [ "$n" = "1" ] && echo "ok   - $db: Django has recorded the migration" || { echo "FAIL - $db: migration not recorded"; fail=1; }
+done
+for db in exact_sync_a exact_sync_b; do
+  for m in "images 0041_%" "processing 0015_%"; do
+    n=$("$PGBIN/psql" -h 127.0.0.1 -d $db -Atc "select count(*) from django_migrations where app='${m% *}' and name like '${m#* }'")
+    [ "$n" = "1" ] && echo "ok   - $db: Django has recorded the ${m% *} migration" || { echo "FAIL - $db: the ${m% *} migration is not recorded"; fail=1; }
   done
 done
 # the Rust server's expectation of the layout (the schema baseline) must match what the databases now contain

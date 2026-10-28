@@ -39,32 +39,42 @@ const KINDS: [&str; 2] = ["registration", "plugin"];
 
 /// Workers that asked for work lately: name -> (kinds, when). Process-local; it tells the screens whether anybody is
 /// listening for the jobs that wait (an idle worker leaves no trace in the tables).
-type Seen = std::sync::Mutex<std::collections::HashMap<String, (Vec<String>, std::time::Instant)>>;
+type Seen = std::sync::Mutex<
+    std::collections::HashMap<String, (Vec<String>, Vec<i64>, std::time::Instant)>,
+>;
 static SEEN: std::sync::OnceLock<Seen> = std::sync::OnceLock::new();
 
-/// Remembers a worker's poll (any claim endpoint calls this, also when there was nothing to do).
-pub(crate) fn seen(worker: &str, kinds: &[&str]) {
+/// Remembers a worker's poll (any claim endpoint calls this, also when there was nothing to do): the kinds of jobs it
+/// does and the plugins it serves.
+pub(crate) fn seen(worker: &str, kinds: &[&str], plugins: &[i64]) {
     let map = SEEN.get_or_init(Default::default);
     if let Ok(mut m) = map.lock() {
         m.insert(
             worker.to_string(),
             (
                 kinds.iter().map(|k| k.to_string()).collect(),
+                plugins.to_vec(),
                 std::time::Instant::now(),
             ),
         );
-        m.retain(|_, (_, t)| t.elapsed().as_secs() < 3600);
+        m.retain(|_, (_, _, t)| t.elapsed().as_secs() < 3600);
     }
 }
 
-fn workers_seen() -> Vec<Value> {
+/// The workers that asked for work in the last 90 seconds, most recent first.
+pub(crate) fn workers_seen() -> Vec<Value> {
     let mut out: Vec<(u64, Value)> = SEEN
         .get()
         .and_then(|m| m.lock().ok())
         .map(|m| {
             m.iter()
-                .filter(|(_, (_, t))| t.elapsed().as_secs() < 90)
-                .map(|(name, (kinds, t))| (t.elapsed().as_secs(), json!({"name": name, "kinds": kinds, "seen_seconds_ago": t.elapsed().as_secs()})))
+                .filter(|(_, (_, _, t))| t.elapsed().as_secs() < 90)
+                .map(|(name, (kinds, plugins, t))| {
+                    (
+                        t.elapsed().as_secs(),
+                        json!({"name": name, "kinds": kinds, "plugins": plugins, "seen_seconds_ago": t.elapsed().as_secs()}),
+                    )
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -76,7 +86,7 @@ fn bad(msg: &str) -> ApiError {
     ApiError::detail(StatusCode::BAD_REQUEST, msg)
 }
 
-fn status_of_plugin_job() -> &'static str {
+pub(crate) fn plugin_job_status_sql() -> &'static str {
     "CASE WHEN q.error_message IS NOT NULL THEN 'failed' \
           WHEN EXISTS (SELECT 1 FROM processing_pluginresult r WHERE r.job_id = q.id) OR q.processing_complete >= 100 THEN 'done' \
           WHEN q.attached_worker IS NOT NULL AND q.attached_worker <> '' THEN 'running' ELSE 'queued' END"
@@ -104,10 +114,10 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
     let sql = format!(
         "SELECT * FROM ( \
            SELECT 'registration'::text AS kind, j.id::bigint AS id, j.status::text AS status, j.source_image_id::bigint AS image, \
-                  j.target_image_id::bigint AS target_image, NULL::bigint AS plugin, NULL::text AS plugin_name, NULL::float8 AS progress, \
+                  j.target_image_id::bigint AS target_image, j.plugin_id::bigint AS plugin, rp.name::text AS plugin_name, NULL::float8 AS progress, \
                   j.worker::text AS worker, j.error::text AS error, j.created_by::bigint AS creator, j.created_at AS created, \
                   j.started_at AS started, j.finished_at AS finished, j.registration_id::bigint AS result \
-           FROM exact_rust_registration_job j WHERE j.source_image_id {visible} \
+           FROM exact_rust_registration_job j LEFT JOIN processing_plugin rp ON rp.id = j.plugin_id WHERE j.source_image_id {visible} \
            UNION ALL \
            SELECT 'plugin', q.id::bigint, ({status}), q.image_id::bigint, NULL, q.plugin_id::bigint, pl.name::text, \
                   (q.processing_complete / 100.0)::float8, q.attached_worker::text, q.error_message::text, q.creator_id::bigint, q.created_time, \
@@ -118,7 +128,7 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
          WHERE ($1::text IS NULL OR u.kind = $1) AND ($2::text IS NULL OR u.status = $2) \
            AND ($3::bigint IS NULL OR u.image = $3 OR u.target_image = $3) \
          ORDER BY u.created DESC NULLS LAST, u.id DESC LIMIT {limit}",
-        status = status_of_plugin_job(),
+        status = plugin_job_status_sql(),
     );
     let rows = sqlx::query(&sql)
         .bind(q.get("kind"))
@@ -187,9 +197,15 @@ async fn claim_h(
     if let Some(k) = kinds.iter().find(|k| !KINDS.contains(&k.as_str())) {
         return Err(bad(&format!("Unknown kind {k}.")));
     }
+    let plugins: Option<Vec<i64>> = match d.get("plugins") {
+        None => None,
+        Some(Value::Array(a)) => Some(a.iter().filter_map(Value::as_i64).collect()),
+        Some(_) => return Err(bad("plugins must be a list of plugin ids.")),
+    };
     seen(
         &worker,
         &kinds.iter().map(String::as_str).collect::<Vec<_>>(),
+        plugins.as_deref().unwrap_or(&[]),
     );
     let plugin = d.get("plugin").and_then(Value::as_i64);
     let mut allowed = Vec::new();
@@ -237,7 +253,7 @@ async fn claim_h(
         .to_string();
     for (_, k) in order {
         let job = match k {
-            "registration" => registration::claim_one(&s, &worker).await?,
+            "registration" => registration::claim_one(&s, &worker, plugins.as_deref()).await?,
             _ => processing::claim_plugin(&s, &p, &host, &worker, plugin).await?,
         };
         if let Some(job) = job {
@@ -257,7 +273,7 @@ async fn actionable(s: &AppState, p: &Principal, kind: &str, id: i64) -> ApiResu
         "plugin" => (
             format!(
                 "SELECT ({}), q.creator_id::bigint, q.image_id::bigint FROM processing_pluginjob q WHERE q.id::bigint = $1",
-                status_of_plugin_job()
+                plugin_job_status_sql()
             ),
             ("processing", "change_pluginjob"),
         ),

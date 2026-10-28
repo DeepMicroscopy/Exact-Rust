@@ -59,7 +59,7 @@ pub async fn claim_h(
         })?
         .to_string();
     let plugin = d.get("plugin").and_then(Value::as_i64);
-    crate::v2::jobs::seen(&worker, &["plugin"]);
+    crate::v2::jobs::seen(&worker, &["plugin"], &[]);
     let host = headers
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())

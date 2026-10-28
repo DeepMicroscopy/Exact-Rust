@@ -183,13 +183,52 @@ const PARAM_KEYS: &[&str] = &[
 ];
 
 /// Only the parameters of `perform_registration` (plus `create_inverse_registration`) are passed on.
-fn job_params(d: &Map<String, Value>) -> Value {
+fn job_params(d: &Map<String, Value>, schema_names: &[String]) -> Value {
     Value::Object(
         d.iter()
-            .filter(|(k, _)| PARAM_KEYS.contains(&k.as_str()))
+            .filter(|(k, _)| PARAM_KEYS.contains(&k.as_str()) || schema_names.contains(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
     )
+}
+
+/// The plugin that computes a job (`plugin`: a registration plugin; none: the default one) and the parameters it accepts
+/// (those the plugin's schema names, plus `create_inverse_registration`).
+async fn plan(s: &AppState, d: &Map<String, Value>) -> ApiResult<(Option<i32>, Value)> {
+    let plugin: Option<i32> = match d.get("plugin") {
+        None | Some(Value::Null) => crate::v2::plugins::default_registration_plugin(s).await?,
+        Some(v) => {
+            let id = v
+                .as_i64()
+                .ok_or_else(|| bad("plugin: the id of a registration plugin is required."))?;
+            let ok: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM processing_plugin WHERE id = $1 AND plugin_type = 2)",
+            )
+            .bind(id as i32)
+            .fetch_one(&s.pool)
+            .await
+            .map_err(db_err)?;
+            if !ok {
+                return Err(bad("plugin: there is no registration plugin with this id."));
+            }
+            Some(id as i32)
+        }
+    };
+    let names = match plugin {
+        Some(id) => {
+            let schema: Option<Value> =
+                sqlx::query_scalar("SELECT parameters_schema FROM processing_plugin WHERE id = $1")
+                    .bind(id)
+                    .fetch_one(&s.pool)
+                    .await
+                    .map_err(db_err)?;
+            schema
+                .map(|v| crate::v2::plugins::schema_names(&v))
+                .unwrap_or_default()
+        }
+        None => Vec::new(),
+    };
+    Ok((plugin, job_params(d, &names)))
 }
 
 /// Queues a registration of source onto target; an open job of the pair is reused.
@@ -199,6 +238,7 @@ async fn enqueue(
     source: i64,
     target: i64,
     params: Value,
+    plugin: Option<i32>,
 ) -> ApiResult<i64> {
     if source == target {
         return Err(bad("Source and target image have to differ."));
@@ -218,12 +258,13 @@ async fn enqueue(
         return Ok(id);
     }
     sqlx::query_scalar(
-        "INSERT INTO exact_rust_registration_job (source_image_id, target_image_id, params, created_by) VALUES ($1, $2, $3, $4) RETURNING id",
+        "INSERT INTO exact_rust_registration_job (source_image_id, target_image_id, params, created_by, plugin_id) VALUES ($1, $2, $3, $4, $5) RETURNING id",
     )
     .bind(source)
     .bind(target)
     .bind(params)
     .bind(p.user.id)
+    .bind(plugin)
     .fetch_one(&s.pool)
     .await
     .map_err(db_err)
@@ -232,7 +273,7 @@ async fn enqueue(
 async fn job_json(s: &AppState, id: i64) -> ApiResult<Value> {
     let r = sqlx::query(
         "SELECT id, source_image_id, target_image_id, params, status, error, worker, registration_id, created_by, \
-         created_at, started_at, finished_at FROM exact_rust_registration_job WHERE id = $1",
+         created_at, started_at, finished_at, plugin_id FROM exact_rust_registration_job WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&s.pool)
@@ -251,7 +292,7 @@ fn row_json(r: &sqlx::postgres::PgRow) -> Value {
         "id": r.get::<i64, _>(0), "source_image": r.get::<i64, _>(1), "target_image": r.get::<i64, _>(2),
         "params": r.get::<Value, _>(3), "status": r.get::<String, _>(4), "error": r.get::<Option<String>, _>(5),
         "worker": r.get::<Option<String>, _>(6), "registration": r.get::<Option<i64>, _>(7), "created_by": r.get::<Option<i64>, _>(8),
-        "created_at": t(9), "started_at": t(10), "finished_at": t(11),
+        "created_at": t(9), "started_at": t(10), "finished_at": t(11), "plugin": r.get::<Option<i32>, _>(12),
     })
 }
 
@@ -313,7 +354,8 @@ async fn v2_register(
     let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
     editable_image(&s, &p, id).await?;
     let d = parse_object(&body)?;
-    let job = enqueue(&s, &p, id, target_of(&d)?, job_params(&d)).await?;
+    let (plugin, params) = plan(&s, &d).await?;
+    let job = enqueue(&s, &p, id, target_of(&d)?, params, plugin).await?;
     Ok((StatusCode::ACCEPTED, Json(job_json(&s, job).await?)).into_response())
 }
 
@@ -354,7 +396,7 @@ async fn jobs_list(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> A
     let v = p.viewer();
     let rows = sqlx::query(
         "SELECT j.id, j.source_image_id, j.target_image_id, j.params, j.status, j.error, j.worker, j.registration_id, j.created_by, \
-         j.created_at, j.started_at, j.finished_at FROM exact_rust_registration_job j \
+         j.created_at, j.started_at, j.finished_at, j.plugin_id FROM exact_rust_registration_job j \
          WHERE ($1::text IS NULL OR j.status = $1) AND ($2::bigint IS NULL OR j.source_image_id = $2 OR j.target_image_id = $2) \
            AND j.source_image_id IN (SELECT i.id FROM images_image i JOIN images_imageset st ON st.id = i.image_set_id \
                WHERE st.team_id IN (SELECT team_id FROM users_teammembership WHERE user_id = $3 AND ($4::bigint[] IS NULL OR team_id = ANY($4)))) \
@@ -401,31 +443,47 @@ async fn claim(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> Ap
         .and_then(Value::as_str)
         .filter(|w| !w.is_empty() && w.chars().count() <= 200)
         .ok_or_else(|| field_err("worker", "A name of 1 to 200 characters is required."))?;
-    crate::v2::jobs::seen(worker, &["registration"]);
-    Ok(match claim_one(&s, worker).await? {
+    crate::v2::jobs::seen(worker, &["registration"], &[]);
+    Ok(match claim_one(&s, worker, None).await? {
         Some(job) => Json(job).into_response(),
         None => StatusCode::NO_CONTENT.into_response(),
     })
 }
 
-/// Marks the oldest waiting registration job as running for `worker`; the job as the worker needs it, or none.
-pub(crate) async fn claim_one(s: &AppState, worker: &str) -> ApiResult<Option<Value>> {
+/// Marks the oldest waiting registration job as running for `worker`; the job as the worker needs it, or none. `plugins`
+/// are the registration plugins the worker serves (none given: any); jobs without a plugin go to every worker.
+pub(crate) async fn claim_one(
+    s: &AppState,
+    worker: &str,
+    plugins: Option<&[i64]>,
+) -> ApiResult<Option<Value>> {
     let row = sqlx::query(&format!(
         "UPDATE exact_rust_registration_job SET status = 'running', worker = $1, started_at = now(), \
          lease_expires = now() + interval '{LEASE}', error = NULL WHERE id = ( \
-           SELECT id FROM exact_rust_registration_job WHERE status = 'queued' OR (status = 'running' AND lease_expires < now()) \
+           SELECT id FROM exact_rust_registration_job WHERE (status = 'queued' OR (status = 'running' AND lease_expires < now())) \
+             AND ($2::bigint[] IS NULL OR plugin_id IS NULL OR plugin_id = ANY($2)) \
            ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED) \
-         RETURNING id, source_image_id, target_image_id, params"
+         RETURNING id, source_image_id, target_image_id, params, plugin_id"
     ))
     .bind(worker)
+    .bind(plugins)
     .fetch_optional(&s.pool)
     .await
     .map_err(db_err)?;
     let Some(row) = row else {
         return Ok(None);
     };
-    let (id, source, target, params): (i64, i64, i64, Value) =
-        (row.get(0), row.get(1), row.get(2), row.get(3));
+    let (id, source, target, params, plugin_id): (i64, i64, i64, Value, Option<i32>) =
+        (row.get(0), row.get(1), row.get(2), row.get(3), row.get(4));
+    let plugin: Option<Value> = match plugin_id {
+        Some(pid) => sqlx::query("SELECT id, name, package FROM processing_plugin WHERE id = $1")
+            .bind(pid)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?
+            .map(|r| json!({"id": r.get::<i32, _>(0), "name": r.get::<String, _>(1), "package": r.get::<String, _>(2)})),
+        None => None,
+    };
     let path_of = |image: i64| {
         let s = s.clone();
         async move {
@@ -454,7 +512,7 @@ pub(crate) async fn claim_one(s: &AppState, worker: &str) -> ApiResult<Option<Va
         return Ok(None);
     };
     Ok(Some(
-        json!({"id": id, "source_image": source, "target_image": target, "source_path": sp, "target_path": tp, "params": params}),
+        json!({"id": id, "source_image": source, "target_image": target, "source_path": sp, "target_path": tp, "params": params, "plugin": plugin}),
     ))
 }
 
@@ -1223,7 +1281,8 @@ async fn v1_register(
         .fetch_one(&s.pool)
         .await
         .map_err(db_err)?;
-    let job = enqueue(&s, &p, id, target, job_params(&d)).await?;
+    let (plugin, params) = plan(&s, &d).await?;
+    let job = enqueue(&s, &p, id, target, params, plugin).await?;
     let wait: u64 = std::env::var("REGISTRATION_WAIT_SECONDS")
         .ok()
         .and_then(|v| v.parse().ok())
