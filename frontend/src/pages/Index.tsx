@@ -53,9 +53,8 @@ export function Index() {
       </aside>
       <section className="main">
         <div className="toolbar">
-          <h2>Image sets</h2>
           <span className="spacer" />
-          <input className="search" placeholder="Search image sets and images…" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="search" placeholder="Search…" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
           {teamId !== null && (
             <button className="btn" onClick={() => setStats(true)}>
               Statistics
