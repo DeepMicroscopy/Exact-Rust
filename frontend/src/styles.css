@@ -331,3 +331,5 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .reg-check-bar input[type="range"] { width: 240px; }
 .reg-check-bar .ring { width: 22px; height: 22px; display: block; }
 .reg-check-osd { flex: 1; min-height: 0; background: #111; border: 2px solid var(--border); border-radius: 8px; position: relative; }
+.osd.osd-hidden { visibility: hidden; }
+.viewer-error { display: flex; flex-direction: column; gap: 8px; align-items: center; }

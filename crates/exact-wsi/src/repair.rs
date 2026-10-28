@@ -53,6 +53,10 @@ pub(crate) fn reduce(src: &RgbaImage, samples: usize) -> Vec<u8> {
     out
 }
 
+/// YCbCrSubSampling (tag 530) of the tiles `encode` writes: the image crate's JPEG encoder does not subsample the chroma
+/// (4:4:4). The tag has to say so; with another value libtiff and Pillow refuse the file ("improper JPEG sampling factors").
+pub(crate) const JPEG_SUBSAMPLING: [u16; 2] = [1, 1];
+
 pub(crate) fn encode(raw: Vec<u8>, compression: u64, samples: usize) -> Result<Vec<u8>> {
     match compression {
         1 => Ok(raw),
@@ -193,7 +197,7 @@ pub fn rebuild_pyramid(src: &str, dst: &str, progress: &dyn Fn(f32)) -> Result<u
             ));
         }
         if comp == 7 {
-            e.push(Entry::short(530, &[2, 1])); // the image crate writes 4:2:2
+            e.push(Entry::short(530, &JPEG_SUBSAMPLING));
         }
         w.add_page(e);
         prev = Page::from_parts(&reader, lw, lh, TILE, comp, samples, offs, cnts);
@@ -368,5 +372,30 @@ mod tests {
             vec!["damaged_pyramid".to_string()]
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod subsampling_tests {
+    use super::*;
+
+    /// The sampling factors of the first component as the JPEG frame header (SOF0) states them.
+    fn sampling(jpeg: &[u8]) -> (u8, u8) {
+        let i = jpeg
+            .windows(2)
+            .position(|w| w == [0xff, 0xc0])
+            .expect("SOF0");
+        let c = jpeg[i + 11]; // marker, length, precision, height, width, count, then id + sampling of component 1
+        (c >> 4, c & 15)
+    }
+
+    #[test]
+    fn the_subsampling_tag_matches_the_jpeg_tiles() {
+        let raw = vec![128u8; (TILE * TILE * 3) as usize];
+        let jpeg = encode(raw, 7, 3).unwrap();
+        assert_eq!(
+            sampling(&jpeg),
+            (JPEG_SUBSAMPLING[0] as u8, JPEG_SUBSAMPLING[1] as u8)
+        );
     }
 }

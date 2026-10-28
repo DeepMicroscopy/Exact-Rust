@@ -49,6 +49,11 @@ def test_crop_creates_a_readable_pyramid_image_that_remembers_its_origin(sets):
     new = r.json()
     assert (new["width"], new["height"], new["image_set"], new["crop_source"], new["crop_x"], new["crop_y"], new["crop_frame"]) == (300, 200, b["id"], img, 100, 50, 0)
     assert new["name"].endswith("x100_y50_z0_w300_h200.tiff") and (IMAGES / b["path"] / new["name"]).exists()
+    # libtiff (Pillow, Django's EXACT) must read the file too: a wrong YCbCrSubSampling tag makes it refuse the JPEG tiles
+    from PIL import Image
+    with Image.open(IMAGES / b["path"] / new["name"]) as im:
+        im.load()
+        assert im.size == (300, 200)
     assert c.get(f"/api/v2/images/{new['id']}/metadata").status_code == 200
 
 

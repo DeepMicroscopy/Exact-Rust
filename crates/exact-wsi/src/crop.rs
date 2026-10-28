@@ -5,7 +5,7 @@
 
 use crate::{
     err,
-    repair::{encode, reduce, TILE},
+    repair::{encode, reduce, JPEG_SUBSAMPLING, TILE},
     tiff::{self, ChunkCache, Page, Tiff},
     tiff_write::{Entry, TiffWriter},
     Result, Slide,
@@ -75,7 +75,7 @@ pub fn crop_to_pyramid(
         Entry::long(tiff::TAG_TILE_LENGTH, &[TILE as u32]),
         Entry::long8(tiff::TAG_TILE_OFFSETS, &offs),
         Entry::long8(tiff::TAG_TILE_COUNTS, &cnts),
-        Entry::short(530, &[2, 1]), // the image crate writes 4:2:2
+        Entry::short(530, &JPEG_SUBSAMPLING),
     ];
     if mpp > 0.0 {
         // pixels per centimetre as a rational
@@ -125,7 +125,7 @@ pub fn crop_to_pyramid(
             Entry::long(tiff::TAG_TILE_LENGTH, &[TILE as u32]),
             Entry::long8(tiff::TAG_TILE_OFFSETS, &offs),
             Entry::long8(tiff::TAG_TILE_COUNTS, &cnts),
-            Entry::short(530, &[2, 1]),
+            Entry::short(530, &JPEG_SUBSAMPLING),
         ]);
         prev = Page::from_parts(&reader, lw, lh, TILE, JPEG, 3, offs, cnts);
     }

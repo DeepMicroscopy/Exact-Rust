@@ -80,6 +80,7 @@ export function ViewerPage() {
     queryKey: ["image", id],
     queryFn: () => api<ImageSummary>(`/api/v2/images/${id}?fields=id,name,width,height,frames,depth,image_set,mpp,crop_source,crop_x,crop_y,crop_frame`),
   });
+  const failed = image.isError || !!error;
   const meta = useQuery({ queryKey: ["image-meta", id], queryFn: () => api<Meta>(`/api/v2/images/${id}/metadata`) });
   const types = useQuery({
     queryKey: ["annotation-types"],
@@ -302,6 +303,15 @@ export function ViewerPage() {
       editorRef.current = null;
     };
   }, []);
+
+  // nothing of the previous image may stay on the canvas while another one loads or when it cannot be opened
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    viewer.world.removeAll();
+    viewer.forceRedraw();
+    setError(null);
+  }, [id, image.isError]);
 
   // the stack of planes: one tiled image per plane, cross-faded for focus planes
   useEffect(() => {
@@ -605,8 +615,16 @@ export function ViewerPage() {
         </button>
       </header>
       <div className={`viewer-body ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
-        <div ref={host} className="osd" />
-        {error && <div className="viewer-error glass">{error}</div>}
+        <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
+        {failed && (
+          <div className="viewer-error glass" role="alert" data-testid="viewer-error">
+            <strong>{image.isError ? `Image ${id} was not found.` : error}</strong>
+            {image.isError && <p className="muted small">It does not exist, was deleted, or you may not see it.</p>}
+            <Link to="/" className="btn">
+              Image sets
+            </Link>
+          </div>
+        )}
         {meta.data && <RepairBanner imageId={id} damaged={!!meta.data.issues?.includes("damaged_pyramid")} />}
         <button className="side-toggle btn glass" onClick={() => setSideOpen((o) => !o)} aria-expanded={sideOpen} title="Annotation types">
           ☰

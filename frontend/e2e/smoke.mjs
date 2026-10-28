@@ -149,6 +149,16 @@ try {
   await page.locator(".fps-menu button", { hasText: /^1\s*$/ }).first().click();
   check((await page.locator(".viewer-foot .play-btn").getAttribute("title")).includes("1 frames per second"), "movie: a chosen speed is in use");
 
+  // an image that does not exist: nothing of the image shown before may stay on the canvas
+  const known = errors.length;
+  await page.evaluate(() => {
+    history.pushState({}, "", "/images/99999999");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await page.waitForSelector('[data-testid="viewer-error"]');
+  check((await page.locator(".osd.osd-hidden").count()) === 1 && (await page.evaluate(() => window.__viewer.world.getItemCount())) === 0, "an unknown image shows an error, not the image seen before");
+  check((await page.locator('[data-testid="viewer-error"]').innerText()).includes("99999999"), "...which names the image");
+  errors.length = known; // the 404 is expected
   check(errors.length === 0, "no console errors: " + errors.join(" | "));
 } finally {
   await browser.close();
