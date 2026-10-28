@@ -23,7 +23,7 @@ use axum::{
 use serde_json::Value;
 
 /// `{"worker": "name", "plugin": 3}` (`plugin` optional). Answers the claimed job (200) or 204 when nothing is waiting.
-/// Free means: no worker attached, not finished, no error. Only jobs of images in the caller's teams are offered.
+/// Free means: no worker attached, not finished, no error, no result yet (as QueueRunner's `job.result is None`). Only jobs of images in the caller's teams are offered.
 pub async fn claim_h(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -66,6 +66,7 @@ pub async fn claim_h(
            SELECT q.id FROM processing_pluginjob q \
            WHERE (q.attached_worker IS NULL OR q.attached_worker = '') AND q.processing_complete < 100 \
              AND q.error_message IS NULL AND ($2::int IS NULL OR q.plugin_id = $2) \
+             AND NOT EXISTS (SELECT 1 FROM processing_pluginresult r WHERE r.job_id = q.id) \
              AND q.image_id IN (SELECT i.id FROM images_image i JOIN images_imageset st ON st.id = i.image_set_id \
                  WHERE st.team_id IN (SELECT team_id FROM users_teammembership WHERE user_id = $3 \
                    AND ($4::bigint[] IS NULL OR team_id = ANY($4)))) \

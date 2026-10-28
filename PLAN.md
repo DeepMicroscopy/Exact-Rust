@@ -592,3 +592,13 @@ Conversion: matrix registrations natively (no perspective division, like Django)
 Tests: `test_v2_registration.py`, plus with `REG_E2E=1` (set by `make verify` when qt_wsi_reg imports) the real worker registers images 43 -> 2
 through the API and the helper converts a point through the stored pickle (verified: 10 s).
 Open in 5.2: QueueRunner v2 (mock worker with exact-sync, two-worker race test; the real QueueRunner as a manual smoke test).
+
+### 5w. Phase 5.2: QueueRunner v2 and the mock worker (2026-10-28)
+`tests/mock-worker/mock_worker.py`: a worker that does what EXACT-QueueRunner does with `exact-sync` (register the plugin, list/retrieve jobs, claim,
+progress, result + entry + annotations + bitmap upload, destroy an earlier result), with the old racy claim (`legacy`) or the v2 claim.
+`tests/conformance/test_mock_worker.py` (7): both flows end to end, a failing handler leaves the error on the job and the job unclaimed, a re-run
+replaces the earlier result, three v2 workers process six jobs exactly once (no result twice), two legacy workers lose no job.
+The v2 claim now also skips jobs that have a result (QueueRunner's `job.result is None`). `docs/queuerunner-v2.md`: the proposed change for
+QueueRunner (not applied, the user's checkout has local changes) and three findings in exact-sync (broken `create_plugin`, `PluginJob.result`
+never filled, no multipart for bitmaps). The real QueueRunner as a manual smoke test remains for the cutover checklist (§5a).
+Phase 5.2 is complete.
