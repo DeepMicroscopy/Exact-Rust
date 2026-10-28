@@ -198,9 +198,8 @@ fn inflate_to(src: &str, dst: &std::path::Path) -> Result<()> {
     let tmp = dst.with_extension(format!("tmp{}", std::process::id()));
     let io = |e: std::io::Error| WsiError(e.to_string());
     let run = || -> std::io::Result<()> {
-        let mut dec = flate2::read::MultiGzDecoder::new(std::io::BufReader::new(
-            std::fs::File::open(src)?,
-        ));
+        let mut dec =
+            flate2::read::MultiGzDecoder::new(std::io::BufReader::new(std::fs::File::open(src)?));
         let mut out = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&tmp)?);
         std::io::copy(&mut dec, &mut out)?;
         out.flush()

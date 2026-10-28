@@ -120,6 +120,46 @@ try {
   check((await again.locator(".tabs button", { hasText: "Users" }).count()) === 0, "a team admin sees the teams but not the user list");
   await root.locator(".btn", { hasText: "Delete" }).click();
   await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 0, "a user can be deleted");
+  // ---- products and annotation types
+  await root.locator(".tabs button", { hasText: "Products" }).click();
+  await root.locator(".btn", { hasText: "New product" }).click();
+  await root.fill('input[aria-label="Product name"]', "E2E product");
+  await root.selectOption('select[aria-label="Product team"]', { label: teamName });
+  await root.locator(".modal .btn.primary", { hasText: "Save" }).click();
+  await waitFor(async () => (await root.locator('[data-testid="product-panel"] h3').count()) === 1 && (await root.locator('[data-testid="product-panel"] h3').innerText()) === "E2E product", "a product can be created and is shown");
+  await root.locator(".btn", { hasText: "New annotation type" }).click();
+  await root.fill('input[aria-label="Type name"]', "Mitosis");
+  await root.selectOption('select[aria-label="Type shape"]', { label: "Fixed size box" });
+  check((await root.locator('input[aria-label="Default width"]').count()) === 1 && (await root.locator('input[aria-label="Node count"]').count()) === 0, "a fixed size box asks for its size, not for a point count");
+  await root.selectOption('select[aria-label="Type shape"]', { label: "Polygon" });
+  check((await root.locator('input[aria-label="Node count"]').count()) === 1 && (await root.locator('input[aria-label="Default width"]').count()) === 0, "a polygon asks for the point count instead");
+  await root.selectOption('select[aria-label="Type shape"]', { label: "Fixed size box" });
+  await root.fill('input[aria-label="Default width"]', "64");
+  await root.fill('input[aria-label="Default height"]', "64");
+  await root.locator(".modal .btn.primary", { hasText: "Save" }).click();
+  await waitFor(async () => (await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitosis" }).count()) === 1, "an annotation type can be added");
+  check((await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitosis" }).innerText()).includes("Fixed size box"), "...with its shape");
+  await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitosis" }).locator(".btn", { hasText: "Edit" }).click();
+  await root.fill('input[aria-label="Type name"]', "Mitotic figure");
+  await root.locator(".modal .btn.primary", { hasText: "Save" }).click();
+  await waitFor(async () => (await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitotic figure" }).count()) === 1, "an annotation type can be renamed");
+  await root.locator('input[aria-label="Mitotic figure is active"]').click({ force: true });
+  await waitFor(async () => !(await root.locator('input[aria-label="Mitotic figure is active"]').isChecked()), "an annotation type can be deactivated");
+  // a second product starts with the types of the first
+  await root.locator(".btn", { hasText: "New product" }).click();
+  await root.fill('input[aria-label="Product name"]', "E2E copy");
+  await root.selectOption('select[aria-label="Product team"]', { label: teamName });
+  await root.selectOption('select[aria-label="Copy types from"]', { label: `E2E product (${teamName})` });
+  await root.locator(".modal .btn.primary", { hasText: "Save" }).click();
+  await waitFor(async () => (await root.locator('[data-testid="product-panel"] h3').count()) === 1 && (await root.locator('[data-testid="product-panel"] h3').innerText()) === "E2E copy", "the new product is shown");
+  await waitFor(async () => (await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitotic figure" }).count()) === 1, "a new product can copy the types of another");
+  await root.locator(".btn", { hasText: "Delete product" }).click();
+  await waitFor(async () => (await root.locator(".side-item", { hasText: "E2E copy" }).count()) === 0, "a product can be deleted");
+  await root.locator(".side-item", { hasText: "E2E product" }).click();
+  await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitotic figure" }).locator(".btn", { hasText: "Delete" }).click();
+  await waitFor(async () => (await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitotic figure" }).count()) === 0, "an annotation type can be deleted");
+  await root.locator(".btn", { hasText: "Delete product" }).click();
+  await waitFor(async () => (await root.locator(".side-item", { hasText: "E2E product" }).count()) === 0, "...and the product with it");
   // ---- clean up the team
   await root.locator(".tabs button", { hasText: "Teams" }).click();
   await root.locator(".side-item", { hasText: teamName }).click();

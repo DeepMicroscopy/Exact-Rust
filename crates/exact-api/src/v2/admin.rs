@@ -563,7 +563,20 @@ async fn admin_me(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Re
     let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
     let site = users::is_site_admin(&s.pool, p.user.id).await?;
     let teams = users::admin_team_ids(&s.pool, p.user.id).await?;
-    Ok(Json(json!({"is_site_admin": site, "is_staff": p.user.is_staff, "is_superuser": p.user.is_superuser, "admin_team_ids": teams})).into_response())
+    // the model permissions that decide who may edit products and annotation types (Django's `DjangoModelPermissions`)
+    let mut perms = Map::new();
+    for (app, codename) in [
+        ("administration", "add_product"),
+        ("administration", "change_product"),
+        ("administration", "delete_product"),
+        ("annotations", "add_annotationtype"),
+        ("annotations", "change_annotationtype"),
+        ("annotations", "delete_annotationtype"),
+    ] {
+        let has = users::has_perm(&s.pool, &p.user, app, codename).await?;
+        perms.insert(codename.to_string(), Value::Bool(has));
+    }
+    Ok(Json(json!({"is_site_admin": site, "is_staff": p.user.is_staff, "is_superuser": p.user.is_superuser, "admin_team_ids": teams, "perms": perms})).into_response())
 }
 
 /// `GET /api/v2/admin/users/{id}/profile`: the editable personal fields of a user (the user list of the API does not

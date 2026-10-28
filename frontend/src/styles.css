@@ -358,3 +358,9 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .stat-value { white-space: nowrap; width: 1%; text-align: right; color: var(--muted); }
 .stat-bar span { display: block; height: 10px; border-radius: 5px; min-width: 2px; }
 .pen-only.active { color: var(--purple); }
+
+.swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--border); vertical-align: middle; }
+.admin-table tr.inactive td { opacity: 0.5; }
+.field-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.field-row .grow { flex: 1; min-width: 160px; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0; }

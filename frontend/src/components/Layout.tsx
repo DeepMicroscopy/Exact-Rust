@@ -6,7 +6,7 @@ import { useAdminMe } from "../pages/AdminPage";
 export function Layout() {
   const { user, logout } = useAuth();
   const admin = useAdminMe();
-  const canAdmin = !!admin.data && (admin.data.is_site_admin || admin.data.admin_team_ids.length > 0);
+  const canAdmin = !!admin.data && (admin.data.is_site_admin || admin.data.admin_team_ids.length > 0 || Object.values(admin.data.perms ?? {}).some(Boolean));
   return (
     <div className="shell">
       <header className="topbar">

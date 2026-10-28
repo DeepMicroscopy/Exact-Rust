@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { ProductsTab, type ProductPerms } from "../components/ProductsAdmin";
 import { Modal } from "../components/Modal";
 import { SecretDialog } from "../components/SecretDialog";
 
@@ -10,6 +11,7 @@ export interface AdminMe {
   is_staff: boolean;
   is_superuser: boolean;
   admin_team_ids: number[];
+  perms?: ProductPerms;
 }
 interface TeamRow {
   id: number;
@@ -55,11 +57,13 @@ export function useAdminMe() {
 /** Administration: the teams one administers (members, invitations) and, for site admins, all users. */
 export function AdminPage() {
   const me = useAdminMe();
-  const [tab, setTab] = useState<"teams" | "users">("teams");
+  const [tab, setTab] = useState<"teams" | "users" | "products">("teams");
   if (me.isLoading) return <p className="muted">Loading…</p>;
   const site = !!me.data?.is_site_admin;
   const mine = me.data?.admin_team_ids ?? [];
-  if (!me.data || (!site && mine.length === 0)) return <p className="muted">You do not administer a team.</p>;
+  const perms = me.data?.perms ?? {};
+  const products = Object.values(perms).some(Boolean);
+  if (!me.data || (!site && mine.length === 0 && !products)) return <p className="muted">You do not administer a team.</p>;
   return (
     <section className="main admin">
       <div className="toolbar">
@@ -69,13 +73,18 @@ export function AdminPage() {
         <button role="tab" aria-selected={tab === "teams"} className={tab === "teams" ? "active" : ""} onClick={() => setTab("teams")}>
           Teams
         </button>
+        {products && (
+          <button role="tab" aria-selected={tab === "products"} className={tab === "products" ? "active" : ""} onClick={() => setTab("products")}>
+            Products
+          </button>
+        )}
         {site && (
           <button role="tab" aria-selected={tab === "users"} className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>
             Users
           </button>
         )}
       </div>
-      {tab === "teams" ? <TeamsTab me={me.data} /> : <UsersTab me={me.data} />}
+      {tab === "teams" ? <TeamsTab me={me.data} /> : tab === "products" ? <ProductsTab perms={perms} /> : <UsersTab me={me.data} />}
     </section>
   );
 }

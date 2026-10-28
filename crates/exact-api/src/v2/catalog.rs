@@ -25,6 +25,7 @@ use axum::{
     Json, Router,
 };
 use serde_json::{json, Map, Value};
+use sqlx::Row;
 
 pub fn legacy_routes() -> Router<AppState> {
     Router::new()
@@ -53,6 +54,10 @@ pub fn legacy_routes() -> Router<AppState> {
 
 pub fn v2_routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/v2/products/{id}/annotation-types",
+            axum::routing::get(product_types_h),
+        )
         .route("/api/v2/image-sets/{id}/tags", post(tag_add_h))
         .route("/api/v2/image-sets/{id}/tags/{name}", delete(tag_delete_h))
         .route(
@@ -1058,4 +1063,49 @@ pub async fn product_delete_h(
     cascade::delete_rows(&mut tx, "administration_product", &[id]).await?;
     tx.commit().await.map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `GET /api/v2/products/{id}/annotation-types`: the types of a product with everything the administration screen edits,
+/// including `active` (which the resource representation shares with the old API and so lacks) and how many annotations
+/// use each type. Members of the product's team.
+async fn product_types_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let visible: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM administration_product pr WHERE pr.id = $1 AND pr.team_id IN \
+         (SELECT team_id FROM users_teammembership WHERE user_id = $2))",
+    )
+    .bind(id)
+    .bind(p.user.id)
+    .fetch_one(&s.pool)
+    .await
+    .map_err(db_err)?;
+    if !visible {
+        return Err(ApiError::not_found("Not found."));
+    }
+    let rows = sqlx::query(
+        "SELECT t.id, t.name, t.active, t.vector_type, t.node_count, t.color_code, t.sort_order, t.enable_blurred, \
+         t.enable_concealed, t.multi_frame, t.default_width, t.default_height, t.size_unit, t.closed, t.area_hit_test, \
+         (SELECT count(*) FROM annotations_annotation a WHERE a.annotation_type_id = t.id AND NOT a.deleted) \
+         FROM annotations_annotationtype t WHERE t.product_id = $1 ORDER BY t.sort_order, t.name, t.id",
+    )
+    .bind(id)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            json!({"id": r.get::<i64, _>(0), "name": r.get::<String, _>(1), "active": r.get::<bool, _>(2),
+                   "vector_type": r.get::<i32, _>(3), "node_count": r.get::<i32, _>(4), "color_code": r.get::<String, _>(5),
+                   "sort_order": r.get::<i32, _>(6), "enable_blurred": r.get::<bool, _>(7), "enable_concealed": r.get::<bool, _>(8),
+                   "multi_frame": r.get::<bool, _>(9), "default_width": r.get::<f64, _>(10), "default_height": r.get::<f64, _>(11),
+                   "size_unit": r.get::<String, _>(12), "closed": r.get::<bool, _>(13), "area_hit_test": r.get::<bool, _>(14),
+                   "annotation_count": r.get::<i64, _>(15)})
+        })
+        .collect();
+    Ok(Json(json!({"items": items})).into_response())
 }

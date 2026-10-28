@@ -151,3 +151,18 @@ def test_admin_me_tells_what_the_screens_may_offer():
     m = client("rt_member").get("/api/v2/admin/me").json()
     assert m["is_site_admin"] is False and m["admin_team_ids"] == []
     assert httpx.get(BASE + "/api/v2/admin/me").status_code in (401, 403)
+
+
+def test_admin_me_lists_the_model_permissions_for_products_and_types():
+    root = client("aubreville")
+    perms = root.get("/api/v2/admin/me").json()["perms"]
+    assert perms["add_product"] and perms["delete_annotationtype"]
+    m = client("rt_member").get("/api/v2/admin/me").json()["perms"]
+    assert not any(m.values())
+
+
+def test_product_types_for_the_admin_screen_carry_active_and_usage():
+    root = client("aubreville")
+    types = root.get("/api/v2/products/1/annotation-types").json()["items"]
+    assert types and {"active", "annotation_count", "vector_type", "color_code"} <= types[0].keys()
+    assert client("rt_outsider").get("/api/v2/products/1/annotation-types").status_code == 404
