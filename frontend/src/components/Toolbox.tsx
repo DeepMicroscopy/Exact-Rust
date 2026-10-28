@@ -23,6 +23,11 @@ export interface ToolboxProps {
   brushRadius: number;
   /** the selected annotation is a polygon whose shape may be changed by brush and operations */
   reshapable: boolean;
+  /** two or more annotations selected together */
+  group: { count: number; classes: PaletteEntry[] } | null;
+  /** touch: taps add or remove annotations from the selection, a drag draws a frame */
+  multiMode: boolean;
+  canPaste: boolean;
   canUndo: boolean;
   canRedo: boolean;
   annotationsShown: boolean;
@@ -37,6 +42,10 @@ export interface ToolboxProps {
     finish(): void;
     cancel(): void;
     remove(): void;
+    toggleMulti(): void;
+    changeGroupType(typeId: number): void;
+    copy(): void;
+    paste(): void;
     removeVertex(): void;
     changeType(typeId: number): void;
     toggleGlobal(typeId: number): void;
@@ -94,6 +103,12 @@ export function Toolbox(p: ToolboxProps) {
         <button className={!p.drawing ? "active" : ""} onClick={p.on.select} aria-label="Select" title="Select and edit annotations (C)">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
             <path d="M5 3l14 8-6.2 1.6L9.6 19z" fill="currentColor" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button className={p.multiMode ? "active" : ""} onClick={p.on.toggleMulti} aria-label="Select several" aria-pressed={p.multiMode} title="Select several: Shift + click adds or removes an annotation, Ctrl/⌘ + drag draws a frame around many (Ctrl+A: all). On a touch screen switch this on: tap annotations, drag a frame.">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <rect x="3" y="3" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+            <rect x="10" y="10" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeDasharray="3 2" />
           </svg>
         </button>
       </div>
@@ -184,6 +199,35 @@ export function Toolbox(p: ToolboxProps) {
             Delete
           </button>
         </div>
+      )}
+
+      {!p.drawing && p.group && (
+        <div className="tool-group context selection group" data-testid="group-tools">
+          <span className="measure" data-testid="group-count">
+            {p.group.count} selected
+          </span>
+          <Dropdown
+            className="sel-type-dd"
+            name="group-type"
+            items={p.group.classes.map((e) => ({ id: e.id, label: e.name, color: e.color, key: e.key }))}
+            onPick={(id) => p.on.changeGroupType(Number(id))}
+            disabled={p.group.classes.length === 0}
+            title={p.group.classes.length === 0 ? "The selected annotations have shapes that no common type fits" : "Change the type of all selected annotations (digit keys too)"}
+          >
+            Change type
+          </Dropdown>
+          <button className="btn" onClick={p.on.copy} title="Copy (Ctrl+C)">
+            Copy
+          </button>
+          <button className="btn danger" onClick={p.on.remove} title="Delete all selected (Delete, Backspace, X)">
+            Delete
+          </button>
+        </div>
+      )}
+      {!p.drawing && p.canPaste && (
+        <button className="btn ghost" onClick={p.on.paste} title="Paste the copied annotations (Ctrl+V); into a registered image they land at the same place">
+          Paste
+        </button>
       )}
 
       {p.globals.length > 0 && (

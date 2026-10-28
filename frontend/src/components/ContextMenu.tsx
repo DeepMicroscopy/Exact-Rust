@@ -9,6 +9,8 @@ export interface MenuModel {
   classes: PaletteEntry[];
   canCrop: boolean;
   cropWhy: string;
+  /** several annotations selected together: the menu acts on all of them */
+  count?: number;
 }
 
 interface Props {
@@ -18,10 +20,12 @@ interface Props {
   onClass(typeId: number): void;
   onCrop(): void;
   onDelete(): void;
+  onCopy?(): void;
 }
 
 /** The right-click (or long-press) menu of an annotation. Closes on a choice, Escape, or a click elsewhere. */
-export function ContextMenu({ model, onClose, onInfo, onClass, onCrop, onDelete }: Props) {
+export function ContextMenu({ model, onClose, onInfo, onClass, onCrop, onDelete, onCopy }: Props) {
+  const many = (model.count ?? 1) > 1;
   const root = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: model.x, top: model.y });
   const [classes, setClasses] = useState(false);
@@ -55,9 +59,13 @@ export function ContextMenu({ model, onClose, onInfo, onClass, onCrop, onDelete 
   const shown = model.classes.filter((c) => c.name.toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <div className="ctx glass" ref={root} style={pos} role="menu" onContextMenu={(e) => e.preventDefault()}>
-      <button role="menuitem" onClick={onInfo}>
-        Info…
-      </button>
+      {many ? (
+        <div className="ctx-title muted small">{model.count} annotations selected</div>
+      ) : (
+        <button role="menuitem" onClick={onInfo}>
+          Info…
+        </button>
+      )}
       <button role="menuitem" aria-expanded={classes} onClick={() => setClasses((c) => !c)} disabled={model.classes.length < 2}>
         Change class <span className="caret">{classes ? "▾" : "▸"}</span>
       </button>
@@ -76,12 +84,17 @@ export function ContextMenu({ model, onClose, onInfo, onClass, onCrop, onDelete 
           </div>
         </div>
       )}
-      <button role="menuitem" onClick={onCrop} disabled={!model.canCrop} title={model.canCrop ? "Save the region of this annotation as a new image" : model.cropWhy}>
+      {many && (
+        <button role="menuitem" onClick={onCopy}>
+          Copy
+        </button>
+      )}
+      {!many && <button role="menuitem" onClick={onCrop} disabled={!model.canCrop} title={model.canCrop ? "Save the region of this annotation as a new image" : model.cropWhy}>
         Crop to new image…
-      </button>
+      </button>}
       <hr />
       <button role="menuitem" className="danger" onClick={onDelete}>
-        Delete annotation…
+        {many ? `Delete ${model.count} annotations…` : "Delete annotation…"}
       </button>
     </div>
   );

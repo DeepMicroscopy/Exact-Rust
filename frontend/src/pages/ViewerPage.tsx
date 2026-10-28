@@ -3,14 +3,17 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query";
 import OpenSeadragon from "openseadragon";
 import { api, listAll } from "../api/client";
+import type { Page } from "../api/client";
 import { ANNOTATION_FIELDS } from "../api/annotations";
-import type { Annotation, AnnotationType, ImageSummary } from "../api/types";
+import type { Annotation, AnnotationType, ImageSummary, Registration } from "../api/types";
 import { useAnnotationActions } from "../hooks/useAnnotationActions";
 import { AnnotationLayer } from "../viewer-core/annotationLayer";
-import { AnnotationEditor, type EditorHost, type PolyOp, type Tool, type TypeInfo } from "../viewer-core/editor";
+import { AnnotationEditor, vectorOfShape, type EditorHost, type PolyOp, type Tool, type TypeInfo } from "../viewer-core/editor";
 import { buildPalette, canConvert, isDrawable, oneClickCapable, type PaletteEntry } from "../viewer-core/palette";
 import { isTypingTarget, matchShortcut } from "../viewer-core/shortcuts";
 import { toShape } from "../viewer-core/shapes";
+import { clipboard, pasteVector } from "../viewer-core/clipboard";
+import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
 import { loadTileSource } from "../viewer-core/tileSource";
 import { OverlayControl } from "../components/OverlayControl";
 import { ZBlender } from "../viewer-core/zBlend";
@@ -41,6 +44,16 @@ interface Meta {
   planes: { plane: number; name: string; frames: number; frame_descriptors: string[] }[] | null;
 }
 
+/** The map from the pixels of image `from` to those of image `to`, through a registration in either direction. */
+async function registrationMap(from: number, to: number): Promise<Affine | null> {
+  const direct = await api<Page<Registration>>(`/api/v2/registrations?source_image=${from}&target_image=${to}&limit=1`).catch(() => null);
+  const m = direct?.items[0]?.transformation_matrix;
+  if (m) return affineOf(m);
+  const back = await api<Page<Registration>>(`/api/v2/registrations?source_image=${to}&target_image=${from}&limit=1`).catch(() => null);
+  const b = back?.items[0]?.transformation_matrix && affineOf(back.items[0].transformation_matrix);
+  return b ? invertAffine(b) : null;
+}
+
 /** An editor host that always asks the latest one (the editor lives as long as the viewer, the host changes with the data). */
 function hostProxy(ref: { current: EditorHost }): EditorHost {
   return {
@@ -52,6 +65,9 @@ function hostProxy(ref: { current: EditorHost }): EditorHost {
     onDelete: (s) => ref.current.onDelete(s),
     onReplace: (s, r) => ref.current.onReplace(s, r),
     onContext: (s, x, y) => ref.current.onContext(s, x, y),
+    onUpdateMany: (i) => ref.current.onUpdateMany(i),
+    onDeleteMany: (s) => ref.current.onDeleteMany(s),
+    onContextMany: (s, x, y) => ref.current.onContextMany(s, x, y),
     notify: (m) => ref.current.notify(m),
     onState: () => ref.current.onState(),
   };
@@ -105,6 +121,8 @@ export function ViewerPage() {
   const [currentTypeId, setCurrentTypeId] = useState<number | null>(null);
   const [polyOp, setPolyOp] = useState<PolyOp | null>(null);
   const [menu, setMenu] = useState<{ shape: Shape; x: number; y: number } | null>(null);
+  const [groupMenu, setGroupMenu] = useState<{ shapes: Shape[]; x: number; y: number } | null>(null);
+  const [groupDelete, setGroupDelete] = useState<Shape[] | null>(null);
   const [dialog, setDialog] = useState<{ kind: "info" | "crop" | "delete" | "resize"; shape: Shape; typeId?: number } | null>(null);
   const [cropped, setCropped] = useState<{ id: number } | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -188,6 +206,9 @@ export function ViewerPage() {
       onDelete: (s) => void hostState.current.actions.remove(s.id),
       onReplace: (s, rings) => void hostState.current.actions.replace(s.id, rings),
       onContext: (shape, x, y) => setMenu({ shape, x, y }),
+      onUpdateMany: (items) => void hostState.current.actions.updateMany(items.map((i) => ({ id: i.shape.id, vector: i.vector }))),
+      onDeleteMany: (shapes) => void hostState.current.actions.removeMany(shapes.map((q) => q.id)),
+      onContextMany: (shapes, x, y) => setGroupMenu({ shapes, x, y }),
       notify: (m) => notify(m),
       onState: () => setTick((n) => n + 1),
     }),
@@ -387,7 +408,7 @@ export function ViewerPage() {
 
   // ---- keyboard ---------------------------------------------------------------------------------------------------
   const menuOpen = useRef(false);
-  menuOpen.current = !!menu || !!dialog;
+  menuOpen.current = !!menu || !!groupMenu || !!groupDelete || !!dialog;
   const imageIds = imageSet.data?.images ?? [];
   const step = useCallback(
     (delta: number) => {
@@ -433,6 +454,78 @@ export function ViewerPage() {
     [shapes, info, actions],
   );
 
+  // ---- several annotations at once ---------------------------------------------------------------------------------
+  const pasteCount = useRef(0);
+  /** Types that all of these annotations can change to (compatible shapes). */
+  const classesFor = useCallback((group: Shape[]) => palette.filter((e) => e.vectorType !== VectorType.Global && group.every((q) => canConvert(q.vectorType, e.vectorType))), [palette]);
+  const changeGroup = useCallback(
+    (group: Shape[], typeId: number) => {
+      const target = info(typeId);
+      const bounds = { width: image.data?.width ?? 1, height: image.data?.height ?? 1 };
+      void actions.history.group(`change type of ${group.length} annotations`, async () => {
+        let resized = 0;
+        await Promise.all(
+          group.map((q) => {
+            let vector;
+            if (target && target.vectorType === VectorType.FixedSizeBoundingBox && isBoxType(q.vectorType) && target.width && target.height) {
+              const [w, h] = [Math.round(q.bbox[2] - q.bbox[0]), Math.round(q.bbox[3] - q.bbox[1])];
+              if (Math.abs(w - target.width) >= 1 || Math.abs(h - target.height) >= 1) {
+                resized++;
+                vector = boxVector(centeredBox([(q.bbox[0] + q.bbox[2]) / 2, (q.bbox[1] + q.bbox[3]) / 2], target.width, target.height, bounds));
+              }
+            }
+            return actions.changeType(q.id, typeId, vector);
+          }),
+        );
+        if (resized) notify(`${resized} annotation${resized === 1 ? " was" : "s were"} resized to the size of ${target?.name}.`);
+      });
+    },
+    [actions, info, image.data?.width, image.data?.height, notify],
+  );
+  const copySelection = useCallback(() => {
+    const sel = editorRef.current?.selection ?? [];
+    if (!sel.length) {
+      notify("Select annotations first.");
+      return;
+    }
+    clipboard.set({
+      imageId: id,
+      items: sel.map((q) => ({ typeId: q.typeId, vectorType: q.vectorType, vector: ((annotations.data ?? []).find((a) => a.id === q.id)?.vector as Record<string, number> | null | undefined) ?? vectorOfShape(q) })),
+    });
+    pasteCount.current = 0;
+    notify(`Copied ${sel.length} annotation${sel.length === 1 ? "" : "s"}.`);
+    setTick((n) => n + 1);
+  }, [annotations.data, id, notify]);
+  const pasteClipboard = useCallback(async () => {
+    const c = clipboard.get();
+    if (!c || !image.data) {
+      notify("Nothing copied yet.");
+      return;
+    }
+    const bounds = { width: image.data.width, height: image.data.height };
+    const usable = c.items.filter((it) => info(it.typeId));
+    if (usable.length < c.items.length) notify(`${c.items.length - usable.length} annotation(s) have a type this image set does not offer and are left out.`);
+    if (!usable.length) return;
+    let map: Affine | null = null;
+    let shift: [number, number] = [0, 0];
+    if (c.imageId === id) {
+      const zoom = viewerRef.current?.world.getItemCount() ? viewerRef.current.world.getItemAt(0).viewportToImageZoom(viewerRef.current.viewport.getZoom(true)) : 1;
+      pasteCount.current++;
+      const d = (24 * pasteCount.current) / Math.max(zoom, 1e-6);
+      shift = [d, d];
+    } else {
+      map = await registrationMap(c.imageId, id);
+      if (!map) notify("These two images are not registered: the annotations are pasted at the same position.");
+      else notify("Pasted through the registration.");
+    }
+    const items = usable.map((it) => {
+      const t = info(it.typeId);
+      return { typeId: it.typeId, vector: pasteVector(it, bounds, { map, shift, size: t?.width && t.height ? [t.width, t.height] : null }) };
+    });
+    const ids = await actions.createMany(items);
+    if (ids.length) setTimeout(() => editorRef.current?.selectGroup(ids), 0);
+  }, [id, image.data, info, actions, notify]);
+
   const digit = useCallback(
     (n: number, shift: boolean) => {
       if (shift) {
@@ -442,13 +535,20 @@ export function ViewerPage() {
       }
       const e = drawable.find((x) => x.key === n);
       if (!e) return;
+      const grp = editorRef.current?.group ?? [];
+      if (grp.length > 1 && !drawing) {
+        const members = editorRef.current?.groupShapes ?? [];
+        if (members.every((q) => canConvert(q.vectorType, e.vectorType))) changeGroup(members, e.id);
+        else notify(`${e.name} cannot replace the type of all selected annotations (different shapes).`);
+        return;
+      }
       const sel = editorRef.current?.selected;
       if (sel && !drawing) {
         if (canConvert(sel.vectorType, e.vectorType)) requestChangeType(sel.id, e.id);
         else notify(`${e.name} cannot replace the type of this annotation (different shape).`);
       } else startDrawing(e.id);
     },
-    [globals, drawable, drawing, requestChangeType, toggleGlobal, startDrawing, notify],
+    [globals, drawable, drawing, requestChangeType, changeGroup, toggleGlobal, startDrawing, notify],
   );
 
   useEffect(() => {
@@ -472,8 +572,22 @@ export function ViewerPage() {
           ed?.cancel();
           syncFromEditor();
           return;
+        case "selectAll":
+          ev.preventDefault();
+          ed?.selectAll();
+          return;
+        case "copy":
+          if ((ed?.selection.length ?? 0) > 0) {
+            ev.preventDefault();
+            copySelection();
+          }
+          return;
+        case "paste":
+          ev.preventDefault();
+          void pasteClipboard();
+          return;
         case "delete":
-          if (ed?.selected) {
+          if (ed && ed.selection.length) {
             ev.preventDefault();
             ed.deleteSelection();
           }
@@ -542,7 +656,7 @@ export function ViewerPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay]);
+  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard]);
 
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
@@ -689,6 +803,9 @@ export function ViewerPage() {
           brushMode={editorRef.current?.brushMode ?? "off"}
           brushRadius={editorRef.current?.brushRadius ?? 18}
           reshapable={!!editorRef.current?.selected && editorRef.current.selected.vectorType === VectorType.Polygon && !((editorRef.current.selected && info(editorRef.current.selected.typeId)?.nodeCount) || 0)}
+          group={editorRef.current && editorRef.current.group.length > 1 ? { count: editorRef.current.group.length, classes: classesFor(editorRef.current.groupShapes) } : null}
+          multiMode={editorRef.current?.multiMode ?? false}
+          canPaste={!!clipboard.get()}
           canUndo={history.canUndo}
           canRedo={history.canRedo}
           annotationsShown={showAnnotations}
@@ -715,6 +832,10 @@ export function ViewerPage() {
               syncFromEditor();
             },
             remove: () => editorRef.current?.deleteSelection(),
+            toggleMulti: () => editorRef.current?.setMultiMode(!editorRef.current.multiMode),
+            changeGroupType: (tid) => editorRef.current && changeGroup(editorRef.current.groupShapes, tid),
+            copy: copySelection,
+            paste: () => void pasteClipboard(),
             removeVertex: () => editorRef.current?.deleteSelection(),
             changeType: (tid) => editorRef.current?.selectedId != null && requestChangeType(editorRef.current.selectedId, tid),
             toggleGlobal,
@@ -751,6 +872,36 @@ export function ViewerPage() {
               setDialog({ kind: "delete", shape: menu.shape });
               setMenu(null);
             }}
+          />
+        )}
+        {groupMenu && (
+          <ContextMenu
+            model={{ x: groupMenu.x, y: groupMenu.y, typeId: -1, count: groupMenu.shapes.length, classes: classesFor(groupMenu.shapes), canCrop: false, cropWhy: "" }}
+            onClose={() => setGroupMenu(null)}
+            onInfo={() => undefined}
+            onClass={(tid) => {
+              changeGroup(groupMenu.shapes, tid);
+              setGroupMenu(null);
+            }}
+            onCrop={() => undefined}
+            onCopy={() => {
+              copySelection();
+              setGroupMenu(null);
+            }}
+            onDelete={() => {
+              setGroupDelete(groupMenu.shapes);
+              setGroupMenu(null);
+            }}
+          />
+        )}
+        {groupDelete && (
+          <ConfirmDelete
+            what={`Delete these ${groupDelete.length} annotations?`}
+            onConfirm={() => {
+              editorRef.current?.select(null);
+              void actions.removeMany(groupDelete.map((q) => q.id));
+            }}
+            onClose={() => setGroupDelete(null)}
           />
         )}
         {dialog?.kind === "info" && <AnnotationInfo shape={dialog.shape} typeName={info(dialog.shape.typeId)?.name ?? `type ${dialog.shape.typeId}`} typeColor={info(dialog.shape.typeId)?.color} mpp={mpp} onClose={() => setDialog(null)} />}

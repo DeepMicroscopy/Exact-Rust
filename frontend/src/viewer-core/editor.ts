@@ -57,6 +57,12 @@ export interface EditorHost {
   onDelete(shape: Shape): void;
   /** a polygon operation produced these rings: the first replaces the shape, the others become annotations of the same type */
   onReplace(shape: Shape, rings: Pt[][]): void;
+  /** the annotations of a multi-selection were moved together */
+  onUpdateMany(items: { shape: Shape; vector: Record<string, number> }[]): void;
+  /** Delete on a multi-selection */
+  onDeleteMany(shapes: Shape[]): void;
+  /** right click or long press on one of several selected annotations */
+  onContextMany(shapes: Shape[], clientX: number, clientY: number): void;
   /** right click or long press on an annotation (client coordinates) */
   onContext(shape: Shape, clientX: number, clientY: number): void;
   /** something the user should know ("select a polygon first", ...) */
@@ -76,7 +82,9 @@ type Session =
   | { kind: "move"; shape: Shape; start: Pt; moved: boolean }
   | { kind: "handle"; shape: Shape; handle: Handle; moved: boolean; points: Pt[]; box: Box }
   | { kind: "drag"; typeId: number; start: Pt; cur: Pt }
-  | { kind: "brush"; shape: Shape; erase: boolean; last: Pt; swept: Ring[]; moved: boolean };
+  | { kind: "brush"; shape: Shape; erase: boolean; last: Pt; swept: Ring[]; moved: boolean }
+  | { kind: "groupmove"; shapes: Shape[]; start: Pt; moved: boolean }
+  | { kind: "marquee"; start: Pt; cur: Pt };
 
 const TOUCH_SLOP = 18;
 const MOUSE_SLOP = 7;
@@ -88,6 +96,15 @@ const NEW_ID = -1;
 /** The vector of a shape as the server stores it. */
 export function vectorOfShape(s: Shape): Record<string, number> {
   return isBoxType(s.vectorType) ? boxVector(s.bbox) : vectorOf(s.points);
+}
+
+/** The shape shifted by (dx, dy). */
+function shiftedShape(s: Shape, dx: number, dy: number, bounds: { width: number; height: number }): Shape {
+  if (isBoxType(s.vectorType)) {
+    const [x0, y0, x1, y1] = s.bbox;
+    return reshape(s, [x0 + dx, y0 + dy, x1 + dx, y1 + dy], null);
+  }
+  return reshape(s, null, movePoints(s.points, dx, dy, bounds));
 }
 
 /** The outline of a polygon annotation as a ring. */
@@ -109,6 +126,11 @@ export class AnnotationEditor {
   tool: Tool = { kind: "select" };
   selectedId: number | null = null;
   selectedVertex: number | null = null;
+  /** two or more annotations selected together (then `selectedId` is null) */
+  group: number[] = [];
+  /** touch: a tap adds or removes an annotation, a drag draws a rubber band (instead of Ctrl / Shift) */
+  multiMode = false;
+  private previews: Shape[] = [];
   private session: Session | null = null;
   private draft: { typeId: number; points: Pt[]; op?: PolyOp } | null = null;
   brushMode: BrushMode = "off";
@@ -210,6 +232,17 @@ export class AnnotationEditor {
     return this.preview && this.preview.id === this.selectedId ? this.preview : this.selected;
   }
 
+  /** The annotations of the multi-selection. */
+  get groupShapes(): Shape[] {
+    const ids = new Set(this.group);
+    return this.host.shapes().filter((s) => ids.has(s.id));
+  }
+
+  /** What is selected: the group, or the single annotation. */
+  get selection(): Shape[] {
+    return this.group.length > 1 ? this.groupShapes : this.selected ? [this.selected] : [];
+  }
+
   get drafting(): boolean {
     return !!this.draft;
   }
@@ -233,7 +266,10 @@ export class AnnotationEditor {
       }
     }
     this.tool = tool;
-    if (tool.kind === "draw") this.selectedId = this.selectedVertex = null;
+    if (tool.kind === "draw") {
+      this.selectedId = this.selectedVertex = null;
+      this.group = [];
+    }
     this.refresh();
   }
 
@@ -256,12 +292,49 @@ export class AnnotationEditor {
   select(id: number | null): void {
     this.selectedId = id;
     this.selectedVertex = null;
+    this.group = [];
     this.refresh();
+  }
+
+  /** Selects these annotations together (one or none: a plain selection). */
+  selectGroup(ids: number[]): void {
+    const u = [...new Set(ids)];
+    if (u.length <= 1) {
+      this.select(u[0] ?? null);
+      return;
+    }
+    this.group = u;
+    this.selectedId = this.selectedVertex = null;
+    if (this.tool.kind !== "select") this.tool = { kind: "select" };
+    this.refresh();
+  }
+
+  selectAll(): void {
+    this.selectGroup(this.host.shapes().map((s) => s.id));
+  }
+
+  setMultiMode(on: boolean): void {
+    this.multiMode = on;
+    this.refresh();
+  }
+
+  /** Adds the annotation to the selection, or takes it out when it is in already. */
+  private toggle(id: number): void {
+    const now = this.group.length > 1 ? this.group : this.selectedId !== null ? [this.selectedId] : [];
+    this.selectGroup(now.includes(id) ? now.filter((x) => x !== id) : [...now, id]);
   }
 
   /** Re-checks the selection after the annotations changed (deleted or moved by somebody else). */
   sync(): void {
     if (this.selectedId !== null && !this.host.shapes().some((s) => s.id === this.selectedId)) this.selectedId = this.selectedVertex = null;
+    if (this.group.length) {
+      const here = new Set(this.host.shapes().map((s) => s.id));
+      const left = this.group.filter((i) => here.has(i));
+      if (left.length !== this.group.length) {
+        this.selectGroup(left);
+        return;
+      }
+    }
     this.refresh();
   }
 
@@ -289,7 +362,7 @@ export class AnnotationEditor {
       this.tool = { kind: "select" };
     } else if (this.brushMode !== "off") {
       this.brushMode = "off";
-    } else if (this.selectedId !== null) {
+    } else if (this.selectedId !== null || this.group.length) {
       this.select(null);
       return;
     } else if (this.tool.kind === "draw") {
@@ -300,6 +373,11 @@ export class AnnotationEditor {
 
   /** Delete: the selected vertex of a polygon, else the selected annotation. */
   deleteSelection(): void {
+    if (this.group.length > 1) {
+      this.host.onDeleteMany(this.groupShapes);
+      this.select(null);
+      return;
+    }
     const s = this.selected;
     if (!s) return;
     if (this.selectedVertex !== null && isPathType(s.vectorType)) {
@@ -361,9 +439,25 @@ export class AnnotationEditor {
       return;
     }
     if (this.tool.kind !== "select") return;
+    const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
+    const mod = !!(oe?.ctrlKey || oe?.metaKey);
+    if (this.group.length > 1) {
+      const under = hitShape(this.groupShapes, p, t);
+      if (under && !mod && !oe?.shiftKey && !this.multiMode) {
+        this.session = { kind: "groupmove", shapes: this.groupShapes, start: p, moved: false };
+        e.preventDefaultAction = true;
+        this.consumedPress = true;
+        return;
+      }
+    }
+    if (mod || this.multiMode) {
+      this.session = { kind: "marquee", start: p, cur: p };
+      e.preventDefaultAction = true;
+      this.consumedPress = true;
+      return;
+    }
     const sel = this.selected;
     if (!sel) return;
-    const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
     const mode = oe?.altKey ? "erase" : oe?.shiftKey ? "add" : this.brushMode;
     if (mode !== "off" && this.canReshape(sel)) {
       const p0 = clampPoint(p, this.host.image());
@@ -398,6 +492,23 @@ export class AnnotationEditor {
     if (s.kind === "brush") {
       this.brushStroke(s, clampPoint(p, bounds));
       this.hover = p;
+      return;
+    }
+    if (s.kind === "marquee") {
+      s.cur = clampPoint(p, bounds);
+      this.refresh();
+      return;
+    }
+    if (s.kind === "groupmove") {
+      const [dx0, dy0] = [p[0] - s.start[0], p[1] - s.start[1]];
+      if (!s.moved && Math.hypot(dx0, dy0) * this.zoom() < 3) return;
+      s.moved = true;
+      // the group keeps its shape at the edge of the image: one shift for all
+      const [minx, miny, maxx, maxy] = [Math.min(...s.shapes.map((q) => q.bbox[0])), Math.min(...s.shapes.map((q) => q.bbox[1])), Math.max(...s.shapes.map((q) => q.bbox[2])), Math.max(...s.shapes.map((q) => q.bbox[3]))];
+      const dx = Math.min(Math.max(dx0, -minx), bounds.width - maxx);
+      const dy = Math.min(Math.max(dy0, -miny), bounds.height - maxy);
+      this.previews = s.shapes.map((q) => shiftedShape(q, dx, dy, bounds));
+      this.refresh();
       return;
     }
     if (s.kind === "drag") {
@@ -441,7 +552,28 @@ export class AnnotationEditor {
     this.session = null;
     const keep = this.preview;
     this.preview = null;
+    const keepMany = this.previews;
+    this.previews = [];
     if (!s) return;
+    if (s.kind === "marquee") {
+      const tiny = dist(s.start, s.cur) * this.zoom() < 4;
+      if (tiny) {
+        const hit = hitShape(this.host.shapes(), s.start, this.tol(this.touch ? "touch" : "mouse"));
+        if (hit) this.toggle(hit.id);
+        else this.refresh();
+        return;
+      }
+      const [x0, y0, x1, y1] = boxBetween(s.start, s.cur);
+      const inside = this.host.shapes().filter((q) => q.bbox[2] >= x0 && q.bbox[0] <= x1 && q.bbox[3] >= y0 && q.bbox[1] <= y1);
+      const now = this.group.length > 1 ? this.group : this.selectedId !== null ? [this.selectedId] : [];
+      this.selectGroup([...now, ...inside.map((q) => q.id)]);
+      return;
+    }
+    if (s.kind === "groupmove") {
+      if (s.moved && keepMany.length) this.host.onUpdateMany(keepMany.map((q, i) => ({ shape: s.shapes[i], vector: vectorOfShape(q) })));
+      this.refresh();
+      return;
+    }
     this.brushPreview = null;
     if (s.kind === "brush") {
       if (s.moved || s.swept.length) this.applyRings(s.shape, s.erase ? difference(ringOf(s.shape), s.swept) : union(ringOf(s.shape), s.swept));
@@ -482,7 +614,9 @@ export class AnnotationEditor {
     }
     if (this.tool.kind === "select") {
       const hit = hitShape(this.host.shapes(), p, this.tol(e.pointerType));
-      this.select(hit?.id ?? null);
+      const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
+      if (hit && (oe?.shiftKey || oe?.ctrlKey || oe?.metaKey)) this.toggle(hit.id);
+      else this.select(hit?.id ?? null);
       e.preventDefaultAction = true;
       return;
     }
@@ -530,6 +664,7 @@ export class AnnotationEditor {
       const h = sel ? handleAt(this.editableHandles(sel), p, t) : null;
       if (h) cursor = h.kind === "vertex" || h.kind === "mid" ? "pointer" : h.id === "n" || h.id === "s" ? "ns-resize" : h.id === "e" || h.id === "w" ? "ew-resize" : h.id === "nw" || h.id === "se" ? "nwse-resize" : "nesw-resize";
       else if (sel && hitShape(this.host.shapes(), p, t)?.id === sel.id) cursor = "move";
+      else if (this.group.length > 1 && hitShape(this.groupShapes, p, t)) cursor = "move";
       else if (hitShape(this.host.shapes(), p, t)) cursor = "pointer";
     }
     el.style.cursor = cursor;
@@ -547,6 +682,10 @@ export class AnnotationEditor {
     this.cancelDraft();
     this.abortSession();
     if (this.tool.kind !== "select") this.tool = { kind: "select" };
+    if (this.group.length > 1 && this.group.includes(hit.id)) {
+      this.host.onContextMany(this.groupShapes, clientX, clientY);
+      return;
+    }
     this.select(hit.id);
     this.host.onContext(hit, clientX, clientY);
   }
@@ -660,6 +799,7 @@ export class AnnotationEditor {
   private abortSession(): void {
     this.session = null;
     this.preview = null;
+    this.previews = [];
     this.refresh();
   }
 
@@ -672,6 +812,9 @@ export class AnnotationEditor {
     o.selectedId = this.selectedId;
     o.selectedVertex = this.selectedVertex;
     o.preview = this.preview;
+    o.group = this.group;
+    o.previews = this.previews;
+    if (this.session?.kind === "marquee") o.marquee = boxBetween(this.session.start, this.session.cur);
     if (this.preview) {
       // what the shape measures while it is edited, shown in the middle of what is visible of it
       const m = measureShape(this.preview);

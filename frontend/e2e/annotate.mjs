@@ -229,6 +229,97 @@ try {
   await admin.keyboard.press("Escape");
   check((await admin.locator(".toolbox .seg button.active, .toolbox .annotate-btn.active .annotate-label").getAttribute("aria-label")) === "Select", "Escape leaves the draw tool");
 
+  // ---------------------------------------------------------------------------------------- several annotations at once
+  const typeBox = box.annotation_type;
+  const msPre = new Set((await annotations(admin)).map((a) => a.id));
+  const msCreated = [];
+  for (const x of [300, 700, 1100]) {
+    msCreated.push(await admin.evaluate(async ([image, type, x]) => {
+      const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+      const r = await fetch("/api/v2/annotations", { method: "POST", headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: JSON.stringify({ image, annotation_type: type, vector: { x1: x, y1: 1000, x2: x + 200, y2: 1150 }, unique_identifier: crypto.randomUUID() }) });
+      return await r.json();
+    }, [IMAGE, typeBox, x]));
+  }
+  await openImage(admin);
+  const inRegion = async () => (await annotations(admin)).filter((a) => a.vector && a.vector.x2 >= 200 && a.vector.x1 <= 1400 && a.vector.y2 >= 950 && a.vector.y1 <= 1250);
+  const msExpected = (await inRegion()).length;
+  check(msExpected >= 3, `three boxes are in the frame to be drawn (${msExpected})`);
+  const msF1 = await screenOf(admin, 200, 950);
+  const msF2 = await screenOf(admin, 1400, 1250);
+  await admin.keyboard.down("Control");
+  await admin.mouse.move(msF1.x, msF1.y);
+  await admin.mouse.down();
+  await admin.mouse.move(msF2.x, msF2.y, { steps: 8 });
+  await admin.mouse.up();
+  await admin.keyboard.up("Control");
+  await waitFor(async () => (await admin.locator('[data-testid="group-count"]').count()) === 1, "a frame drawn with Ctrl selects several annotations");
+  check((await admin.locator('[data-testid="group-count"]').innerText()) === `${msExpected} selected`, `...all that touch the frame (${msExpected} selected)`);
+  // moving one moves all
+  const msBefore = new Map((await inRegion()).map((a) => [a.id, a.vector]));
+  const ms0 = await screenOf(admin, 400, 1075);
+  const ms1 = await screenOf(admin, 400, 1075 + 100);
+  await admin.mouse.move(ms0.x, ms0.y);
+  await admin.mouse.down();
+  await admin.mouse.move(ms1.x, ms1.y, { steps: 8 });
+  await admin.mouse.up();
+  await waitFor(async () => (await annotations(admin)).filter((a) => msBefore.has(a.id) && a.vector.y1 > msBefore.get(a.id).y1 + 60).length === msExpected, "dragging one of the selected annotations moves all of them");
+  const msAfter = new Map((await annotations(admin)).filter((a) => msBefore.has(a.id)).map((a) => [a.id, a.vector]));
+  check([...msBefore].every(([id, v]) => msAfter.get(id).x2 - msAfter.get(id).x1 === v.x2 - v.x1 && msAfter.get(id).y1 - v.y1 === msAfter.get([...msBefore.keys()][0]).y1 - [...msBefore.values()][0].y1), "...by the same shift, keeping their sizes");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).filter((a) => msBefore.has(a.id) && a.vector.y1 === msBefore.get(a.id).y1).length === msExpected, "one Undo takes the whole move back");
+  // copy, paste: the same number again, selected
+  const msTotal = (await annotations(admin)).length;
+  await admin.keyboard.press("Control+c");
+  await admin.keyboard.press("Control+v");
+  await waitFor(async () => (await annotations(admin)).length === msTotal + msExpected, "Ctrl+C, Ctrl+V pastes copies");
+  await waitFor(async () => (await admin.locator('[data-testid="group-count"]').count()) === 1 && (await admin.locator('[data-testid="group-count"]').innerText()) === `${msExpected} selected`, "...and selects the pasted ones");
+  await admin.keyboard.press("Delete");
+  await waitFor(async () => (await annotations(admin)).length === msTotal, "Delete removes all selected");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === msTotal + msExpected, "...and one Undo brings them all back");
+  // single clicks: Shift+click adds, Escape clears
+  await admin.keyboard.press("Escape");
+  const msA1 = await screenOf(admin, 400, 1075);
+  const msA2 = await screenOf(admin, 800, 1075);
+  await admin.mouse.click(msA1.x, msA1.y);
+  await admin.keyboard.down("Shift");
+  await admin.mouse.click(msA2.x, msA2.y);
+  await admin.keyboard.up("Shift");
+  await waitFor(async () => (await admin.locator('[data-testid="group-count"]').count()) === 1 && (await admin.locator('[data-testid="group-count"]').innerText()) === "2 selected", "Shift+click adds an annotation to the selection");
+  await admin.keyboard.down("Shift");
+  await admin.mouse.click(msA2.x, msA2.y);
+  await admin.keyboard.up("Shift");
+  await waitFor(async () => (await admin.locator('[data-testid="group-count"]').count()) === 0, "Shift+click on a selected one takes it out (one left is a plain selection)");
+  await admin.keyboard.press("Escape");
+  // copy into a registered image: the annotation lands where the registration puts it
+  const second = await setup(admin);
+  const reg = await admin.evaluate(async ([source, target]) => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const r = await fetch("/api/v2/registrations/manual", { method: "POST", headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: JSON.stringify({ source_image: source, target_image: target, points: [{ source: [0, 0], target: [100, 50] }, { source: [1000, 0], target: [600, 50] }] }) });
+    return r.status;
+  }, [IMAGE, second.image]);
+  check(reg === 201, "a registration (scale 0.5, shift 100/50) to a second image exists");
+  await admin.mouse.click(msA1.x, msA1.y);
+  await admin.keyboard.press("Control+c");
+  await admin.evaluate((id) => {
+    history.pushState({}, "", `/images/${id}`); // no reload: the clipboard lives in the page
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, second.image);
+  await waitFor(() => admin.evaluate(() => window.__viewer?.world.getItemCount() > 0), "the second image is open");
+  await admin.waitForTimeout(1200);
+  await admin.keyboard.press("Control+v");
+  const pasted = await waitFor(async () => {
+    const l = await admin.evaluate(async (id) => (await (await fetch(`/api/v2/annotations?image=${id}&deleted=false`)).json()).items, second.image);
+    return l.length === 1 ? l[0] : null;
+  }, "pasting into the registered image creates the annotation there");
+  check(Math.abs(pasted.vector.x1 - 250) <= 2 && Math.abs(pasted.vector.y1 - 550) <= 2 && Math.abs(pasted.vector.x2 - 350) <= 2 && Math.abs(pasted.vector.y2 - 625) <= 2, `...at the position the registration gives (${JSON.stringify(pasted.vector)})`);
+  await openImage(admin);
+  for (const c of (await annotations(admin)).filter((a) => !msPre.has(a.id))) await admin.evaluate(async (id) => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    await fetch(`/api/v2/annotations/${id}`, { method: "DELETE", headers: { "x-csrf-token": csrf } });
+  }, c.id);
+  await openImage(admin);
+
   // ---------------------------------------------------------------------------------------- polygon
   await openImage(admin);
   await pickType(admin, "e2e polygon");

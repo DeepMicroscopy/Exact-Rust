@@ -31,8 +31,37 @@ export class History {
     return () => this.listeners.delete(fn);
   }
 
+  private capture: Command[] | null = null;
+
+  /** Everything pushed while `fn` runs becomes one undo step (a change of many annotations at once). */
+  async group<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    if (this.capture) return fn(); // already inside a group
+    const parts: Command[] = [];
+    this.capture = parts;
+    try {
+      return await fn();
+    } finally {
+      this.capture = null;
+      if (parts.length === 1) this.push({ ...parts[0], label });
+      else if (parts.length > 1)
+        this.push({
+          label,
+          undo: async () => {
+            for (const c of [...parts].reverse()) await c.undo();
+          },
+          redo: async () => {
+            for (const c of parts) await c.redo();
+          },
+        });
+    }
+  }
+
   /** Records a command that was just carried out; a new edit ends the redo chain. */
   push(cmd: Command): void {
+    if (this.capture) {
+      this.capture.push(cmd);
+      return;
+    }
     this.done.push(cmd);
     if (this.done.length > this.limit) this.done.shift();
     this.undone = [];

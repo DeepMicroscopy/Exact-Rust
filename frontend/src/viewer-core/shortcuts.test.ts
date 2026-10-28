@@ -55,4 +55,11 @@ describe("shortcuts of the old UI", () => {
   it("Alt combinations belong to the browser", () => {
     expect(key("c", { altKey: true })).toBeNull();
   });
+
+  it("Ctrl/Cmd+A, C and V select all, copy and paste", () => {
+    expect(key("a", { ctrlKey: true })).toEqual({ type: "selectAll" });
+    expect(key("c", { metaKey: true })).toEqual({ type: "copy" });
+    expect(key("v", { ctrlKey: true })).toEqual({ type: "paste" });
+    expect(key("c")).toEqual({ type: "toggleDrawing" }); // plain C is still the draw toggle
+  });
 });

@@ -185,8 +185,44 @@ export function useAnnotationActions(imageId: number, notify: (msg: string) => v
     [current, put, patch, history, fail],
   );
 
+  // changes of many annotations at once: each goes through the single-annotation action, the history sees one step
+  const removeMany = useCallback((ids: number[]) => history.group(`delete ${ids.length} annotations`, async () => void (await Promise.all(ids.map((i) => remove(i))))), [history, remove]);
+  const updateMany = useCallback((items: { id: number; vector: Vector }[]) => history.group(`edit ${items.length} annotations`, async () => void (await Promise.all(items.map((i) => update(i.id, i.vector))))), [history, update]);
+  const changeTypeMany = useCallback((ids: number[], typeId: number) => history.group(`change type of ${ids.length} annotations`, async () => void (await Promise.all(ids.map((i) => changeType(i, typeId))))), [history, changeType]);
+  /** Creates the annotations (pasted copies); answers the ids the server gave them. */
+  const createMany = useCallback(
+    (items: { typeId: number; vector: Vector }[]) =>
+      history.group(`paste ${items.length} annotations`, async () => {
+        const ids: number[] = [];
+        for (const it of items) {
+          const uid = crypto.randomUUID();
+          try {
+            const a = await createAnnotation({ image: imageId, annotation_type: it.typeId, vector: it.vector, unique_identifier: uid });
+            put(a);
+            ids.push(a.id);
+            let cur = a;
+            history.push({
+              label: "create annotation",
+              undo: async () => {
+                await deleteAnnotation(cur.id);
+                drop(cur.id);
+              },
+              redo: async () => {
+                cur = await patchAnnotation(cur.id, { deleted: false });
+                put(cur);
+              },
+            });
+          } catch (e) {
+            fail(e, "Could not paste the annotation");
+          }
+        }
+        return ids;
+      }),
+    [history, imageId, put, drop, fail],
+  );
+
   const undo = useCallback(() => history.undo().catch((e) => fail(e, "Undo failed")), [history, fail]);
   const redo = useCallback(() => history.redo().catch((e) => fail(e, "Redo failed")), [history, fail]);
 
-  return { history, create, update, replace, remove, changeType, undo, redo };
+  return { history, create, update, replace, remove, changeType, removeMany, updateMany, changeTypeMany, createMany, undo, redo };
 }

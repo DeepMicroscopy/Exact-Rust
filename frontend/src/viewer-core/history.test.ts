@@ -52,4 +52,27 @@ describe("History", () => {
     expect(h.undoLabel).toBe("c");
     expect([h.canUndo]).toEqual([true]);
   });
+
+  it("a group of edits is one undo step that undoes in reverse and redoes in order", async () => {
+    const h = new History();
+    const log: string[] = [];
+    const cmd = (n: string) => ({ label: n, undo: async () => void log.push(`undo ${n}`), redo: async () => void log.push(`redo ${n}`) });
+    await h.group("three", async () => {
+      h.push(cmd("a"));
+      h.push(cmd("b"));
+      h.push(cmd("c"));
+    });
+    expect(h.undoLabel).toBe("three");
+    await h.undo();
+    expect(log).toEqual(["undo c", "undo b", "undo a"]);
+    expect(h.canUndo).toBe(false);
+    await h.redo();
+    expect(log.slice(3)).toEqual(["redo a", "redo b", "redo c"]);
+  });
+
+  it("an empty group leaves no step", async () => {
+    const h = new History();
+    await h.group("nothing", async () => undefined);
+    expect(h.canUndo).toBe(false);
+  });
 });

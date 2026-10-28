@@ -19,9 +19,15 @@ export interface Overlay {
   /** further pieces a brush stroke or an operation would leave */
   extra: { rings: Pt[][]; color: string } | null;
   touch: boolean;
+  /** the annotations selected together (two or more) */
+  group: number[];
+  /** replace the committed shapes with the same ids while a group is dragged */
+  previews: Shape[];
+  /** the rubber band of a multi-selection (image pixels) */
+  marquee: Box | null;
 }
 
-export const EMPTY_OVERLAY: Overlay = { selectedId: null, selectedVertex: null, preview: null, handles: [], draft: null, ghost: null, label: null, brush: null, extra: null, touch: false };
+export const EMPTY_OVERLAY: Overlay = { selectedId: null, selectedVertex: null, preview: null, handles: [], draft: null, ghost: null, label: null, brush: null, extra: null, touch: false, group: [], previews: [], marquee: null };
 
 /** Canvas on top of an OpenSeadragon viewer: draws annotations (culled to the viewport) and the editor's overlay. */
 export class AnnotationLayer {
@@ -131,11 +137,11 @@ export class AnnotationLayer {
 
     for (const committed of this.shapes) {
       if (this.hidden.has(committed.typeId)) continue;
-      const s = o.preview && o.preview.id === committed.id ? o.preview : committed;
+      const s = o.preview && o.preview.id === committed.id ? o.preview : (o.previews.find((q) => q.id === committed.id) ?? committed);
       const [x0, y0, x1, y1] = s.bbox;
       if (x1 < vx0 || x0 > vx1 || y1 < vy0 || y0 > vy1) continue;
       const color = this.styles.get(s.typeId)?.color ?? "#ffffff";
-      const selected = s.id === o.selectedId;
+      const selected = s.id === o.selectedId || o.group.includes(s.id);
       trace(s);
       ctx.lineWidth = selected ? 3 : 2;
       ctx.strokeStyle = color;
@@ -168,6 +174,17 @@ export class AnnotationLayer {
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = o.ghost.color;
       ctx.lineWidth = 2;
+      ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+      ctx.setLineDash([]);
+    }
+
+    if (o.marquee) {
+      const [a, b] = [toPx(o.marquee[0], o.marquee[1]), toPx(o.marquee[2], o.marquee[3])];
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#ffd84a";
+      ctx.fillStyle = "rgba(255, 216, 74, 0.12)";
+      ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
       ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
       ctx.setLineDash([]);
     }

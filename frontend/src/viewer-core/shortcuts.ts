@@ -13,6 +13,9 @@ export type Action =
   | { type: "toggleOneClick" } // A (new): every click places an annotation of the type's size
   | { type: "polyOp"; op: "scissors" | "glue" | "knife" } // S, G, D: cut away, add, split the selected polygon
   | { type: "play" } // Space: play / pause a movie
+  | { type: "selectAll" } // Ctrl+A
+  | { type: "copy" } // Ctrl+C
+  | { type: "paste" } // Ctrl+V
   | { type: "undo" }
   | { type: "redo" }
   | { type: "nextImage" } // E
@@ -32,6 +35,9 @@ export function matchShortcut(e: KeyLike): Action | null {
   if (mod) {
     if (k === "z") return e.shiftKey ? { type: "redo" } : { type: "undo" };
     if (k === "y") return { type: "redo" };
+    if (k === "a") return { type: "selectAll" };
+    if (k === "c") return { type: "copy" };
+    if (k === "v") return { type: "paste" };
     return null;
   }
   const digit = /^Digit([1-9])$|^Numpad([1-9])$/.exec(e.code ?? "");
