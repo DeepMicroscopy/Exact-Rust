@@ -563,3 +563,16 @@ the target and no locks 403, name clash 409, annotation types used by non-delete
 file name clash in the target 409; sets of other teams 404). Files (original, converted file, thumbnails, frame / MRXS folder) move first, the row
 and `zip_state` after; on failure the files go back. Symlinked copies in other sets are re-pointed. Tests: `test_v2_move_image.py`.
 Open in 5.2: admin writes for users/teams/memberships, registration worker, QueueRunner v2.
+
+### 5u. Phase 5.2: teams, memberships, user administration (2026-10-28)
+v2: `POST /api/v2/teams` (3-30 characters, unique; creator becomes admin), `PATCH` / `DELETE /api/v2/teams/{id}` (team admins; superusers may delete;
+deleting releases the sets: public + locked, team cleared), `PUT|DELETE /api/v2/teams/{id}/members/{user}` (admins manage; leaving yourself is
+always allowed; any member may promote while the team has no admin; no self-demotion; the last member leaving ends the team like `leave_team`).
+Users, rules of `administration/views.py`: `PATCH /api/v2/users/{id}` (staff: names, email, username, `frontend`; site admin: `is_active`, not for site
+admins or yourself; superuser: `is_staff`), `DELETE` and `POST .../random-password` (site admin; not yourself; superusers only touch superusers; the
+password is returned once and stored with the Django-compatible hasher). User deletion clears every nullable reference (creator, last editor, ...) and
+deletes the mandatory ones (tokens, passkeys, memberships, preferences, sessions): `cascade::delete_users`; `cascade.rs` also copes with tables
+without an `id` column (sessions) and keeps image sets alive when their team goes (SET_NULL list extended).
+The v2 `Team` / `User` representations are Django's serializers (no website / names yet; to be extended when the admin screens need them).
+Not ported: password-reset mail (`send-password-reset`), user creation by an admin (users arrive through invitations). Tests: `test_v2_admin.py`.
+Open in 5.2: registration worker, QueueRunner v2.

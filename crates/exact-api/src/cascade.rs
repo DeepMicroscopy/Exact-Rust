@@ -17,6 +17,8 @@ const SET_NULL: &[(&str, &str)] = &[
     ("annotations_annotation", "user_id"),
     ("annotations_annotation", "last_editor_id"),
     ("images_imageset", "main_annotation_type_id"),
+    ("images_imageset", "team_id"),
+    ("tools_tool", "team_id"),
     ("processing_pluginresult", "job_id"),
     ("processing_pluginjob", "creator_id"),
     ("images_screeningmode", "user_id"),
@@ -35,7 +37,18 @@ pub async fn delete_rows(
     ids: &[i64],
 ) -> ApiResult<Vec<(String, u64)>> {
     let mut counts = vec![];
-    delete_inner(tx, table, ids, 0, &mut counts).await?;
+    delete_inner(tx, table, ids, 0, false, &mut counts).await?;
+    Ok(counts)
+}
+
+/// Deletion of users: every nullable reference to the user (creator, last editor, ...) is cleared, every mandatory one
+/// (tokens, passkeys, memberships, preferences, sessions) is deleted with the user, which is what the models declare.
+pub async fn delete_users(
+    tx: &mut Transaction<'_, Postgres>,
+    ids: &[i64],
+) -> ApiResult<Vec<(String, u64)>> {
+    let mut counts = vec![];
+    delete_inner(tx, "users_user", ids, 0, true, &mut counts).await?;
     Ok(counts)
 }
 
@@ -44,6 +57,7 @@ fn delete_inner<'a>(
     table: &'a str,
     ids: &'a [i64],
     depth: usize,
+    nullable_clears: bool,
     counts: &'a mut Vec<(String, u64)>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ApiResult<()>> + Send + 'a>> {
     Box::pin(async move {
@@ -51,7 +65,8 @@ fn delete_inner<'a>(
             return Ok(());
         }
         let refs = sqlx::query(
-            "SELECT c.conrelid::regclass::text, quote_ident(a.attname), a.attname \
+            "SELECT c.conrelid::regclass::text, quote_ident(a.attname), a.attname, NOT a.attnotnull, \
+                    EXISTS (SELECT 1 FROM pg_attribute x WHERE x.attrelid = c.conrelid AND x.attname = 'id' AND NOT x.attisdropped) \
              FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1] \
              WHERE c.contype = 'f' AND c.confrelid = $1::regclass AND array_length(c.conkey, 1) = 1",
         )
@@ -60,8 +75,11 @@ fn delete_inner<'a>(
         .await
         .map_err(db_err)?;
         for r in refs {
-            let (child, quoted, plain): (String, String, String) = (r.get(0), r.get(1), r.get(2));
-            if SET_NULL.iter().any(|(t, c)| *t == child && *c == plain) {
+            let (child, quoted, plain, nullable, has_id): (String, String, String, bool, bool) =
+                (r.get(0), r.get(1), r.get(2), r.get(3), r.get(4));
+            if (nullable_clears && nullable)
+                || SET_NULL.iter().any(|(t, c)| *t == child && *c == plain)
+            {
                 sqlx::query(&format!(
                     "UPDATE {child} SET {quoted} = NULL WHERE {quoted} = ANY($1)"
                 ))
@@ -69,6 +87,15 @@ fn delete_inner<'a>(
                 .execute(&mut **tx)
                 .await
                 .map_err(db_err)?;
+                continue;
+            }
+            if !has_id {
+                // a table keyed otherwise (sessions): nothing refers to it, its rows go with the referenced row
+                sqlx::query(&format!("DELETE FROM {child} WHERE {quoted} = ANY($1)"))
+                    .bind(ids)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(db_err)?;
                 continue;
             }
             let child_ids: Vec<i64> = sqlx::query_scalar(&format!(
@@ -81,9 +108,9 @@ fn delete_inner<'a>(
             if child == table {
                 // self reference (none of the cascading ones today): do not loop on the rows being deleted
                 let rest: Vec<i64> = child_ids.into_iter().filter(|i| !ids.contains(i)).collect();
-                delete_inner(tx, &child, &rest, depth + 1, counts).await?;
+                delete_inner(tx, &child, &rest, depth + 1, nullable_clears, counts).await?;
             } else {
-                delete_inner(tx, &child, &child_ids, depth + 1, counts).await?;
+                delete_inner(tx, &child, &child_ids, depth + 1, nullable_clears, counts).await?;
             }
         }
         let n = sqlx::query(&format!("DELETE FROM {table} WHERE id = ANY($1)"))

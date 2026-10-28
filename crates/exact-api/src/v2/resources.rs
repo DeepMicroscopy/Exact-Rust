@@ -99,6 +99,22 @@ pub fn routes() -> Router<AppState> {
                 .delete(catalog::product_delete_h),
         )
         .route(
+            "/api/v2/teams",
+            get(teams_list).post(super::admin::team_create),
+        )
+        .route(
+            "/api/v2/teams/{id}",
+            get(teams_detail)
+                .patch(super::admin::team_patch)
+                .delete(super::admin::team_delete),
+        )
+        .route(
+            "/api/v2/users/{id}",
+            get(users_detail)
+                .patch(super::admin::user_patch)
+                .delete(super::admin::user_delete),
+        )
+        .route(
             "/api/v2/annotation-media-files/{id}",
             get(media_files_detail).delete(super::annotation_media::delete_h),
         )
@@ -390,4 +406,26 @@ async fn media_files_detail(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     detail_h(s, headers, uri, Path(("annotation-media-files".into(), id))).await
+}
+
+async fn teams_list(s: State<AppState>, headers: HeaderMap, uri: Uri) -> ApiResult<Json<Value>> {
+    list_h(s, headers, uri, Path("teams".into())).await
+}
+
+async fn teams_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("teams".into(), id))).await
+}
+
+async fn users_detail(
+    s: State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    detail_h(s, headers, uri, Path(("users".into(), id))).await
 }
