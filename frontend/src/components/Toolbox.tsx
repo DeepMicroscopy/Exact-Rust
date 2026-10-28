@@ -91,14 +91,19 @@ export function Toolbox(p: ToolboxProps) {
   return (
     <div className="toolbox glass" role="toolbar" aria-label="Annotation tools">
       <div className="seg" role="group">
-        <button className={!p.drawing ? "active" : ""} onClick={p.on.select} title="Select and edit annotations (C)">
-          Select
-        </button>
-        <button className={p.drawing ? "active" : ""} onClick={() => p.currentTypeId != null && p.on.draw(p.currentTypeId)} disabled={p.palette.length === 0} title="Draw annotations (C)">
-          Draw
+        <button className={!p.drawing ? "active" : ""} onClick={p.on.select} aria-label="Select" title="Select and edit annotations (C)">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M5 3l14 8-6.2 1.6L9.6 19z" fill="currentColor" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+          </svg>
         </button>
       </div>
-
+      <span className="v-sep" role="separator" aria-orientation="vertical" />
+      <div className="add-group">
+        <div className="seg" role="group">
+          <button className={p.drawing ? "active" : ""} onClick={() => p.currentTypeId != null && p.on.draw(p.currentTypeId)} disabled={p.palette.length === 0} aria-label="Add annotation" title="Add annotations of the type on the right (C)">
+            ＋ Add annotation
+          </button>
+        </div>
       {(p.drawing || !sel) && (
       <Dropdown className="type-dd" name="types" items={typeItems} onPick={(id) => p.on.draw(Number(id))} disabled={p.palette.length === 0} title="Annotation type to draw (digit keys 1-9)">
         {current ? (
@@ -112,6 +117,7 @@ export function Toolbox(p: ToolboxProps) {
         )}
       </Dropdown>
       )}
+      </div>
       {p.palette.length === 0 && <span className="muted small">This image set has no annotation types (assign a product to it).</span>}
 
       {draw && (

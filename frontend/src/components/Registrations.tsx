@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import type { Page } from "../api/client";
 import type { Registration, RegistrationJob, SetImage } from "../api/types";
+import { ImagePicker } from "./ImagePicker";
 import { Modal } from "./Modal";
 import { Thumb } from "./Thumb";
 
@@ -55,7 +56,7 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
     }
   };
   return (
-    <Modal title="Register two images" onClose={onClose}>
+    <Modal title="Register two images" onClose={onClose} wide>
       <div className="seg" role="radiogroup" aria-label="Method">
         <button role="radio" aria-checked={mode === "auto"} className={mode === "auto" ? "active" : ""} onClick={() => setMode("auto")}>
           Automatic
@@ -67,16 +68,7 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
       <p className="muted small">
         {mode === "auto" ? "A worker finds the transformation that maps the source image onto the target image; this can take a few minutes for large slides." : "You click the same spots in both images; the transformation is estimated from them. Works for any pair, also where the automatic registration fails."}
       </p>
-      <label className="field">
-        <span>Source image</span>
-        <select value={source} onChange={(e) => setSource(Number(e.target.value))}>
-          {images.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ImagePicker label="Source image" images={images} value={source} onChange={setSource} />
       <label className="field">
         <span>Target image set</span>
         <select aria-label="Target image set" value={targetSet} onChange={(e) => setTargetSet(Number(e.target.value))}>
@@ -90,16 +82,7 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
             ))}
         </select>
       </label>
-      <label className="field">
-        <span>Target image</span>
-        <select aria-label="Target image" value={target} onChange={(e) => setTarget(Number(e.target.value))}>
-          {candidates.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ImagePicker label="Target image" images={candidates} value={target} onChange={setTarget} />
       {mode === "auto" && (
         <>
           <label className="check">

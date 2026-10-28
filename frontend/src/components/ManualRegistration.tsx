@@ -5,7 +5,6 @@ import { api } from "../api/client";
 import type { Page } from "../api/client";
 import type { Registration } from "../api/types";
 import { loadTileSource } from "../viewer-core/tileSource";
-import { Modal } from "./Modal";
 
 export interface PointPair {
   source: [number, number];
@@ -21,6 +20,7 @@ function PointViewer({ imageId, points, label, active, onPick }: { imageId: numb
   const act = useRef(active);
   act.current = active;
   const [ready, setReady] = useState(0);
+  const [hover, setHover] = useState<[number, number] | null>(null);
 
   useEffect(() => {
     if (!host.current) return;
@@ -65,7 +65,22 @@ function PointViewer({ imageId, points, label, active, onPick }: { imageId: numb
   return (
     <div className={`reg-viewer ${active ? "active" : ""}`}>
       <div className="reg-viewer-title">{label}</div>
-      <div ref={host} className="osd" data-testid={`reg-viewer-${label}`} />
+      <div
+        className="reg-stage"
+        onPointerMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setHover([e.clientX - r.left, e.clientY - r.top]);
+        }}
+        onPointerLeave={() => setHover(null)}
+      >
+        <div ref={host} className="osd" data-testid={`reg-viewer-${label}`} />
+        {active && hover && (
+          <div className="crosshair" aria-hidden="true" data-testid={`crosshair-${label}`}>
+            <i className="h" style={{ top: hover[1] }} />
+            <i className="v" style={{ left: hover[0] }} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -84,6 +99,21 @@ export function ManualRegistration({ source, target, names, onClose, onSaved }: 
   const [inverse, setInverse] = useState(true);
   const existing = useQuery({ queryKey: ["registration-exists", source, target], queryFn: async () => (await api<Page<Registration>>(`/api/v2/registrations?source_image=${source}&target_image=${target}`)).items[0] ?? null });
 
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      if (pendingRef.current) setPending(null);
+      else closeRef.current();
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, []);
+
   const save = async () => {
     setBusy(true);
     setError(null);
@@ -100,7 +130,14 @@ export function ManualRegistration({ source, target, names, onClose, onSaved }: 
 
   const hint = pending ? `Now click the same spot in “${names[1]}” (right).` : pairs.length ? `Point ${pairs.length + 1}: click a distinctive spot in “${names[0]}” (left).` : `Click a distinctive spot in “${names[0]}” (left), then the same spot in “${names[1]}” (right).`;
   return (
-    <Modal title="Register manually" onClose={onClose} wide>
+    <div className="reg-full" role="dialog" aria-modal="true" aria-label="Register manually">
+      <header>
+        <h2>Register manually</h2>
+        <span className="spacer" />
+        <button className="btn ghost" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+      </header>
       <p className="muted small">{hint} More points make it more accurate; with three or more it also corrects shear.</p>
       <div className="reg-viewers">
         <PointViewer imageId={source} label="source" points={[...pairs.map((p) => p.source), ...(pending ? [pending] : [])]} active={!pending} onPick={setPending} />
@@ -142,7 +179,7 @@ export function ManualRegistration({ source, target, names, onClose, onSaved }: 
         </p>
       )}
       {error && <p className="error">{error}</p>}
-      <div className="modal-actions">
+      <div className="reg-full-actions">
         <button className="btn ghost" onClick={onClose}>
           {saved ? "Close" : "Cancel"}
         </button>
@@ -150,6 +187,6 @@ export function ManualRegistration({ source, target, names, onClose, onSaved }: 
           Save registration
         </button>
       </div>
-    </Modal>
+    </div>
   );
 }

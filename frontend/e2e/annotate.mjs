@@ -125,7 +125,7 @@ try {
 
   // draw a bounding box with key 1 and a drag
   await admin.keyboard.press("1");
-  check((await admin.locator(".toolbox .seg button.active").innerText()) === "Draw", "digit 1 enters the draw tool");
+  check((await admin.locator(".toolbox .seg button.active").getAttribute("aria-label")) === "Add annotation", "digit 1 enters the draw tool");
   check((await admin.locator(".toolbox .hint").first().innerText()).includes("Drag to draw a box"), "hint tells how to draw the box");
   const [a, b] = [await screenOf(admin, 800, 900), await screenOf(admin, 1300, 1300)];
   await admin.mouse.move(a.x, a.y);
@@ -140,7 +140,7 @@ try {
 
   // click selects it; a handle resizes, the body moves
   await admin.keyboard.press("c");
-  check((await admin.locator(".toolbox .seg button.active").innerText()) === "Select", "C returns to the select tool");
+  check((await admin.locator(".toolbox .seg button.active").getAttribute("aria-label")) === "Select", "C returns to the select tool");
   const inside = await screenOf(admin, 1000, 1100);
   await admin.mouse.click(inside.x, inside.y);
   await waitFor(() => admin.evaluate((id) => window.__editor.selectedId === id, box.id), "clicking the box selects it");
@@ -227,7 +227,7 @@ try {
   await waitFor(async () => (await annotations(admin)).length === n0 + 5, "one-click mode places a box with a click for a drag type");
   await admin.keyboard.press("a");
   await admin.keyboard.press("Escape");
-  check((await admin.locator(".toolbox .seg button.active").innerText()) === "Select", "Escape leaves the draw tool");
+  check((await admin.locator(".toolbox .seg button.active").getAttribute("aria-label")) === "Select", "Escape leaves the draw tool");
 
   // ---------------------------------------------------------------------------------------- polygon
   await openImage(admin);
@@ -353,7 +353,7 @@ try {
   await admin.fill(".type-dd .dd-filter", "extra 5");
   check((await admin.locator(".type-dd .dd-item").count()) === 1, "typing narrows the list");
   await admin.keyboard.press("Enter");
-  check((await admin.locator(".type-dd .trigger").innerText()).includes("e2e extra 5") && (await admin.locator(".toolbox .seg button.active").innerText()) === "Draw", "Enter picks the first match and starts drawing with it");
+  check((await admin.locator(".type-dd .trigger").innerText()).includes("e2e extra 5") && (await admin.locator(".toolbox .seg button.active").getAttribute("aria-label")) === "Add annotation", "Enter picks the first match and starts drawing with it");
 
   // shortcuts: keyboard focus in a text field does not trigger tools; Y hides annotations
   await admin.keyboard.press("y");
@@ -489,7 +489,7 @@ try {
   const t1 = await screenOf(tp, 1700, 1500);
   await tp.touchscreen.tap(t1.x, t1.y);
   await waitFor(async () => (await annotations(tp)).length === nt + 1, "a tap places a fixed-size annotation on a touch screen");
-  await tp.locator(".toolbox .seg button", { hasText: "Select" }).tap();
+  await tp.locator(".toolbox .seg button[aria-label=Select]").tap();
   const created = (await annotations(tp)).at(-1);
   const tc = await screenOf(tp, (created.vector.x1 + created.vector.x2) / 2, (created.vector.y1 + created.vector.y2) / 2);
   await tp.touchscreen.tap(tc.x, tc.y);

@@ -197,17 +197,21 @@ try {
   // replace the registration of the pair by a manual one with scale 0.5 and a shift (20, 10): target = 0.5 * source + (20, 10)
   await page.locator("button", { hasText: "New registration" }).click();
   await page.waitForSelector(".modal");
-  const optionOf = (sel, n) => page.locator(`${sel} option`).evaluateAll((os, n) => os.find((o) => o.textContent.includes(n))?.value, n);
-  await page.selectOption('.modal select:near(:text("Source image"))', await optionOf('.modal', "img-1"));
+  await page.locator('.modal [role=radiogroup][aria-label="Source image"] [role=radio]', { hasText: "img-1" }).click();
+  check((await page.locator('.modal [role=radiogroup][aria-label="Source image"] .thumb').count()) >= 2, "images are chosen by their previews");
   const setOptions = await page.locator('.modal select[aria-label="Target image set"] option').allInnerTexts();
   check(setOptions.length >= 2, `the target image set can be chosen (${setOptions.join(" | ")})`);
-  await page.selectOption('.modal select[aria-label="Target image"]', String(i2.id));
+  await page.locator('.modal [role=radiogroup][aria-label="Target image"] [role=radio]', { hasText: "img-2" }).click();
   await page.locator('.modal [role=radio]', { hasText: "Manual" }).click();
   await page.locator(".modal .btn.primary", { hasText: "Pick points" }).click();
   await page.waitForSelector('[data-testid="reg-viewer-source"] canvas');
   await page.waitForSelector('[data-testid="reg-viewer-target"] canvas');
   await waitFor(() => page.evaluate(() => window.__reg_source?.world.getItemCount() && window.__reg_target?.world.getItemCount()), "both images are shown for picking");
   await page.waitForTimeout(800);
+  const box = await page.locator('[data-testid="reg-viewer-source"]').boundingBox();
+  check(box.height > 500, `manual registration uses the whole screen (${Math.round(box.height)} px high)`);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  check((await page.locator('[data-testid="crosshair-source"]').count()) === 1, "a crosshair follows the pointer in the viewer that takes the next point");
   const spot = (which, x, y) =>
     page.evaluate(([which, x, y]) => {
       const v = window["__reg_" + which];
@@ -224,12 +228,12 @@ try {
     await page.mouse.click(c, d);
   }
   check((await page.locator(".reg-pairs .chip").count()) === 3, "three point pairs were picked");
-  await page.locator(".modal .btn.primary", { hasText: "Save registration" }).click();
+  await page.locator(".reg-full .btn.primary", { hasText: "Save registration" }).click();
   await page.waitForSelector('[data-testid="manual-saved"]');
   const saved = await page.locator('[data-testid="manual-saved"]').innerText();
   const err = Number(/error ([\d.]+)/.exec(saved)?.[1]);
   check(err < 3, `the manual registration is saved with a small error (${saved})`);
-  await page.locator(".modal .btn", { hasText: "Close" }).click();
+  await page.locator(".reg-full .btn", { hasText: "Close" }).click();
   const regs = (await apiCall(root, "GET", `/api/v2/registrations?source_image=${i1.id}&target_image=${i2.id}`)).body.items;
   check(regs.length === 1 && Math.abs(regs[0].transformation_matrix.t_00 - 0.5) < 0.02 && Math.abs(regs[0].transformation_matrix.t_02 - 20) < 8, "the stored matrix has the picked scale and shift");
   // the viewer of img-1 offers img-2 as an overlay, placed through the inverse
