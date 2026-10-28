@@ -78,6 +78,27 @@ function hostProxy(ref: { current: EditorHost }): EditorHost {
 
 const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
+/** The view of a link: the visible rectangle (`xmin`, `ymin`, `xmax`, `ymax` in image pixels, as the old EXACT wrote it) or a centre and zoom. */
+export type SharedView = { rect: [number, number, number, number] } | { x: number; y: number; zoom: number };
+
+export function parseSharedView(q: URLSearchParams): SharedView | null {
+  const num = (k: string) => (q.get(k) == null || q.get(k) === "" ? NaN : Number(q.get(k)));
+  const rect = ["xmin", "ymin", "xmax", "ymax"].map(num);
+  if (rect.every(Number.isFinite) && rect[2] > rect[0] && rect[3] > rect[1]) return { rect: rect as [number, number, number, number] };
+  const [x, y, zoom] = [num("x"), num("y"), num("zoom")];
+  return [x, y, zoom].every(Number.isFinite) && zoom > 0 ? { x, y, zoom } : null;
+}
+
+function applySharedView(viewer: OpenSeadragon.Viewer, item: OpenSeadragon.TiledImage, v: SharedView): void {
+  if ("rect" in v) {
+    const [x0, y0, x1, y1] = v.rect;
+    viewer.viewport.fitBounds(item.imageToViewportRectangle(x0, y0, x1 - x0, y1 - y0), true);
+  } else {
+    viewer.viewport.zoomTo(item.imageToViewportZoom(v.zoom), undefined, true);
+    viewer.viewport.panTo(item.imageToViewportCoordinates(v.x, v.y), true);
+  }
+}
+
 export function ViewerPage() {
   const { imageId } = useParams();
   const [search] = useSearchParams();
@@ -99,8 +120,8 @@ export function ViewerPage() {
   const planeRef = useRef(plane);
   planeRef.current = plane;
   /** the view of a shared link (centre and zoom in image pixels), applied once when the image has loaded */
-  const pendingView = useRef<{ x: number; y: number; zoom: number } | null>(null);
-  const appliedView = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  const pendingView = useRef<SharedView | null>(null);
+  const appliedView = useRef<SharedView | null>(null);
   const viewFor = useRef<number | null>(null);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -305,11 +326,14 @@ export function ViewerPage() {
     const writeUrl = () => {
       const item = viewer.world.getItemCount() ? viewer.world.getItemAt(0) : null;
       if (!item || pendingView.current) return;
-      const c = item.viewportToImageCoordinates(viewer.viewport.getCenter(true));
+      // the visible rectangle in image pixels, as the old EXACT wrote it
+      const r = item.viewportToImageRectangle(viewer.viewport.getBounds(true));
       const u = new URL(window.location.href);
-      u.searchParams.set("x", String(Math.round(c.x)));
-      u.searchParams.set("y", String(Math.round(c.y)));
-      u.searchParams.set("zoom", Number(item.viewportToImageZoom(viewer.viewport.getZoom(true)).toPrecision(4)).toString());
+      u.searchParams.set("xmin", String(Math.round(r.x)));
+      u.searchParams.set("ymin", String(Math.round(r.y)));
+      u.searchParams.set("xmax", String(Math.round(r.x + r.width)));
+      u.searchParams.set("ymax", String(Math.round(r.y + r.height)));
+      for (const k of ["x", "y", "zoom"]) u.searchParams.delete(k);
       const frame = Math.round(posRef.current);
       if (frame > 0) u.searchParams.set("frame", String(frame));
       else u.searchParams.delete("frame");
@@ -371,8 +395,7 @@ export function ViewerPage() {
         const item = viewer.world.getItemAt(0);
         if (shared) {
           // laid out after the shared view was set: the zoom is relative to the width, so set it again
-          viewer.viewport.zoomTo(item.imageToViewportZoom(shared.zoom), undefined, true);
-          viewer.viewport.panTo(item.imageToViewportCoordinates(shared.x, shared.y), true);
+          applySharedView(viewer, item, shared);
         } else viewer.viewport.goHome(true);
       }
       wasTiny = tiny;
@@ -422,8 +445,7 @@ export function ViewerPage() {
         if (shared && first) {
           pendingView.current = null;
           appliedView.current = shared;
-          viewer.viewport.zoomTo(first.imageToViewportZoom(shared.zoom), undefined, true);
-          viewer.viewport.panTo(first.imageToViewportCoordinates(shared.x, shared.y), true);
+          applySharedView(viewer, first, shared);
           layerRef.current?.setMark(null);
           return;
         }
@@ -441,8 +463,7 @@ export function ViewerPage() {
     blenderRef.current = blender;
     if (viewFor.current !== id) {
       viewFor.current = id;
-      const [x, y, zoom] = ["x", "y", "zoom"].map((k) => (search.get(k) == null ? NaN : Number(search.get(k))));
-      pendingView.current = [x, y, zoom].every(Number.isFinite) && zoom > 0 ? { x, y, zoom } : null;
+      pendingView.current = parseSharedView(search);
     }
     const wanted = Number(search.get("frame"));
     if (search.get("frame") && Number.isFinite(wanted) && frameFor.current !== id) posRef.current = wanted; // opened from a crop: its frame

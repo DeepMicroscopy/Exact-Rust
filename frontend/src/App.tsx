@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
@@ -29,7 +29,15 @@ export function App() {
       </Route>
       {/* the viewer is full-bleed and has its own chrome */}
       <Route path="images/:imageId" element={<ViewerPage />} />
+      <Route path="annotations/:imageId" element={<OldViewerLink />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+/** Links of the old EXACT (`/annotations/<image>/?frame=..&xmin=..&ymin=..&xmax=..&ymax=..`) open the viewer on the same view. */
+function OldViewerLink() {
+  const { imageId } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={`/images/${imageId}${search}`} replace />;
 }

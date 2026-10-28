@@ -154,7 +154,7 @@ try {
   // the address bar follows the view, and the link opens the same view
   await page.waitForTimeout(600);
   const shared = new URL(page.url());
-  check(["x", "y", "zoom", "frame"].every((k) => shared.searchParams.has(k)), `the address bar carries the view (${shared.search})`);
+  check(["xmin", "ymin", "xmax", "ymax", "frame"].every((k) => shared.searchParams.has(k)) && !shared.searchParams.has("zoom"), `the address bar carries the view (${shared.search})`);
   const sharedView = await page.evaluate(() => { const v = window.__viewer.viewport; const it = window.__viewer.world.getItemAt(0); return { z: it.viewportToImageZoom(v.getZoom(true)), c: it.viewportToImageCoordinates(v.getCenter(true)) }; });
   await page.goto(page.url());
   await page.waitForSelector(".viewer-host, .osd, canvas");
@@ -162,6 +162,15 @@ try {
   await page.waitForTimeout(800);
   const reopened = await page.evaluate(() => { const v = window.__viewer.viewport; const it = window.__viewer.world.getItemAt(0); return { z: it.viewportToImageZoom(v.getZoom(true)), c: it.viewportToImageCoordinates(v.getCenter(true)) }; });
   check(Math.abs(reopened.z / sharedView.z - 1) < 0.01 && Math.abs(reopened.c.x - sharedView.c.x) < 3 && Math.abs(reopened.c.y - sharedView.c.y) < 3, `the link restores zoom and position (${sharedView.z.toFixed(3)} -> ${reopened.z.toFixed(3)})`);
+
+  // a link of the old EXACT opens the same region
+  await page.goto(`${base}/annotations/57/?frame=3&xmin=100&ymin=80&xmax=420&ymax=300`);
+  await waitPainted("an old EXACT link renders");
+  await page.waitForTimeout(800);
+  check(new URL(page.url()).pathname === "/images/57", `an old link is redirected to the viewer (${new URL(page.url()).pathname})`);
+  const oldView = await page.evaluate(() => { const v = window.__viewer.viewport; const it = window.__viewer.world.getItemAt(0); const r = it.viewportToImageRectangle(v.getBounds(true)); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  check(oldView.x < 105 && oldView.x + oldView.w > 415 && oldView.y < 85 && oldView.y + oldView.h > 295 && oldView.w < 800, `the old link's region is shown (${Math.round(oldView.x)},${Math.round(oldView.y)} ${Math.round(oldView.w)}x${Math.round(oldView.h)})`);
+  check((await page.locator(".zslider-current").innerText()).includes("4 /"), "...at the frame of the link");
 
   // track pad: a two-finger swipe moves, a pinch (Ctrl + wheel) zooms about the fingers, a mouse wheel step still zooms
   const wheel = (init) => page.evaluate((i) => { const c = window.__viewer.canvas; const r = c.getBoundingClientRect(); c.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, ...i })); }, init);
