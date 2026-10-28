@@ -6,10 +6,12 @@ import { api, listAll } from "../api/client";
 import type { Page } from "../api/client";
 import { NewSetDialog } from "../components/SetDialogs";
 import type { ImageSet, Team } from "../api/types";
+import { StatisticsDialog } from "../components/StatisticsDialog";
 import { Thumb } from "../components/Thumb";
 
 export function Index() {
   const [teamId, setTeamId] = useState<number | null>(null);
+  const [stats, setStats] = useState(false);
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
@@ -54,6 +56,11 @@ export function Index() {
           <h2>Image sets</h2>
           <span className="spacer" />
           <input className="search" placeholder="Search image sets and images…" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          {teamId !== null && (
+            <button className="btn" onClick={() => setStats(true)}>
+              Statistics
+            </button>
+          )}
           <button className="btn primary" onClick={() => setCreating(true)} disabled={!teams.data?.length}>
             New image set
           </button>
@@ -91,6 +98,7 @@ export function Index() {
           </>
         )}
       </section>
+      {stats && teamId !== null && <StatisticsDialog teamId={teamId} teamName={teamName(teamId)} onClose={() => setStats(false)} />}
       {creating && teams.data && <NewSetDialog teams={teams.data} defaultTeam={teamId} onClose={() => setCreating(false)} onCreated={(id) => navigate(`/sets/${id}`)} />}
     </div>
   );

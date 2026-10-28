@@ -350,3 +350,10 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .row-inline { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
 .secret { width: 100%; box-sizing: border-box; }
 .team-panel h4 { margin: 14px 0 4px; }
+
+.stat-summary { margin: 4px 0 10px; }
+.stat-bars { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+.stat-bars td { padding: 3px 6px; font-size: 13px; }
+.stat-name { white-space: nowrap; width: 1%; }
+.stat-value { white-space: nowrap; width: 1%; text-align: right; color: var(--muted); }
+.stat-bar span { display: block; height: 10px; border-radius: 5px; min-width: 2px; }

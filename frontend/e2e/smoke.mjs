@@ -62,6 +62,12 @@ try {
   await page.waitForTimeout(800);
   await shot("2-index");
 
+  await page.locator(".side-item").first().click();
+  await page.locator(".btn", { hasText: "Statistics" }).click();
+  await page.waitForSelector('[data-testid="statistics"]');
+  check((await page.locator('[data-testid="statistics"]').innerText()).includes("on disk"), "team statistics show storage, file types and annotations");
+  await page.locator(".modal .btn.primary", { hasText: "Done" }).click();
+  await page.locator(".side-item").first().click();
   await page.locator(".cards .card").first().click();
   await page.waitForSelector(".grid .tile");
   check((await page.locator(".grid .tile").count()) > 0, "image set lists images");

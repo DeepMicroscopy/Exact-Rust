@@ -43,3 +43,18 @@ def test_an_outsider_cannot_see_the_files():
     assert o.get(f"/api/v2/image-sets/{SET_ID}/auxiliary-files").status_code == 404
     assert o.delete(f"/api/v2/auxiliary-files/{item['id']}").status_code == 404
     c.delete(f"/api/v2/auxiliary-files/{item['id']}")
+
+
+def test_team_statistics_for_members_only():
+    c = client()
+    teams = c.get("/api/v2/teams").json()
+    tid = teams["items"][0]["id"] if "items" in teams else teams["results"][0]["id"]
+    d = c.get(f"/api/v2/teams/{tid}/statistics")
+    assert d.status_code == 200, d.text
+    j = d.json()
+    assert j["total_images"] >= 1 and j["storage_gb"] >= 0
+    assert sum(a["count"] for a in j["annotation_types"]) == j["total_annotations"]
+    assert sum(t["count"] for t in j["image_types"]) == j["total_images"]
+    assert sum(e["count"] for e in j["extensions"]) == j["total_images"]
+    o = client("rt_outsider")
+    assert o.get(f"/api/v2/teams/{tid}/statistics").status_code == 404

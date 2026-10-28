@@ -15,6 +15,7 @@ pub mod processing;
 pub mod registration;
 pub mod resources;
 pub mod segmentation;
+pub mod statistics;
 
 use crate::{
     auth::{authenticate, require_user, AuthKind, CSRF_HEADER, SESSION_COOKIE},
@@ -47,6 +48,7 @@ pub fn routes() -> Router<AppState> {
         .merge(registration::v2_routes())
         .merge(export::v2_routes())
         .merge(segmentation::v2_routes())
+        .merge(statistics::v2_routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))
         .route("/api/v2/auth/stop-impersonating", post(stop_impersonating))

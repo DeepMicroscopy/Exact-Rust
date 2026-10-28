@@ -666,7 +666,7 @@ The registration tab lists the registrations of the set's images (thumbnails of 
 Server: `GET /api/v2/image-sets/{id}/settings` (flags, counts, the caller's permissions: the page shows only what the user may do); registrations are managed by **team members** (edit rights on the source image's set) without Django model
 permissions (`POST /api/v2/images/{id}/register`, `POST /api/v2/registrations/{id}/inverse`, `DELETE /api/v2/registrations/{id}`, which also removes the pickle); the worker API keeps the model permission.
 Tests: `frontend/e2e/imageset.mjs` (create, upload by picker and by drop, duplicate, tags, filter, select, registration through a worker played by the test, inverse, delete, move, delete images, settings, lock, delete set), `test_v2_registration.py`, `test_v2_image_sets.py`.
-Not yet: auxiliary files, export, statistics, rename of single images.
+Not yet: rename of single images. (Auxiliary files, export and team statistics are done, see 5al.)
 
 ### 5ad. UI: manual registration, cross-set targets, overlays (2026-10-28)
 - `POST /api/v2/registrations/manual` `{source_image, target_image, points:[{source,target}], inverse?}`: matrix estimated from picked point pairs (1 pair: shift; 2: similarity; 3+: least-squares affine; collinear points refused), stored with `registration_points` and the RMS error, replacing the pair's registration (and its pickle) and optionally the inverse. Edit right on the source's set, read on the target.
@@ -709,3 +709,9 @@ Not yet: auxiliary files, export, statistics, rename of single images.
 
 ### Optimization backlog (later)
 - **NIfTI loading** (done): voxels stay in their file dtype and are decoded per slice from a memory map; a `.nii.gz` is inflated once, streaming, into a sidecar (`$EXACT_NIFTI_CACHE` or the temp dir, keyed by path/size/mtime) that later opens map directly; the display window uses the same sparse sample as before. Still open: bounded sidecar cache size, rendered-slice LRU.
+
+### 5al. NIfTI on demand, user editing, auxiliary files, team statistics
+- NIfTI voxels are decoded per slice from a memory map; `.nii.gz` is inflated once into a sidecar cache (see backlog).
+- Admin → Users → Edit: username, first/last name, email (`GET /api/v2/admin/users/{id}/profile`, existing `PATCH /api/v2/users/{id}`).
+- Auxiliary files: `GET /api/v2/image-sets/{id}/auxiliary-files`, `GET /api/v2/auxiliary-files/{id}/download`, `DELETE /api/v2/auxiliary-files/{id}`; "Files (n)" button on the image set page when there are any.
+- Team statistics: `GET /api/v2/teams/{id}/statistics` (storage, file types, image kinds, annotation types; members only), "Statistics" button on the start page when a team is selected. Per-image statistics of Django (`image_statistics`) is not ported: the viewer already shows the counts.
