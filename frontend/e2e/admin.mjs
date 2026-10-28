@@ -160,6 +160,24 @@ try {
   await waitFor(async () => (await root.locator('[data-testid="types"] tbody tr', { hasText: "Mitotic figure" }).count()) === 0, "an annotation type can be deleted");
   await root.locator(".btn", { hasText: "Delete product" }).click();
   await waitFor(async () => (await root.locator(".side-item", { hasText: "E2E product" }).count()) === 0, "...and the product with it");
+  // ---- jobs: registrations and image analyses in one list
+  await root.evaluate(async () => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const r = await fetch("/api/v2/images/15/register", { method: "POST", headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: JSON.stringify({ target_image: 16 }) });
+    if (r.status !== 202) throw new Error("register " + r.status);
+  });
+  await root.locator("a", { hasText: /^Jobs/ }).click();
+  await root.waitForSelector('[data-testid="jobs"]');
+  await waitFor(async () => (await root.locator('[data-testid="jobs"] tr[data-kind="registration"]').count()) >= 1, "a queued registration shows up in the job list");
+  const jobRow = root.locator('[data-testid="jobs"] tr[data-kind="registration"][data-status="queued"]').first();
+  check((await jobRow.innerText()).includes("waiting for a worker"), "...as waiting for a worker");
+  await root.selectOption('select[aria-label="Kind of job"]', "plugin");
+  await waitFor(async () => (await root.locator('[data-testid="jobs"] tr[data-kind="registration"]').count()) === 0, "the kind filter hides the registrations");
+  await root.selectOption('select[aria-label="Kind of job"]', "");
+  await jobRow.locator(".btn", { hasText: "Cancel" }).click();
+  await waitFor(async () => (await root.locator('[data-testid="jobs"] tr[data-kind="registration"][data-status="queued"]').count()) === 0, "a waiting job can be cancelled");
+  await root.locator("a", { hasText: "Administration" }).click();
+  await root.waitForSelector(".admin");
   // ---- clean up the team
   await root.locator(".tabs button", { hasText: "Teams" }).click();
   await root.locator(".side-item", { hasText: teamName }).click();

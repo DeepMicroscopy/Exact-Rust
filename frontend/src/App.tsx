@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Index } from "./pages/Index";
 import { ImageSetPage } from "./pages/ImageSetPage";
+import { JobsPage } from "./pages/JobsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { InvitePage } from "./pages/InvitePage";
 import { ViewerPage } from "./pages/ViewerPage";
@@ -25,6 +26,7 @@ export function App() {
         <Route index element={<Index />} />
         <Route path="sets/:setId" element={<ImageSetPage />} />
         <Route path="admin" element={<AdminPage />} />
+        <Route path="jobs" element={<JobsPage />} />
         <Route path="invite/:token" element={<InvitePage />} />
       </Route>
       {/* the viewer is full-bleed and has its own chrome */}

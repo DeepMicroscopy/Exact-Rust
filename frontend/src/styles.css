@@ -366,3 +366,12 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0; }
 
 .plane-busy { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; font-size: 13px; pointer-events: none; }
+
+.notice.warn { padding: 8px 12px; border-radius: 8px; border: 1px solid #c8851e; background: rgba(200, 133, 30, 0.12); }
+.status { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+.status-running { border-color: var(--purple); color: var(--purple); }
+.status-done { border-color: #3aa76d; color: #3aa76d; }
+.status-failed { border-color: var(--danger); color: var(--danger); }
+.jobs .bar { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: var(--glass-h); margin-left: 8px; vertical-align: middle; overflow: hidden; }
+.jobs .bar > span { display: block; height: 100%; background: var(--purple); }
+.job-error pre { white-space: pre-wrap; font-size: 11px; max-height: 220px; overflow: auto; margin: 4px 0 0; }

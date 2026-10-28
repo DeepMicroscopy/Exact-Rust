@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Registration worker: computes image registrations for the EXACT Rust server with `qt-wsi-registration`.
 
-It claims jobs from `POST /api/v2/registration-jobs/claim`, registers source onto target exactly as
+It claims registration jobs from the common queue (`POST /api/v2/jobs/claim`, kind `registration`), registers source onto target exactly as
 `ImageRegistration.perform_registration` of EXACT does, and reports the result (`.../complete`, with the pickled quad tree
 as file) or the error (`.../fail`). Several workers can run side by side; a job whose worker disappears is claimed again
 after its lease (30 minutes) ran out.
@@ -95,11 +95,13 @@ def register(job, exact_dir):
 
 
 def work(api, name, exact_dir):
-    status, job = api.call("/api/v2/registration-jobs/claim", {"worker": name})
+    # the common queue (registration jobs and image analysis jobs): this worker only asks for the kind it can do
+    status, claimed = api.call("/api/v2/jobs/claim", {"worker": name, "kinds": ["registration"]})
     if status == 204:
         return False
     if status != 200:
-        raise RuntimeError(f"claim failed: {status} {job}")
+        raise RuntimeError(f"claim failed: {status} {claimed}")
+    job = claimed["job"]
     print(f"job {job['id']}: registering image {job['source_image']} onto {job['target_image']}", flush=True)
     try:
         matrix, error, runtime, blob = register(job, exact_dir)

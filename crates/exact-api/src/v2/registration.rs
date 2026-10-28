@@ -401,6 +401,15 @@ async fn claim(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> Ap
         .and_then(Value::as_str)
         .filter(|w| !w.is_empty() && w.chars().count() <= 200)
         .ok_or_else(|| field_err("worker", "A name of 1 to 200 characters is required."))?;
+    crate::v2::jobs::seen(worker, &["registration"]);
+    Ok(match claim_one(&s, worker).await? {
+        Some(job) => Json(job).into_response(),
+        None => StatusCode::NO_CONTENT.into_response(),
+    })
+}
+
+/// Marks the oldest waiting registration job as running for `worker`; the job as the worker needs it, or none.
+pub(crate) async fn claim_one(s: &AppState, worker: &str) -> ApiResult<Option<Value>> {
     let row = sqlx::query(&format!(
         "UPDATE exact_rust_registration_job SET status = 'running', worker = $1, started_at = now(), \
          lease_expires = now() + interval '{LEASE}', error = NULL WHERE id = ( \
@@ -413,7 +422,7 @@ async fn claim(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> Ap
     .await
     .map_err(db_err)?;
     let Some(row) = row else {
-        return Ok(StatusCode::NO_CONTENT.into_response());
+        return Ok(None);
     };
     let (id, source, target, params): (i64, i64, i64, Value) =
         (row.get(0), row.get(1), row.get(2), row.get(3));
@@ -442,9 +451,11 @@ async fn claim(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> Ap
             .execute(&s.pool)
             .await
             .map_err(db_err)?;
-        return Ok(StatusCode::NO_CONTENT.into_response());
+        return Ok(None);
     };
-    Ok(Json(json!({"id": id, "source_image": source, "target_image": target, "source_path": sp, "target_path": tp, "params": params})).into_response())
+    Ok(Some(
+        json!({"id": id, "source_image": source, "target_image": target, "source_path": sp, "target_path": tp, "params": params}),
+    ))
 }
 
 async fn owned_running(s: &AppState, id: i64, worker: &str) -> ApiResult<(i64, i64, Value)> {
