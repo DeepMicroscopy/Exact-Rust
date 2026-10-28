@@ -365,12 +365,77 @@ function InviteDialog({ teamId, onClose, onCreated }: { teamId: number; onClose(
 
 // ------------------------------------------------------------------------------------------------ users
 
+/** Name, email and username of a user. */
+function EditUserDialog({ userId, onSaved, onClose }: { userId: number; onSaved(): void; onClose(): void }) {
+  const profile = useQuery({ queryKey: ["admin-user-profile", userId], queryFn: () => api<{ username: string; first_name: string; last_name: string; email: string }>(`/api/v2/admin/users/${userId}/profile`), staleTime: 0 });
+  const [form, setForm] = useState<{ username: string; first_name: string; last_name: string; email: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const v = form ?? profile.data;
+  const set = (k: string, value: string) => v && setForm({ ...v, [k]: value });
+  const save = () => {
+    if (!v) return;
+    setBusy(true);
+    api(`/api/v2/users/${userId}`, { method: "PATCH", json: v }).then(
+      () => {
+        onSaved();
+        onClose();
+      },
+      (e) => {
+        setError(msg(e));
+        setBusy(false);
+      },
+    );
+  };
+  return (
+    <Modal title="Edit user" onClose={onClose}>
+      {!v ? (
+        <p className="muted">{profile.error ? msg(profile.error) : "Loading…"}</p>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+        >
+          <label className="field">
+            <span>Username</span>
+            <input value={v.username} onChange={(e) => set("username", e.target.value)} aria-label="Username" />
+          </label>
+          <label className="field">
+            <span>First name</span>
+            <input value={v.first_name} onChange={(e) => set("first_name", e.target.value)} aria-label="First name" />
+          </label>
+          <label className="field">
+            <span>Last name</span>
+            <input value={v.last_name} onChange={(e) => set("last_name", e.target.value)} aria-label="Last name" />
+          </label>
+          <label className="field">
+            <span>Email</span>
+            <input type="email" value={v.email} onChange={(e) => set("email", e.target.value)} aria-label="Email" />
+          </label>
+          {error && <p className="error">{error}</p>}
+          <div className="modal-actions">
+            <button type="button" className="btn" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn primary" disabled={busy}>
+              Save
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
 function UsersTab({ me }: { me: AdminMe }) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [secret, setSecret] = useState<{ title: string; intro: string; value: string } | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
   const users = useQuery({ queryKey: ["admin-users"], queryFn: () => listAll<UserRow>("/api/v2/users", { fields: "id,username,is_active,is_staff,is_superuser,last_login,team_set" }), staleTime: 0 });
   const teams = useQuery({ queryKey: ["admin-teams"], queryFn: () => listAll<TeamRow>("/api/v2/teams", { fields: "id,name" }), staleTime: 0 });
   const names = useMemo(() => new Map((teams.data ?? []).map((t) => [t.id, t.name])), [teams.data]);
@@ -420,6 +485,9 @@ function UsersTab({ me }: { me: AdminMe }) {
                 </td>
                 <td className="muted small">{u.last_login ? new Date(u.last_login).toLocaleDateString() : "never"}</td>
                 <td className="row-actions">
+                  <button className="btn ghost small" onClick={() => setEditing(u.id)}>
+                    Edit
+                  </button>
                   {!self && (
                     <>
                       <button
@@ -457,6 +525,7 @@ function UsersTab({ me }: { me: AdminMe }) {
         </tbody>
       </table>
       {secret && <SecretDialog {...secret} onClose={() => setSecret(null)} />}
+      {editing !== null && <EditUserDialog userId={editing} onSaved={() => void qc.invalidateQueries({ queryKey: ["admin-users"] })} onClose={() => setEditing(null)} />}
     </div>
   );
 }

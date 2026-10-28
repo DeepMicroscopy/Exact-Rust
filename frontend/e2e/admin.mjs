@@ -95,6 +95,14 @@ try {
   await waitFor(async () => !(await root.locator(`input[aria-label="${newUser} is active"]`).isChecked()), "a user can be deactivated");
   await root.locator(`input[aria-label="${newUser} is active"]`).click({ force: true });
   await waitFor(() => root.locator(`input[aria-label="${newUser} is active"]`).isChecked(), "...and activated again");
+  await root.locator(".btn", { hasText: "Edit" }).click();
+  await root.fill('input[aria-label="First name"]', "Newcomer");
+  await root.fill('input[aria-label="Email"]', "edited@example.org");
+  await root.locator(".modal .btn.primary", { hasText: "Save" }).click();
+  await waitFor(async () => (await root.locator(".modal").count()) === 0, "the edit dialog closes after saving");
+  await root.locator(".btn", { hasText: "Edit" }).click();
+  await waitFor(async () => (await root.inputValue('input[aria-label="Email"]')) === "edited@example.org", "a user's email can be edited (and is read back)");
+  await root.locator(".modal .btn", { hasText: "Cancel" }).click();
   await root.locator(".btn", { hasText: "Reset link" }).click();
   await root.waitForSelector('[data-testid="secret"]');
   check(/\/invite\/rst_/.test(await root.inputValue('[data-testid="secret"]')), "a password reset link is shown");

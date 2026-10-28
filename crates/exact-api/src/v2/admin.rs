@@ -37,6 +37,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v2/admin/me", axum::routing::get(admin_me))
         .route(
+            "/api/v2/admin/users/{id}/profile",
+            axum::routing::get(user_profile),
+        )
+        .route(
             "/api/v2/users/{id}/random-password",
             axum::routing::post(random_password),
         )
@@ -560,6 +564,27 @@ async fn admin_me(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Re
     let site = users::is_site_admin(&s.pool, p.user.id).await?;
     let teams = users::admin_team_ids(&s.pool, p.user.id).await?;
     Ok(Json(json!({"is_site_admin": site, "is_staff": p.user.is_staff, "is_superuser": p.user.is_superuser, "admin_team_ids": teams})).into_response())
+}
+
+/// `GET /api/v2/admin/users/{id}/profile`: the editable personal fields of a user (the user list of the API does not
+/// carry them).
+async fn user_profile(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    site_admin(&s, &p).await?;
+    let row: Option<(String, String, String, String)> = sqlx::query_as(
+        "SELECT username, first_name, last_name, email FROM users_user WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let (username, first_name, last_name, email) =
+        row.ok_or_else(|| ApiError::not_found("Not found."))?;
+    Ok(Json(json!({"id": id, "username": username, "first_name": first_name, "last_name": last_name, "email": email})).into_response())
 }
 
 async fn random_password(
