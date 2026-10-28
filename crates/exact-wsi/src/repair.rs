@@ -15,7 +15,7 @@ use crate::{
 use image::RgbaImage;
 use std::path::{Path, PathBuf};
 
-const TILE: u64 = 256;
+pub(crate) const TILE: u64 = 256;
 
 pub struct Repaired {
     pub backup: PathBuf,
@@ -24,7 +24,7 @@ pub struct Repaired {
 
 /// 2x2 box reduction of a 512x512 RGBA region into a 256x256 tile with `samples` channels; transparent
 /// (outside the image) source pixels do not contribute.
-fn reduce(src: &RgbaImage, samples: usize) -> Vec<u8> {
+pub(crate) fn reduce(src: &RgbaImage, samples: usize) -> Vec<u8> {
     let mut out = vec![0u8; (TILE * TILE) as usize * samples];
     for oy in 0..TILE as u32 {
         for ox in 0..TILE as u32 {
@@ -53,7 +53,7 @@ fn reduce(src: &RgbaImage, samples: usize) -> Vec<u8> {
     out
 }
 
-fn encode(raw: Vec<u8>, compression: u64, samples: usize) -> Result<Vec<u8>> {
+pub(crate) fn encode(raw: Vec<u8>, compression: u64, samples: usize) -> Result<Vec<u8>> {
     match compression {
         1 => Ok(raw),
         5 => weezl::encode::Encoder::with_tiff_size_switch(weezl::BitOrder::Msb, 8)

@@ -360,6 +360,86 @@ try {
   check((await admin.locator(".toolbox .btn", { hasText: "Show" }).count()) === 1, "Y hides the annotations");
   await admin.keyboard.press("y");
 
+  // ---------------------------------------------------------------------------------------- right-click menu
+  await admin.keyboard.press("Escape");
+  await admin.keyboard.press("Escape");
+  const boxNow = (await annotations(admin)).find((x) => x.id === box.id);
+  const boxC = await screenOf(admin, (boxNow.vector.x1 + boxNow.vector.x2) / 2, (boxNow.vector.y1 + boxNow.vector.y2) / 2);
+  await admin.mouse.click(boxC.x, boxC.y, { button: "right" });
+  await admin.waitForSelector(".ctx");
+  const menuText = (await admin.locator(".ctx > button").allInnerTexts()).join("|").replace(/\s+/g, " ");
+  check(menuText === "Info…|Change class ▸|Crop to new image…|Delete annotation…", `right click on an annotation opens its menu: info, change class, crop, delete (${menuText})`);
+  check(await admin.evaluate((id) => window.__editor.selectedId === id, box.id), "...and selects it");
+  // info
+  await admin.locator(".ctx > button", { hasText: "Info" }).click();
+  await admin.waitForSelector(".modal");
+  await admin.waitForFunction(() => !document.querySelector(".modal dl.info")?.textContent.includes("…"), null, { timeout: 8000 }).catch(() => null);
+  const infoText = await admin.locator(".modal dl.info").innerText();
+  check(infoText.includes("rt_teamadmin") && infoText.includes("Created by") && infoText.includes("Bounding box") && infoText.includes("px²"), `Info shows who created it, when, its type and area (${infoText.replace(/\s+/g, " ")})`);
+  await admin.keyboard.press("Escape");
+  check((await admin.locator(".modal").count()) === 0, "Escape closes the dialog");
+  // change class within compatible shapes
+  await admin.mouse.click(boxC.x, boxC.y, { button: "right" });
+  await admin.locator(".ctx > button", { hasText: "Change class" }).click();
+  const classes = await admin.locator(".ctx-sub .dd-item").allInnerTexts();
+  check(classes.some((c) => c.includes("Annotation")) && classes.some((c) => c.includes("2.25mm")) && !classes.some((c) => c.includes("e2e polygon")), `Change class offers the compatible types only (${classes.join(" | ").replace(/\n/g, " ")})`);
+  await admin.locator(".ctx-sub .dd-item", { hasText: "2.25mm" }).click();
+  await waitFor(async () => (await annotations(admin)).find((x) => x.id === box.id).annotation_type !== boxNow.annotation_type, "the class changed");
+  check((await admin.locator(".ctx").count()) === 0, "the menu closes after the choice");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).find((x) => x.id === box.id).annotation_type === boxNow.annotation_type, "undo changes the class back");
+  // a polygon has no other class to change to
+  const polyNow2 = (await annotations(admin)).find((x) => x.id === poly.id);
+  const pc = await screenOf(admin, 2300, 1500);
+  await admin.mouse.click(pc.x, pc.y, { button: "right" });
+  await admin.waitForSelector(".ctx");
+  check(await admin.locator(".ctx > button", { hasText: "Change class" }).isDisabled(), "a polygon with only one polygon type cannot change class");
+  await admin.keyboard.press("Escape");
+  check((await admin.locator(".ctx").count()) === 0, "Escape closes the menu");
+  void polyNow2;
+  // crop to a new image set
+  await admin.mouse.click(boxC.x, boxC.y, { button: "right" });
+  await admin.locator(".ctx > button", { hasText: "Crop to new image" }).click();
+  await admin.waitForSelector(".modal");
+  check((await admin.locator(".modal").innerText()).includes(`${boxNow.vector.x2 - boxNow.vector.x1} × ${boxNow.vector.y2 - boxNow.vector.y1} px`), "the crop dialog names the region");
+  await waitFor(async () => (await admin.locator(".modal select").first().locator("option").count()) >= 2, "the dialog loaded the image sets");
+  const opts = await admin.locator(".modal select").first().locator("option").allInnerTexts();
+  check(opts.some((o) => o.includes("New image set")) && opts.length >= 2, `the dialog offers the image sets and a new one (${opts.length} options)`);
+  await admin.locator(".modal select").first().selectOption({ label: "＋ New image set…" });
+  await admin.fill('.modal input[maxlength="256"]', `e2e-crops-${Date.now()}`);
+  await admin.locator(".modal .btn.primary").click();
+  await admin.waitForSelector(".toast.ok");
+  const crops = await admin.evaluate(async (w) => (await (await fetch(`/api/v2/images?name__contains=_w${w}_h&limit=200`)).json()).items, boxNow.vector.x2 - boxNow.vector.x1);
+  const mine = crops.find((c) => c.crop_source === IMAGE && c.crop_x === boxNow.vector.x1 && c.crop_y === boxNow.vector.y1);
+  check(mine && mine.width === boxNow.vector.x2 - boxNow.vector.x1 && mine.height === boxNow.vector.y2 - boxNow.vector.y1 && mine.image_set !== SET, "the crop is a new image in a new image set, with the size of the annotation");
+  const cropSet = mine.image_set;
+  // the same crop again into the same set is refused, with a way to open the existing one
+  await admin.mouse.click(boxC.x, boxC.y, { button: "right" });
+  await admin.locator(".ctx > button", { hasText: "Crop to new image" }).click();
+  await admin.waitForSelector(".modal");
+  await admin.locator(".modal select").first().selectOption({ value: String(cropSet) });
+  await admin.locator(".modal .btn.primary").click();
+  await admin.waitForSelector(".modal .error");
+  check((await admin.locator(".modal .error").innerText()).includes("before") && (await admin.locator(".modal .error .btn", { hasText: "Open it" }).count()) === 1, "cropping the same region into the same set again says so and offers the existing image");
+  await admin.keyboard.press("Escape");
+  await admin.evaluate(async (set) => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    await fetch(`/api/v2/image-sets/${set}`, { method: "DELETE", headers: { "x-csrf-token": csrf } });
+  }, cropSet);
+  // delete with confirmation
+  const before3 = (await annotations(admin)).length;
+  await admin.mouse.click(boxC.x, boxC.y, { button: "right" });
+  await admin.locator(".ctx > button", { hasText: "Delete annotation" }).click();
+  await admin.waitForSelector(".modal");
+  await admin.locator(".modal .btn", { hasText: "Cancel" }).click();
+  check((await annotations(admin)).length === before3, "Cancel keeps the annotation");
+  await admin.mouse.click(boxC.x, boxC.y, { button: "right" });
+  await admin.locator(".ctx > button", { hasText: "Delete annotation" }).click();
+  await admin.locator(".modal .btn.danger").click();
+  await waitFor(async () => (await annotations(admin)).length === before3 - 1, "confirming deleted the annotation");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === before3, "Ctrl+Z brings it back");
+
   // the type list on the left folds away (and stays folded)
   check((await admin.locator(".viewer-side .type-row").count()) > 0, "the type list shows the types");
   await admin.locator(".viewer-side .fold").click();
@@ -384,6 +464,14 @@ try {
   await tp.touchscreen.tap(tc.x, tc.y);
   await waitFor(() => tp.evaluate((id) => window.__editor.selectedId === id, created.id), "a tap selects it");
   check((await tp.locator(".toolbox .btn").first().boundingBox()).height >= 36, "tool buttons are large enough for fingers");
+  // a long press opens the annotation menu
+  const cdp = await tp.context().newCDPSession(tp);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: tc.x, y: tc.y }] });
+  await tp.waitForTimeout(800);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await tp.waitForSelector(".ctx", { timeout: 3000 });
+  check(true, "a long press on a touch screen opens the annotation menu");
+  await tp.keyboard.press("Escape");
   await tp.screenshot({ path: shots ? `${shots}/a4-tablet.png` : undefined });
 
   // ---------------------------------------------------------------------------------------- phone: viewing first

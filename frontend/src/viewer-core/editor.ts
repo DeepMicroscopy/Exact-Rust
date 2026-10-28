@@ -56,6 +56,8 @@ export interface EditorHost {
   onDelete(shape: Shape): void;
   /** a polygon operation produced these rings: the first replaces the shape, the others become annotations of the same type */
   onReplace(shape: Shape, rings: Pt[][]): void;
+  /** right click or long press on an annotation (client coordinates) */
+  onContext(shape: Shape, clientX: number, clientY: number): void;
   /** something the user should know ("select a polygon first", ...) */
   notify(msg: string): void;
   /** tool, selection or draft changed */
@@ -115,6 +117,7 @@ export class AnnotationEditor {
   private preview: Shape | null = null;
   private hover: Pt | null = null;
   private mods = { shift: false, alt: false };
+  private longPressedUntil = 0;
   private touch = false;
   private consumedPress = false;
   private lastCreate = { t: 0, at: [0, 0] as [number, number] };
@@ -147,6 +150,48 @@ export class AnnotationEditor {
     const move = (ev: PointerEvent) => this.pointerMoved(ev);
     el.addEventListener("pointermove", move);
     this.cleanup.push(() => el.removeEventListener("pointermove", move));
+    // right click, and a long press on touch screens, open the menu of the annotation under the pointer
+    const ctx = (ev: MouseEvent) => {
+      ev.preventDefault();
+      if (performance.now() < this.longPressedUntil) return; // the long press has opened it already
+      this.openContext(ev.clientX, ev.clientY, (ev as PointerEvent).pointerType);
+    };
+    let press: { timer: number; x: number; y: number } | null = null;
+    const stop = () => {
+      if (press) window.clearTimeout(press.timer);
+      press = null;
+    };
+    const down = (ev: PointerEvent) => {
+      stop();
+      if (ev.pointerType !== "touch") return;
+      const [x, y] = [ev.clientX, ev.clientY];
+      press = {
+        x,
+        y,
+        timer: window.setTimeout(() => {
+          press = null;
+          this.longPressedUntil = performance.now() + 800;
+          this.abortSession();
+          this.openContext(x, y, "touch");
+        }, 550),
+      };
+    };
+    const slide = (ev: PointerEvent) => {
+      if (press && Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) stop();
+    };
+    el.addEventListener("contextmenu", ctx);
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointermove", slide);
+    el.addEventListener("pointerup", stop);
+    el.addEventListener("pointercancel", stop);
+    this.cleanup.push(() => {
+      stop();
+      el.removeEventListener("contextmenu", ctx);
+      el.removeEventListener("pointerdown", down);
+      el.removeEventListener("pointermove", slide);
+      el.removeEventListener("pointerup", stop);
+      el.removeEventListener("pointercancel", stop);
+    });
   }
 
   destroy(): void {
@@ -491,6 +536,19 @@ export class AnnotationEditor {
   }
 
   // ---- actions -------------------------------------------------------------------------------------------------
+
+  private openContext(clientX: number, clientY: number, pointer?: string): void {
+    const r = (this.viewer.canvas as HTMLElement).getBoundingClientRect();
+    const p = this.toImage(new OpenSeadragon.Point(clientX - r.left, clientY - r.top));
+    if (!p) return;
+    const hit = hitShape(this.host.shapes(), p, this.tol(pointer));
+    if (!hit) return;
+    this.cancelDraft();
+    this.abortSession();
+    if (this.tool.kind !== "select") this.tool = { kind: "select" };
+    this.select(hit.id);
+    this.host.onContext(hit, clientX, clientY);
+  }
 
   /** Paints one more piece of the brush stroke and shows what the polygon would look like. */
   private brushStroke(s: Extract<Session, { kind: "brush" }>, to: Pt): void {

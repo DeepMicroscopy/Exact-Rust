@@ -10,6 +10,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public detail: string,
+    /** the parsed body of the error response, when it was JSON (e.g. `existing` of a 409) */
+    public body: Record<string, unknown> | null = null,
   ) {
     super(detail);
   }
@@ -29,13 +31,15 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   });
   if (!res.ok) {
     let detail = res.statusText;
+    let body: Record<string, unknown> | null = null;
     try {
       const b = await res.json();
+      body = b && typeof b === "object" ? b : null;
       detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b);
     } catch {
       /* not JSON */
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, body);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

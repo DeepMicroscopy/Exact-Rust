@@ -5,6 +5,7 @@ pub mod admin;
 pub mod annotation_media;
 pub mod annotation_writes;
 pub mod catalog;
+pub mod crop;
 pub mod image_sets;
 mod invitations;
 pub mod move_image;
@@ -39,6 +40,7 @@ pub fn routes() -> Router<AppState> {
         .merge(annotation_media::v2_routes())
         .merge(admin::routes())
         .merge(move_image::v2_routes())
+        .merge(crop::v2_routes())
         .merge(registration::v2_routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))

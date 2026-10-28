@@ -1,6 +1,7 @@
 //! Slide reading and tiling: format readers behind one `Slide` trait, the DeepZoom tile generator
 //! (port of `openslide.deepzoom.DeepZoomGenerator` incl. `limit_bounds`) and a slide handle cache.
 
+pub mod crop;
 pub mod deepzoom;
 pub mod dicom;
 pub mod formats;

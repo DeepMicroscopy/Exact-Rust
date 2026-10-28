@@ -17,6 +17,10 @@ import type { ZRange } from "../viewer-core/zFormat";
 import { RepairBanner } from "../components/RepairBanner";
 import { TimeSlider, ZSlider } from "../components/FrameControls";
 import { Toolbox } from "../components/Toolbox";
+import { AnnotationInfo } from "../components/AnnotationInfo";
+import { ConfirmDelete } from "../components/ConfirmDelete";
+import { ContextMenu } from "../components/ContextMenu";
+import { CropDialog } from "../components/CropDialog";
 import { VectorType, type Shape, type TypeStyle } from "../viewer-core/types";
 
 const PLANES = ["Axial", "Coronal", "Sagittal"];
@@ -42,6 +46,7 @@ function hostProxy(ref: { current: EditorHost }): EditorHost {
     onUpdate: (s, v) => ref.current.onUpdate(s, v),
     onDelete: (s) => ref.current.onDelete(s),
     onReplace: (s, r) => ref.current.onReplace(s, r),
+    onContext: (s, x, y) => ref.current.onContext(s, x, y),
     notify: (m) => ref.current.notify(m),
     onState: () => ref.current.onState(),
   };
@@ -77,7 +82,7 @@ export function ViewerPage() {
   const imageSet = useQuery({
     queryKey: ["image-set", imageSetId],
     enabled: imageSetId != null,
-    queryFn: () => api<{ id: number; images: number[]; product_set: number[]; main_annotation_type: number | null }>(`/api/v2/image-sets/${imageSetId}?fields=id,images,product_set,main_annotation_type`),
+    queryFn: () => api<{ id: number; images: number[]; product_set: number[]; main_annotation_type: number | null; team: number | null }>(`/api/v2/image-sets/${imageSetId}?fields=id,images,product_set,main_annotation_type,team`),
   });
   const annotations = useQuery({
     queryKey: ["annotations", id],
@@ -91,6 +96,9 @@ export function ViewerPage() {
   const [oneClick, setOneClick] = useState(false);
   const [currentTypeId, setCurrentTypeId] = useState<number | null>(null);
   const [polyOp, setPolyOp] = useState<PolyOp | null>(null);
+  const [menu, setMenu] = useState<{ shape: Shape; x: number; y: number } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "info" | "crop" | "delete"; shape: Shape } | null>(null);
+  const [cropped, setCropped] = useState<{ id: number } | null>(null);
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [sideOpen, setSideOpen] = useState(() => window.innerWidth >= 760);
@@ -163,6 +171,7 @@ export function ViewerPage() {
       onUpdate: (s, v) => void hostState.current.actions.update(s.id, v),
       onDelete: (s) => void hostState.current.actions.remove(s.id),
       onReplace: (s, rings) => void hostState.current.actions.replace(s.id, rings),
+      onContext: (shape, x, y) => setMenu({ shape, x, y }),
       notify: (m) => notify(m),
       onState: () => setTick((n) => n + 1),
     }),
@@ -284,6 +293,8 @@ export function ViewerPage() {
   }, [id, z, frames, blend, image.data, meta.data]);
 
   // ---- keyboard ---------------------------------------------------------------------------------------------------
+  const menuOpen = useRef(false);
+  menuOpen.current = !!menu || !!dialog;
   const imageIds = imageSet.data?.images ?? [];
   const step = useCallback(
     (delta: number) => {
@@ -332,7 +343,7 @@ export function ViewerPage() {
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (isTypingTarget(ev.target)) return;
+      if (isTypingTarget(ev.target) || menuOpen.current) return;
       if (kind !== "none" && frames > 1 && (ev.key === "PageUp" || ev.key === "PageDown")) {
         ev.preventDefault();
         const target = Math.round(posRef.current) + (ev.key === "PageUp" ? 1 : -1);
@@ -571,6 +582,76 @@ export function ViewerPage() {
             toggleAnnotations: () => setShowAnnotations((v) => !v),
           }}
         />
+        )}
+        {menu && (
+          <ContextMenu
+            model={{
+              x: menu.x,
+              y: menu.y,
+              typeId: menu.shape.typeId,
+              classes: palette.filter((e) => canConvert(menu.shape.vectorType, e.vectorType) && e.vectorType !== VectorType.Global),
+              canCrop: [VectorType.BoundingBox, VectorType.FixedSizeBoundingBox, VectorType.Polygon].includes(menu.shape.vectorType as 1),
+              cropWhy: "Only boxes and polygons can be cropped.",
+            }}
+            onClose={() => setMenu(null)}
+            onInfo={() => {
+              setDialog({ kind: "info", shape: menu.shape });
+              setMenu(null);
+            }}
+            onClass={(tid) => {
+              void actions.changeType(menu.shape.id, tid);
+              setMenu(null);
+            }}
+            onCrop={() => {
+              setDialog({ kind: "crop", shape: menu.shape });
+              setMenu(null);
+            }}
+            onDelete={() => {
+              setDialog({ kind: "delete", shape: menu.shape });
+              setMenu(null);
+            }}
+          />
+        )}
+        {dialog?.kind === "info" && <AnnotationInfo shape={dialog.shape} typeName={info(dialog.shape.typeId)?.name ?? `type ${dialog.shape.typeId}`} typeColor={info(dialog.shape.typeId)?.color} mpp={mpp} onClose={() => setDialog(null)} />}
+        {dialog?.kind === "delete" && (
+          <ConfirmDelete
+            what={`Delete this ${info(dialog.shape.typeId)?.name ?? "annotation"} (ID ${dialog.shape.id})?`}
+            onConfirm={() => {
+              if (editorRef.current?.selectedId === dialog.shape.id) editorRef.current.select(null);
+              void actions.remove(dialog.shape.id);
+            }}
+            onClose={() => setDialog(null)}
+          />
+        )}
+        {dialog?.kind === "crop" && image.data && (
+          <CropDialog
+            imageId={id}
+            region={(() => {
+              const [x1, y1, x2, y2] = dialog.shape.bbox;
+              const x = Math.max(0, Math.floor(x1));
+              const y = Math.max(0, Math.floor(y1));
+              return { x, y, w: Math.max(1, Math.min(image.data.width, Math.ceil(x2)) - x), h: Math.max(1, Math.min(image.data.height, Math.ceil(y2)) - y) };
+            })()}
+            frame={frames > 1 && kind !== "none" ? Math.round(posRef.current) : 0}
+            source={{ team: imageSet.data?.team ?? null, products: imageSet.data?.product_set ?? [] }}
+            mpp={mpp}
+            onClose={() => setDialog(null)}
+            onDone={(newId) => {
+              setDialog(null);
+              setCropped({ id: newId });
+            }}
+          />
+        )}
+        {cropped && (
+          <div className="toast glass ok" role="status">
+            Cropped image created.{" "}
+            <Link to={`/images/${cropped.id}`} className="btn">
+              Open it
+            </Link>{" "}
+            <button className="btn ghost" onClick={() => setCropped(null)}>
+              ✕
+            </button>
+          </div>
         )}
         {toast && (
           <div className="toast glass" role="status" onClick={() => setToast(null)}>

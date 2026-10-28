@@ -637,3 +637,14 @@ Feedback after the first trial: the tool bar took too much room, image sets have
 types, the selected annotation's type, reshape tools and image labels are drop-downs that open upwards, close on Escape / outside click, and get a filter field above 7 entries);
 the draw-type list hides while something is selected (digit keys still change its class); the left type list folds (remembered). A selected box or polygon shows its **area** (µm² / mm²
 with the image resolution, px² without; the pixel numbers in the tooltip), a line its length, live while it is dragged (`viewer-core/measure.ts`, tested). Test: `annotate.mjs`.
+
+### 5aa. UI: right-click menu of annotations; crop to new image (2026-10-28)
+Right click (long press on touch screens) on an annotation selects it and opens its menu: **Info** (type and shape, area / length, position, created by and when, last edited by and when,
+who verified, description, id), **Change class** (only types of a compatible shape: same vector type, or box <-> fixed-size box; filter above 7), **Crop to new image** (boxes and polygons; a polygon
+crops its bounding box) and **Delete annotation** (confirmation; undo brings it back). Crop asks for the target image set (the writable ones, grouped by team) or a new one (name, team; it gets the products of the source set), then
+the server crops: `POST /api/v2/images/{id}/crop {x, y, w, h, frame, image_set}` and the legacy `GET /images/api/image/crop/{id}/{x}/{y}/{z}/{w}/{h}/{set}/` (exact-sync).
+The crop is a pyramidal JPEG BigTIFF written in bands (`exact-wsi/src/crop.rs`, flat memory; resolution tags from the image's mpp), named like Django's (`<stem>x<x>_y<y>_z<z>_w<w>_h<h>.tiff`),
+the new image remembers its origin (`crop_source`, `crop_x`, `crop_y`, `crop_frame`); `edit_set` in both sets, target not locked, region inside the image, at most `CROP_MAX_PIXELS` (400 MP);
+the same crop into the same set again answers 409 with the existing image. `GET /api/v2/image-sets/writable` lists the targets. Tests: `crop.rs` (unit), `test_v2_crop.py`, `annotate.mjs`
+(menu, info, class change + undo, disabled class change for a lone polygon type, crop into a new set, repeated crop, delete with confirmation, long press). `scripts/run-e2e.sh` restores the scratch DB,
+starts the server and runs the browser tests (and leaves the server up).
