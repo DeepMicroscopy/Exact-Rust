@@ -666,12 +666,12 @@ The registration tab lists the registrations of the set's images (thumbnails of 
 Server: `GET /api/v2/image-sets/{id}/settings` (flags, counts, the caller's permissions: the page shows only what the user may do); registrations are managed by **team members** (edit rights on the source image's set) without Django model
 permissions (`POST /api/v2/images/{id}/register`, `POST /api/v2/registrations/{id}/inverse`, `DELETE /api/v2/registrations/{id}`, which also removes the pickle); the worker API keeps the model permission.
 Tests: `frontend/e2e/imageset.mjs` (create, upload by picker and by drop, duplicate, tags, filter, select, registration through a worker played by the test, inverse, delete, move, delete images, settings, lock, delete set), `test_v2_registration.py`, `test_v2_image_sets.py`.
-Not yet: side-by-side viewing of a registered pair, auxiliary files, export, statistics, rename of single images.
+Not yet: auxiliary files, export, statistics, rename of single images.
 
 ### 5ad. UI: manual registration, cross-set targets, overlays (2026-10-28)
 - `POST /api/v2/registrations/manual` `{source_image, target_image, points:[{source,target}], inverse?}`: matrix estimated from picked point pairs (1 pair: shift; 2: similarity; 3+: least-squares affine; collinear points refused), stored with `registration_points` and the RMS error, replacing the pair's registration (and its pickle) and optionally the inverse. Edit right on the source's set, read on the target.
 - New-registration dialog: automatic or manual, any target image set (images are loaded for the chosen set); the panel also names images of other sets and offers "Redo manually". `ManualRegistration`: two viewers, click a spot in the source, then the same spot in the target.
-- Viewer overlays: `OverlayControl` lists the images registered with the current one (either direction; the other direction through the inverse), one overlay at a time with an opacity slider, hidden when there is no registration. `viewer-core/overlay.ts` places the image from the affine map (scale, rotation about the centre; shear is averaged out). Not done: a side-by-side registered view, multi-frame overlays use frame 0.
+- Viewer overlays: `OverlayControl` lists the images registered with the current one (either direction; the other direction through the inverse), one overlay at a time with an opacity slider, hidden when there is no registration. `viewer-core/overlay.ts` places the image from the affine map (scale, rotation about the centre; shear is averaged out). Not done (side-by-side view of a pair was considered and dropped, the overlay is enough): multi-frame overlays use frame 0.
 - ConfirmResize shows the old (dashed) and new (solid) box around the common centre.
 - Build note: with macOS 27 the default SDK breaks the ffmpeg link step; `SDKROOT=.../MacOSX26.5.sdk` helps (scripts/run-e2e.sh uses the Xcode SDK).
 
