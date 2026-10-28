@@ -51,6 +51,7 @@ pub fn v2_routes() -> Router<AppState> {
             get(v2_convert_get).post(v2_convert_post),
         )
         .route("/api/v2/registrations/{id}/inverse", post(v2_inverse))
+        .route("/api/v2/registrations/manual", post(manual))
 }
 
 pub fn legacy_routes() -> Router<AppState> {
@@ -921,6 +922,227 @@ async fn v2_inverse(
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// manual registration
+// ---------------------------------------------------------------------------------------------------------
+
+type Pair = ([f64; 2], [f64; 2]);
+
+/// Affine `[[a, b, tx], [c, d, ty]]` with target = M * source from picked point pairs: one pair gives a translation, two a
+/// similarity (scale, rotation, translation), three or more the least-squares affine map. Returns the matrix and the RMS
+/// distance (target pixels) between the mapped source points and the target points.
+fn fit_points(pairs: &[Pair]) -> Result<([[f64; 3]; 2], f64), String> {
+    let n = pairs.len();
+    let mt = match n {
+        0 => return Err("at least one pair of points is required".into()),
+        1 => {
+            let (s, t) = pairs[0];
+            [[1.0, 0.0, t[0] - s[0]], [0.0, 1.0, t[1] - s[1]]]
+        }
+        2 => {
+            let (s0, t0) = pairs[0];
+            let (s1, t1) = pairs[1];
+            let (sx, sy) = (s1[0] - s0[0], s1[1] - s0[1]);
+            let (tx, ty) = (t1[0] - t0[0], t1[1] - t0[1]);
+            let den = sx * sx + sy * sy;
+            if den == 0.0 {
+                return Err("the two source points are identical".into());
+            }
+            // complex ratio t/s = a + ib
+            let a = (tx * sx + ty * sy) / den;
+            let b = (ty * sx - tx * sy) / den;
+            [
+                [a, -b, t0[0] - (a * s0[0] - b * s0[1])],
+                [b, a, t0[1] - (b * s0[0] + a * s0[1])],
+            ]
+        }
+        _ => {
+            // normal equations of [x y 1] * p = t, solved for both target coordinates
+            let mut ata = [[0.0f64; 3]; 3];
+            let mut atb = [[0.0f64; 3]; 2];
+            for (s, t) in pairs {
+                let r = [s[0], s[1], 1.0];
+                for i in 0..3 {
+                    for j in 0..3 {
+                        ata[i][j] += r[i] * r[j];
+                    }
+                    atb[0][i] += r[i] * t[0];
+                    atb[1][i] += r[i] * t[1];
+                }
+            }
+            let det3 = |m: &[[f64; 3]; 3]| {
+                m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                    - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                    + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+            };
+            let d = det3(&ata);
+            let scale = ata[0][0] * ata[1][1] * ata[2][2];
+            if d.abs() <= 1e-9 * scale.abs().max(1.0) {
+                return Err("the source points lie on a line".into());
+            }
+            let mut out = [[0.0; 3]; 2];
+            for (k, row) in out.iter_mut().enumerate() {
+                for (c, cell) in row.iter_mut().enumerate() {
+                    let mut mm = ata;
+                    for r in 0..3 {
+                        mm[r][c] = atb[k][r];
+                    }
+                    *cell = det3(&mm) / d;
+                }
+            }
+            out
+        }
+    };
+    let sq: f64 = pairs
+        .iter()
+        .map(|(s, t)| {
+            let px = mt[0][0] * s[0] + mt[0][1] * s[1] + mt[0][2];
+            let py = mt[1][0] * s[0] + mt[1][1] * s[1] + mt[1][2];
+            (px - t[0]).powi(2) + (py - t[1]).powi(2)
+        })
+        .sum();
+    Ok((mt, (sq / n as f64).sqrt()))
+}
+
+fn point(v: &Value) -> Option<[f64; 2]> {
+    let a = v.as_array()?;
+    let (x, y) = (a.first()?.as_f64()?, a.get(1)?.as_f64()?);
+    (a.len() == 2 && x.is_finite() && y.is_finite()).then_some([x, y])
+}
+
+/// `POST /api/v2/registrations/manual` `{"source_image", "target_image", "points": [{"source": [x, y], "target": [x, y]}], "inverse"?}`
+/// as Django's manual registration: the matrix is estimated from the point pairs (full resolution pixels) and stored with
+/// the points, replacing the registration of the pair (and its pickled quad tree). Needs edit rights on the source image's
+/// set and read access to the target. 201.
+async fn manual(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    let d = parse_object(&body)?;
+    let int = |k: &str| match d.get(k) {
+        Some(Value::Number(n)) if n.is_i64() => Ok(n.as_i64().unwrap_or(0)),
+        _ => Err(field_err(k, "An integer id is required.")),
+    };
+    let (source, target) = (int("source_image")?, int("target_image")?);
+    if source == target {
+        return Err(field_err("target_image", "Source and target must differ."));
+    }
+    editable_image(&s, &p, source).await?;
+    readable_image(&s, &p, target).await?;
+    let raw = d
+        .get("points")
+        .and_then(Value::as_array)
+        .ok_or_else(|| field_err("points", "A list of point pairs is required."))?;
+    let mut pairs = Vec::new();
+    for v in raw {
+        let (a, b) = (
+            v.get("source").and_then(point),
+            v.get("target").and_then(point),
+        );
+        match (a, b) {
+            (Some(a), Some(b)) => pairs.push((a, b)),
+            _ => {
+                return Err(field_err(
+                    "points",
+                    "Every pair needs source and target as [x, y].",
+                ))
+            }
+        }
+    }
+    let (mt, error) = fit_points(&pairs).map_err(|e| field_err("points", &e))?;
+    let matrix = json!({
+        "t_00": mt[0][0], "t_01": mt[0][1], "t_02": mt[0][2],
+        "t_10": mt[1][0], "t_11": mt[1][1], "t_12": mt[1][2],
+        "t_20": 0.0, "t_21": 0.0, "t_22": 1.0,
+    });
+    let points = Value::Array(
+        pairs
+            .iter()
+            .map(|(a, b)| json!({"source": a, "target": b}))
+            .collect(),
+    );
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
+    let old: Option<(i64, Option<String>)> = sqlx::query_as(
+        "SELECT id, file FROM images_imageregistration WHERE source_image_id = $1 AND target_image_id = $2",
+    )
+    .bind(source)
+    .bind(target)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(db_err)?;
+    let id: i64 = match &old {
+        Some((rid, _)) => {
+            sqlx::query("UPDATE images_imageregistration SET transformation_matrix = $2, registration_error = $3, registration_points = $4, runtime = 0, file = NULL WHERE id = $1")
+                .bind(rid)
+                .bind(&matrix)
+                .bind(error)
+                .bind(&points)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
+            *rid
+        }
+        None => sqlx::query_scalar("INSERT INTO images_imageregistration (source_image_id, target_image_id, transformation_matrix, registration_error, registration_points, runtime) VALUES ($1, $2, $3, $4, $5, 0) RETURNING id")
+            .bind(source)
+            .bind(target)
+            .bind(&matrix)
+            .bind(error)
+            .bind(&points)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(db_err)?,
+    };
+    // the registration the other way, replacing an existing one
+    let mut stale = Vec::new();
+    if d.get("inverse").and_then(Value::as_bool).unwrap_or(false) {
+        let inv = inverse_matrix(&matrix)?;
+        let swapped = Value::Array(
+            pairs
+                .iter()
+                .map(|(a, b)| json!({"source": b, "target": a}))
+                .collect(),
+        );
+        let back: Option<(i64, Option<String>)> = sqlx::query_as("SELECT id, file FROM images_imageregistration WHERE source_image_id = $1 AND target_image_id = $2")
+            .bind(target)
+            .bind(source)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        match back {
+            Some((rid, file)) => {
+                sqlx::query("UPDATE images_imageregistration SET transformation_matrix = $2, registration_error = $3, registration_points = $4, runtime = 0, file = NULL WHERE id = $1")
+                    .bind(rid)
+                    .bind(&inv)
+                    .bind(error)
+                    .bind(&swapped)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(db_err)?;
+                stale.extend(file);
+            }
+            None => {
+                sqlx::query("INSERT INTO images_imageregistration (source_image_id, target_image_id, transformation_matrix, registration_error, registration_points, runtime) VALUES ($1, $2, $3, $4, $5, 0)")
+                    .bind(target)
+                    .bind(source)
+                    .bind(&inv)
+                    .bind(error)
+                    .bind(&swapped)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(db_err)?;
+            }
+        }
+    }
+    tx.commit().await.map_err(db_err)?;
+    stale.extend(old.and_then(|(_, f)| f));
+    for f in stale {
+        media::remove(&s, &f).await;
+    }
+    Ok((
+        StatusCode::CREATED,
+        Json(registration_json(&s, &p, &headers, id, true).await?),
+    )
+        .into_response())
+}
+
+// ---------------------------------------------------------------------------------------------------------
 // v1 register_images
 // ---------------------------------------------------------------------------------------------------------
 
@@ -989,5 +1211,34 @@ async fn v1_register(
             return Ok((StatusCode::ACCEPTED, Json(json!({"detail": "The registration is queued; no worker finished it in time.", "job": job}))).into_response());
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    #[test]
+    fn fits_translation_similarity_and_affine() {
+        let (m, e) = fit_points(&[([10.0, 10.0], [15.0, 7.0])]).unwrap();
+        assert_eq!((m[0][2], m[1][2], e), (5.0, -3.0, 0.0));
+        // scale 2, rotation 90 degrees, shift (100, 50): (x, y) -> (-2y + 100, 2x + 50)
+        let f = |x: f64, y: f64| [-2.0 * y + 100.0, 2.0 * x + 50.0];
+        let (m, e) = fit_points(&[([0.0, 0.0], f(0.0, 0.0)), ([10.0, 5.0], f(10.0, 5.0))]).unwrap();
+        assert!(e < 1e-9 && (m[0][1] + 2.0).abs() < 1e-9 && (m[1][0] - 2.0).abs() < 1e-9);
+        // a shear needs the affine fit
+        let g = |x: f64, y: f64| [x + 0.5 * y + 3.0, 2.0 * y - 4.0];
+        let pts: Vec<Pair> = [[0.0, 0.0], [100.0, 0.0], [0.0, 80.0], [60.0, 90.0]]
+            .iter()
+            .map(|p| (*p, g(p[0], p[1])))
+            .collect();
+        let (m, e) = fit_points(&pts).unwrap();
+        assert!(e < 1e-9 && (m[0][1] - 0.5).abs() < 1e-9 && (m[1][2] + 4.0).abs() < 1e-9);
+        assert!(fit_points(&[
+            ([0.0, 0.0], [0.0, 0.0]),
+            ([1.0, 1.0], [0.0, 0.0]),
+            ([2.0, 2.0], [0.0, 0.0])
+        ])
+        .is_err());
     }
 }

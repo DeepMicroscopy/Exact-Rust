@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, listAll } from "../api/client";
 import type { Page } from "../api/client";
 import type { Registration, RegistrationJob, SetImage } from "../api/types";
 import { Modal } from "./Modal";
@@ -8,9 +8,14 @@ import { Thumb } from "./Thumb";
 
 const msg = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e));
 
-/** Starts a registration job: `source` onto `target` (a point of the source maps to the target through the result). */
-export function NewRegistrationDialog({ images, source: initialSource, target: initialTarget, onClose, onStarted }: { images: SetImage[]; source?: number; target?: number; onClose(): void; onStarted(): void }) {
+/**
+ * Registers `source` (an image of this set) onto `target` (an image of any set): a worker computes it, or the points are
+ * picked by hand (`onManual`). A point of the source maps to the target through the result.
+ */
+export function NewRegistrationDialog({ images, setId, source: initialSource, target: initialTarget, onClose, onStarted, onManual }: { images: SetImage[]; setId: number; source?: number; target?: number; onClose(): void; onStarted(): void; onManual(source: SetImage, target: SetImage): void }) {
   const [source, setSource] = useState<number>(initialSource ?? images[0]?.id ?? 0);
+  const [mode, setMode] = useState<"auto" | "manual">("auto");
+  const [targetSet, setTargetSet] = useState<number>(setId);
   const [target, setTarget] = useState<number>(initialTarget ?? images.find((i) => i.id !== (initialSource ?? images[0]?.id))?.id ?? 0);
   const [inverse, setInverse] = useState(true);
   const [advanced, setAdvanced] = useState(false);
@@ -18,7 +23,27 @@ export function NewRegistrationDialog({ images, source: initialSource, target: i
   const [ratio, setRatio] = useState(0.7);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sets = useQuery({ queryKey: ["image-set-names"], queryFn: () => listAll<{ id: number; name: string }>("/api/v2/image-sets", { fields: "id,name" }) });
+  const other = useQuery({
+    queryKey: ["images", targetSet],
+    enabled: targetSet !== setId,
+    queryFn: () => listAll<SetImage>("/api/v2/images", { image_set: targetSet, fields: "id,name,width,height,mpp,frames,image_set,time,crop_source" }),
+  });
+  const candidates = (targetSet === setId ? images : (other.data ?? [])).filter((i) => i.id !== source);
+  // keep the target valid when the set or the source changes
+  useEffect(() => {
+    if (!candidates.some((i) => i.id === target)) setTarget(candidates[0]?.id ?? 0);
+  }, [candidates, target]);
   const go = async () => {
+    if (mode === "manual") {
+      const s = images.find((i) => i.id === source);
+      const t = candidates.find((i) => i.id === target);
+      if (s && t) {
+        onManual(s, t);
+        onClose();
+      }
+      return;
+    }
     setBusy(true);
     try {
       await api(`/api/v2/images/${source}/register`, { json: { target_image: target, create_inverse_registration: inverse, ...(advanced ? { maxFeatures: features, ratio } : {}) } });
@@ -31,7 +56,17 @@ export function NewRegistrationDialog({ images, source: initialSource, target: i
   };
   return (
     <Modal title="Register two images" onClose={onClose}>
-      <p className="muted small">The server finds the transformation that maps the source image onto the target image (a worker computes it; this can take a few minutes for large slides).</p>
+      <div className="seg" role="radiogroup" aria-label="Method">
+        <button role="radio" aria-checked={mode === "auto"} className={mode === "auto" ? "active" : ""} onClick={() => setMode("auto")}>
+          Automatic
+        </button>
+        <button role="radio" aria-checked={mode === "manual"} className={mode === "manual" ? "active" : ""} onClick={() => setMode("manual")}>
+          Manual
+        </button>
+      </div>
+      <p className="muted small">
+        {mode === "auto" ? "A worker finds the transformation that maps the source image onto the target image; this can take a few minutes for large slides." : "You click the same spots in both images; the transformation is estimated from them. Works for any pair, also where the automatic registration fails."}
+      </p>
       <label className="field">
         <span>Source image</span>
         <select value={source} onChange={(e) => setSource(Number(e.target.value))}>
@@ -43,32 +78,49 @@ export function NewRegistrationDialog({ images, source: initialSource, target: i
         </select>
       </label>
       <label className="field">
+        <span>Target image set</span>
+        <select aria-label="Target image set" value={targetSet} onChange={(e) => setTargetSet(Number(e.target.value))}>
+          <option value={setId}>This image set</option>
+          {(sets.data ?? [])
+            .filter((x) => x.id !== setId)
+            .map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+        </select>
+      </label>
+      <label className="field">
         <span>Target image</span>
-        <select value={target} onChange={(e) => setTarget(Number(e.target.value))}>
-          {images.filter((i) => i.id !== source).map((i) => (
+        <select aria-label="Target image" value={target} onChange={(e) => setTarget(Number(e.target.value))}>
+          {candidates.map((i) => (
             <option key={i.id} value={i.id}>
               {i.name}
             </option>
           ))}
         </select>
       </label>
-      <label className="check">
-        <input type="checkbox" checked={inverse} onChange={(e) => setInverse(e.target.checked)} /> Also create the inverse registration (target onto source)
-      </label>
-      <button className="btn ghost small" onClick={() => setAdvanced((a) => !a)}>
-        {advanced ? "▾" : "▸"} Parameters
-      </button>
-      {advanced && (
-        <div className="params">
-          <label className="field">
-            <span>Features per tile</span>
-            <input type="number" min={32} max={4096} value={features} onChange={(e) => setFeatures(Number(e.target.value))} />
+      {mode === "auto" && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={inverse} onChange={(e) => setInverse(e.target.checked)} /> Also create the inverse registration (target onto source)
           </label>
-          <label className="field">
-            <span>Match ratio</span>
-            <input type="number" min={0.1} max={1} step={0.05} value={ratio} onChange={(e) => setRatio(Number(e.target.value))} />
-          </label>
-        </div>
+          <button className="btn ghost small" onClick={() => setAdvanced((a) => !a)}>
+            {advanced ? "▾" : "▸"} Parameters
+          </button>
+          {advanced && (
+            <div className="params">
+              <label className="field">
+                <span>Features per tile</span>
+                <input type="number" min={32} max={4096} value={features} onChange={(e) => setFeatures(Number(e.target.value))} />
+              </label>
+              <label className="field">
+                <span>Match ratio</span>
+                <input type="number" min={0.1} max={1} step={0.05} value={ratio} onChange={(e) => setRatio(Number(e.target.value))} />
+              </label>
+            </div>
+          )}
+        </>
       )}
       {error && <p className="error">{error}</p>}
       <div className="modal-actions">
@@ -76,7 +128,7 @@ export function NewRegistrationDialog({ images, source: initialSource, target: i
           Cancel
         </button>
         <button className="btn primary" onClick={() => void go()} disabled={busy || !source || !target || source === target}>
-          Start
+          {mode === "auto" ? "Start" : "Pick points…"}
         </button>
       </div>
     </Modal>
@@ -86,7 +138,7 @@ export function NewRegistrationDialog({ images, source: initialSource, target: i
 const STATUS: Record<RegistrationJob["status"], string> = { queued: "waiting for a worker", running: "computing…", done: "done", failed: "failed" };
 
 /** Registrations of the images of an image set and the jobs that compute them. */
-export function RegistrationPanel({ images, canEdit, onNew }: { images: SetImage[]; canEdit: boolean; onNew(): void }) {
+export function RegistrationPanel({ images, canEdit, onNew, onManual }: { images: SetImage[]; canEdit: boolean; onNew(): void; onManual(source: number, target: number): void }) {
   const qc = useQueryClient();
   const ids = useMemo(() => images.map((i) => i.id), [images]);
   const byId = useMemo(() => new Map(images.map((i) => [i.id, i])), [images]);
@@ -126,7 +178,14 @@ export function RegistrationPanel({ images, canEdit, onNew }: { images: SetImage
   const inverse = useMutation({ mutationFn: (id: number) => api(`/api/v2/registrations/${id}/inverse`, { method: "POST" }), onSuccess: refresh });
   const remove = useMutation({ mutationFn: (id: number) => api(`/api/v2/registrations/${id}`, { method: "DELETE" }), onSuccess: refresh });
   const redo = useMutation({ mutationFn: (r: { source: number; target: number }) => api(`/api/v2/images/${r.source}/register`, { json: { target_image: r.target } }), onSuccess: refresh });
-  const name = (id: number) => byId.get(id)?.name ?? `image ${id}`;
+  // images of other sets that take part in a registration
+  const foreign = useMemo(() => [...new Set([...(regs.data ?? []).flatMap((r) => [r.source_image, r.target_image]), ...(jobs.data ?? []).flatMap((j) => [j.source_image, j.target_image])])].filter((i) => !byId.has(i)).sort((a, b) => a - b), [regs.data, jobs.data, byId]);
+  const foreignNames = useQuery({
+    queryKey: ["image-names", foreign.join(",")],
+    enabled: foreign.length > 0,
+    queryFn: async () => new Map((await api<Page<{ id: number; name: string }>>(`/api/v2/images?id__in=${foreign.join(",")}&fields=id,name&limit=1000`)).items.map((i) => [i.id, i.name])),
+  });
+  const name = (id: number) => byId.get(id)?.name ?? foreignNames.data?.get(id) ?? `image ${id}`;
   const open = (jobs.data ?? []).filter((j) => j.status === "queued" || j.status === "running" || j.status === "failed");
   const has = (s: number, t: number) => (regs.data ?? []).some((r) => r.source_image === s && r.target_image === t);
 
@@ -136,12 +195,12 @@ export function RegistrationPanel({ images, canEdit, onNew }: { images: SetImage
         <h3>Registrations</h3>
         <span className="spacer" />
         {canEdit && (
-          <button className="btn primary" onClick={onNew} disabled={images.length < 2}>
+          <button className="btn primary" onClick={onNew} disabled={images.length < 1}>
             New registration…
           </button>
         )}
       </div>
-      {images.length < 2 && <p className="muted">An image set needs at least two images to register them.</p>}
+      {images.length < 1 && <p className="muted">This image set has no images to register.</p>}
 
       {open.length > 0 && (
         <div className="jobs">
@@ -199,9 +258,14 @@ export function RegistrationPanel({ images, canEdit, onNew }: { images: SetImage
                     Add inverse
                   </button>
                 )}
-                <button className="btn small" onClick={() => redo.mutate({ source: r.source_image, target: r.target_image })} title="Compute it again">
+                <button className="btn small" onClick={() => redo.mutate({ source: r.source_image, target: r.target_image })} title="Compute it again automatically">
                   Recompute
                 </button>
+                {byId.has(r.source_image) && (
+                  <button className="btn small" onClick={() => onManual(r.source_image, r.target_image)} title="Set it by picking points">
+                    Redo manually
+                  </button>
+                )}
                 <button className="btn small danger" onClick={() => window.confirm("Delete this registration?") && remove.mutate(r.id)}>
                   Delete
                 </button>

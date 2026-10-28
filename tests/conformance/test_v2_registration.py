@@ -213,3 +213,30 @@ def test_team_members_manage_registrations_without_model_permissions():
     assert t.delete(f"/api/v2/registrations/{inv.json()['id']}").status_code == 204
     assert t.delete(f"/api/v2/registrations/{reg}").status_code == 204
     assert t.get(f"/api/v2/registrations/{reg}").status_code == 404
+
+
+def test_manual_registration_from_point_pairs():
+    c = client()
+    pairs = lambda f: [{"source": s, "target": f(s)} for s in ([0, 0], [100, 0], [0, 80], [60, 90])]
+    # target = 2 * source + (10, 5): an affine fit finds it exactly, with the inverse created too
+    r = c.post("/api/v2/registrations/manual", json={"source_image": JSRC, "target_image": JTGT, "inverse": True, "points": pairs(lambda s: [2 * s[0] + 10, 2 * s[1] + 5])})
+    assert r.status_code == 201, r.text
+    m = r.json()["transformation_matrix"]
+    assert abs(m["t_00"] - 2) < 1e-9 and abs(m["t_12"] - 5) < 1e-9 and r.json()["registration_error"] < 1e-9
+    inv = c.get(f"/api/v2/registrations?source_image={JTGT}&target_image={JSRC}").json()["items"][0]
+    assert abs(inv["transformation_matrix"]["t_00"] - 0.5) < 1e-9
+    # a second one replaces both (one pair = a shift)
+    r2 = c.post("/api/v2/registrations/manual", json={"source_image": JSRC, "target_image": JTGT, "inverse": True, "points": [{"source": [1, 1], "target": [4, 5]}]})
+    assert r2.status_code == 201 and r2.json()["id"] == r.json()["id"]
+    assert r2.json()["transformation_matrix"]["t_02"] == 3
+    inv2 = c.get(f"/api/v2/registrations?source_image={JTGT}&target_image={JSRC}").json()["items"][0]
+    assert inv2["id"] == inv["id"] and inv2["transformation_matrix"]["t_02"] == -3
+    # invalid input
+    bad = lambda **k: c.post("/api/v2/registrations/manual", json={"source_image": JSRC, "target_image": JTGT, **k}).status_code
+    assert bad(points=[]) == 400 and bad(points=[{"source": [1, 1]}]) == 400
+    assert bad(points=[{"source": [0, 0], "target": [0, 0]}, {"source": [1, 1], "target": [0, 0]}, {"source": [2, 2], "target": [0, 0]}]) == 400  # collinear
+    assert c.post("/api/v2/registrations/manual", json={"source_image": JSRC, "target_image": JSRC, "points": pairs(lambda s: s)}).status_code == 400
+    for reg in (r.json()["id"], inv["id"]):
+        assert c.delete(f"/api/v2/registrations/{reg}").status_code == 204
+    # no right to edit the source image's set
+    assert client("rt_outsider").post("/api/v2/registrations/manual", json={"source_image": JSRC, "target_image": JTGT, "points": [{"source": [1, 1], "target": [4, 5]}]}).status_code in (403, 404)

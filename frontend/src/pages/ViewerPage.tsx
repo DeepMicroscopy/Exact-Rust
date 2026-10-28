@@ -12,6 +12,7 @@ import { buildPalette, canConvert, isDrawable, oneClickCapable, type PaletteEntr
 import { isTypingTarget, matchShortcut } from "../viewer-core/shortcuts";
 import { toShape } from "../viewer-core/shapes";
 import { loadTileSource } from "../viewer-core/tileSource";
+import { OverlayControl } from "../components/OverlayControl";
 import { ZBlender } from "../viewer-core/zBlend";
 import type { ZRange } from "../viewer-core/zFormat";
 import { RepairBanner } from "../components/RepairBanner";
@@ -582,6 +583,7 @@ export function ViewerPage() {
           </span>
         )}
         <span className="spacer" />
+        {image.data && <OverlayControl key={id} viewerRef={viewerRef} imageId={id} width={image.data.width} />}
         {hasPlanes && (
           <div className="seg">
             {PLANES.map((p, i) => (

@@ -274,3 +274,16 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .toolbar select { background: var(--glass); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
 .toolbar select option { background: #1a1a22; color: var(--text); }
 .toolbar .check { margin: 0; }
+.overlay-control { display: inline-flex; align-items: center; gap: 8px; }
+.overlay-control select { max-width: 180px; }
+.overlay-control input[type="range"] { width: 90px; }
+.size-change { color: var(--text); max-width: 100%; }
+.reg-viewers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.reg-viewer { display: flex; flex-direction: column; border: 2px solid var(--border); border-radius: 8px; overflow: hidden; }
+.reg-viewer.active { border-color: var(--purple-d); }
+.reg-viewer-title { padding: 3px 8px; font-size: 12px; text-transform: uppercase; opacity: 0.7; }
+.reg-viewer .osd { height: min(50vh, 460px); background: #111; }
+.reg-marker { width: 22px; height: 22px; border-radius: 50%; background: #e8590c; color: #fff; font: 600 12px/22px system-ui; text-align: center; border: 2px solid #fff; pointer-events: none; box-shadow: 0 0 3px #000; }
+.reg-pairs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.modal.wide { width: min(1100px, 96vw); max-width: 96vw; }
+@media (max-width: 700px) { .reg-viewers { grid-template-columns: 1fr; } }

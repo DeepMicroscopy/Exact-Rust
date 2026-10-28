@@ -190,8 +190,77 @@ try {
   await waitFor(async () => (await page.locator(".reg").count()) === 1, "a registration can be deleted");
   await page.screenshot({ path: shots ? `${shots}/s3-registration.png` : undefined });
 
-  // ---------------------------------------------------------------------------------------- move
+  // ---------------------------------------------------------------------------------------- manual registration, overlay
   otherSet = (await apiCall(root, "POST", "/api/v2/image-sets", { name: `e2e-target-${Date.now()}`, team: 1 })).body.id;
+  const setImages = (await apiCall(root, "GET", `/api/v2/images?image_set=${setId}&fields=id,name,width,height&limit=100`)).body.items;
+  const [i1, i2, i3] = ["img-1", "img-2", "img-3"].map((n) => setImages.find((i) => i.name.includes(n)));
+  // replace the registration of the pair by a manual one with scale 0.5 and a shift (20, 10): target = 0.5 * source + (20, 10)
+  await page.locator("button", { hasText: "New registration" }).click();
+  await page.waitForSelector(".modal");
+  const optionOf = (sel, n) => page.locator(`${sel} option`).evaluateAll((os, n) => os.find((o) => o.textContent.includes(n))?.value, n);
+  await page.selectOption('.modal select:near(:text("Source image"))', await optionOf('.modal', "img-1"));
+  const setOptions = await page.locator('.modal select[aria-label="Target image set"] option').allInnerTexts();
+  check(setOptions.length >= 2, `the target image set can be chosen (${setOptions.join(" | ")})`);
+  await page.selectOption('.modal select[aria-label="Target image"]', String(i2.id));
+  await page.locator('.modal [role=radio]', { hasText: "Manual" }).click();
+  await page.locator(".modal .btn.primary", { hasText: "Pick points" }).click();
+  await page.waitForSelector('[data-testid="reg-viewer-source"] canvas');
+  await page.waitForSelector('[data-testid="reg-viewer-target"] canvas');
+  await waitFor(() => page.evaluate(() => window.__reg_source?.world.getItemCount() && window.__reg_target?.world.getItemCount()), "both images are shown for picking");
+  await page.waitForTimeout(800);
+  const spot = (which, x, y) =>
+    page.evaluate(([which, x, y]) => {
+      const v = window["__reg_" + which];
+      const p = v.world.getItemAt(0).imageToViewerElementCoordinates(new window.__osd.Point(x, y));
+      const r = v.element.getBoundingClientRect();
+      return [r.left + p.x, r.top + p.y];
+    }, [which, x, y]);
+  const pts = [[0.2, 0.2], [0.8, 0.25], [0.5, 0.8]];
+  for (const [fx, fy] of pts) {
+    const [sx, sy] = [fx * i1.width, fy * i1.height];
+    const [a, b] = await spot("source", sx, sy);
+    await page.mouse.click(a, b);
+    const [c, d] = await spot("target", sx * 0.5 + 20, sy * 0.5 + 10);
+    await page.mouse.click(c, d);
+  }
+  check((await page.locator(".reg-pairs .chip").count()) === 3, "three point pairs were picked");
+  await page.locator(".modal .btn.primary", { hasText: "Save registration" }).click();
+  await page.waitForSelector('[data-testid="manual-saved"]');
+  const saved = await page.locator('[data-testid="manual-saved"]').innerText();
+  const err = Number(/error ([\d.]+)/.exec(saved)?.[1]);
+  check(err < 3, `the manual registration is saved with a small error (${saved})`);
+  await page.locator(".modal .btn", { hasText: "Close" }).click();
+  const regs = (await apiCall(root, "GET", `/api/v2/registrations?source_image=${i1.id}&target_image=${i2.id}`)).body.items;
+  check(regs.length === 1 && Math.abs(regs[0].transformation_matrix.t_00 - 0.5) < 0.02 && Math.abs(regs[0].transformation_matrix.t_02 - 20) < 8, "the stored matrix has the picked scale and shift");
+  // the viewer of img-1 offers img-2 as an overlay, placed through the inverse
+  await page.goto(`${base}/images/${i1.id}`);
+  await page.waitForSelector('[data-testid="overlay-control"]');
+  await page.selectOption("#overlay-pick", String(i2.id));
+  await waitFor(() => page.evaluate(() => window.__overlay && window.__viewer.world.getItemCount() >= 2), "the overlay image is added");
+  const placed = await page.evaluate(() => {
+    const v = window.__viewer;
+    const top = v.world.getItemAt(v.world.getItemCount() - 1);
+    const base = v.world.getItemAt(0);
+    const o = top.imageToViewportCoordinates(0, 0);
+    const b = base.viewportToImageCoordinates(o); // where the overlay's corner lies in the pixels of the current image
+    return [b.x, b.y, top.getOpacity()];
+  });
+  const mm = regs[0].transformation_matrix;
+  const want = [(0 - mm.t_02) / mm.t_00, (0 - mm.t_12) / mm.t_11];
+  check(Math.abs(placed[0] - want[0]) < 2 && Math.abs(placed[1] - want[1]) < 2, `the overlay is placed by the inverse registration (${placed.map((v) => v.toFixed(1))} vs ${want.map((v) => v.toFixed(1))})`);
+  await page.locator('[data-testid="overlay-control"] input[type=range]').fill("0.8");
+  await waitFor(() => page.evaluate(() => Math.abs(window.__overlay && window.__viewer.world.getItemAt(window.__viewer.world.getItemCount() - 1).getOpacity() - 0.8) < 0.01), "the opacity slider works");
+  await page.selectOption("#overlay-pick", "");
+  await waitFor(() => page.evaluate(() => window.__viewer.world.getItemCount() === 1), "choosing none removes the overlay");
+  // an image without registration has no overlay control
+  await page.goto(`${base}/images/${i3.id}`);
+  await page.waitForSelector(".viewer-bar");
+  await page.waitForTimeout(800);
+  check((await page.locator('[data-testid="overlay-control"]').count()) === 0, "an image without registrations shows no overlay control");
+  await page.goto(`${base}/sets/${setId}`);
+  await page.waitForSelector(".tabs");
+  await page.locator(".tile", { hasText: "img-1" }).locator("input[type=checkbox]").check({ force: true });
+  // ---------------------------------------------------------------------------------------- move
   await page.locator(".tabs button", { hasText: "Images" }).click();
   await page.locator(".toolbar .btn", { hasText: "Clear" }).click(); // the two images of the registration are still selected
   await page.locator(".tile", { hasText: "img-3" }).locator("input[type=checkbox]").check({ force: true });

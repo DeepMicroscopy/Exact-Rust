@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import type { Product, SetImage, SetSettings, Tag } from "../api/types";
 import { Dropdown } from "../components/Dropdown";
+import { ManualRegistration } from "../components/ManualRegistration";
 import { NewRegistrationDialog, RegistrationPanel } from "../components/Registrations";
 import { DeleteImagesDialog, DeleteSetDialog, MoveImagesDialog, SetSettingsDialog } from "../components/SetDialogs";
 import { Thumb } from "../components/Thumb";
@@ -25,6 +26,7 @@ export function ImageSetPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [dialog, setDialog] = useState<Dialog>(null);
   const [regPair, setRegPair] = useState<{ source?: number; target?: number }>({});
+  const [manual, setManual] = useState<{ source: number; target: number; names: [string, string] } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -297,6 +299,7 @@ export function ImageSetPage() {
         <RegistrationPanel
           images={images.data ?? []}
           canEdit={!!can?.edit_set}
+          onManual={(source, target) => setManual({ source, target, names: [images.data?.find((i) => i.id === source)?.name ?? `image ${source}`, images.data?.find((i) => i.id === target)?.name ?? `image ${target}`] })}
           onNew={() => {
             setRegPair({});
             setDialog("register");
@@ -312,12 +315,24 @@ export function ImageSetPage() {
       {dialog === "register" && images.data && (
         <NewRegistrationDialog
           images={images.data}
+          setId={id}
+          onManual={(s, t) => setManual({ source: s.id, target: t.id, names: [s.name, t.name] })}
           source={regPair.source}
           target={regPair.target}
           onClose={() => setDialog(null)}
           onStarted={() => {
             setTab("registration");
             void qc.invalidateQueries({ queryKey: ["registration-jobs"] });
+          }}
+        />
+      )}
+      {manual && (
+        <ManualRegistration
+          {...manual}
+          onClose={() => setManual(null)}
+          onSaved={() => {
+            void qc.invalidateQueries({ queryKey: ["registrations"] });
+            void qc.invalidateQueries({ queryKey: ["overlay-registrations"] });
           }}
         />
       )}
