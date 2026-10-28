@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { installGestures } from "../viewer-core/gestures";
 import OpenSeadragon from "openseadragon";
 import { useQuery } from "@tanstack/react-query";
 import type { SetImage } from "../api/types";
@@ -29,6 +30,7 @@ function PointViewer({ imageId, points, label, active, onPick }: { imageId: numb
     if (!host.current) return;
     const v = OpenSeadragon({ element: host.current, prefixUrl: "", showNavigationControl: false, showNavigator: true, navigatorPosition: "BOTTOM_RIGHT", gestureSettingsMouse: { clickToZoom: false }, maxZoomPixelRatio: 8, animationTime: 0.2 });
     viewer.current = v;
+    installGestures(v, () => false); // removed with the viewer's canvas
     (window as unknown as Record<string, unknown>)[`__reg_${label}`] = v; // used by the e2e tests
     (window as unknown as Record<string, unknown>).__osd = OpenSeadragon;
     v.addHandler("canvas-key", (e) => {
@@ -104,6 +106,7 @@ function CheckView({ source, target, matrix }: { source: number; target: number;
   useEffect(() => {
     if (!host.current || !s || !t || !map) return;
     const v = OpenSeadragon({ element: host.current, prefixUrl: "", showNavigationControl: false, showNavigator: true, navigatorPosition: "BOTTOM_RIGHT", gestureSettingsMouse: { clickToZoom: false }, maxZoomPixelRatio: 8, animationTime: 0.2 });
+    installGestures(v, () => false);
     (window as unknown as Record<string, unknown>).__reg_check = v; // used by the e2e tests
     v.addHandler("canvas-key", (e) => {
       e.preventDefaultAction = true;

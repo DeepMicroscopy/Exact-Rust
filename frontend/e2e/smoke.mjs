@@ -127,6 +127,23 @@ try {
   check(Math.abs(view1.z - view0.z) < 1e-6 && Math.abs(view1.c.x - view0.c.x) < 1e-6 && Math.abs(view1.c.y - view0.c.y) < 1e-6,
     `z-stack: zoom and position are kept when jumping along the stack (${view0.z.toFixed(3)} -> ${view1.z.toFixed(3)})`);
 
+  // track pad: a two-finger swipe moves, a pinch (Ctrl + wheel) zooms about the fingers, a mouse wheel step still zooms
+  const wheel = (init) => page.evaluate((i) => { const c = window.__viewer.canvas; const r = c.getBoundingClientRect(); c.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, ...i })); }, init);
+  const viewNow = () => page.evaluate(() => { const v = window.__viewer.viewport; return { z: v.getZoom(true), c: v.getCenter(true) }; });
+  const g0 = await viewNow();
+  await wheel({ deltaX: 40, deltaY: 12.5, deltaMode: 0 });
+  const g1 = await viewNow();
+  check(Math.abs(g1.z - g0.z) < 1e-9 && g1.c.x > g0.c.x && g1.c.y > g0.c.y, "a two-finger swipe moves the image without zooming");
+  await wheel({ deltaY: -8, ctrlKey: true, deltaMode: 0 });
+  const g2 = await viewNow();
+  check(g2.z > g1.z * 1.05, "a pinch outwards zooms in");
+  await page.waitForTimeout(800);
+  await wheel({ deltaY: 100, deltaMode: 0 });
+  await page.waitForTimeout(600);
+  const g3 = await viewNow();
+  check(g3.z < g2.z, "a mouse wheel step still zooms");
+  await page.evaluate(() => { const v = window.__viewer.viewport; v.zoomTo(v.getHomeZoom() * 3, undefined, true); v.panTo(new window.__osd.Point(0.3, 0.2 * v.getHomeBounds().height), true); });
+
   // video: horizontal slider at the bottom, no vertical one
   await openImage(69);
   await waitPainted("video renders");

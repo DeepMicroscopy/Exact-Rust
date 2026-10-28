@@ -8,6 +8,7 @@ import { ANNOTATION_FIELDS, createAnnotation } from "../api/annotations";
 import type { Annotation, AnnotationType, ImageSummary, Registration } from "../api/types";
 import { useAnnotationActions } from "../hooks/useAnnotationActions";
 import { AnnotationLayer } from "../viewer-core/annotationLayer";
+import { installGestures } from "../viewer-core/gestures";
 import { AnnotationEditor, vectorOfShape, type EditorHost, type PolyOp, type Tool, type TypeInfo } from "../viewer-core/editor";
 import { buildPalette, canConvert, isDrawable, oneClickCapable, type PaletteEntry } from "../viewer-core/palette";
 import { isTypingTarget, matchShortcut } from "../viewer-core/shortcuts";
@@ -294,6 +295,7 @@ export function ViewerPage() {
     layerRef.current = layer;
     const editor = new AnnotationEditor(viewer, layer, hostProxy(editorHostRef));
     editorRef.current = editor;
+    const removeGestures = installGestures(viewer, (e) => e.altKey || editor.brushActive());
     const masks = new MaskSet(() => layer.invalidate());
     layer.setMasks(masks);
     masksRef.current = masks;
@@ -336,6 +338,7 @@ export function ViewerPage() {
       ro.disconnect();
       cancelAnimationFrame(anim.current);
       cancelAnimationFrame(moveRaf);
+      removeGestures();
       segTool.destroy();
       masks.destroy();
       editor.destroy();
