@@ -19,6 +19,9 @@ const PRELOAD_OPACITY = 0.001;
  * is drawn opaque and plane `k + 1` on top of it with the opacity of the fractional part, which is a linear
  * cross-fade of the two focus planes. Neighbouring planes are loaded ahead of time (`k - 1 ... k + 2`) and planes far
  * away are dropped again, so memory stays bounded for stacks of any size.
+ *
+ * What is shown changes only when the plane to show has its tiles: until then the plane on display stays, so stepping
+ * through a stack does not flash empty or half-drawn planes.
  */
 export class ZBlender {
   private items = new Map<number, OpenSeadragon.TiledImage>();
@@ -26,6 +29,11 @@ export class ZBlender {
   private pos = 0;
   private dead = false;
   private ready = false;
+  /** the planes on display (opacity above the preload level), kept until the plane to show is fully loaded */
+  private shown = new Set<number>();
+  private waiting: ReturnType<typeof setTimeout> | null = null;
+  private giveUp = false;
+  private settle: ReturnType<typeof setTimeout> | null = null;
   /** how many planes after the current one are loaded ahead (more while a movie plays) */
   ahead = 2;
 
@@ -47,6 +55,8 @@ export class ZBlender {
 
   destroy(): void {
     this.dead = true;
+    if (this.waiting) clearTimeout(this.waiting);
+    if (this.settle) clearTimeout(this.settle);
     for (const item of this.items.values()) this.viewer.world.removeItem(item);
     this.items.clear();
   }
@@ -75,7 +85,7 @@ export class ZBlender {
     const wanted = this.wanted();
     if (!wanted.some((f) => this.items.has(f))) return;
     for (const [f, item] of this.items) {
-      if (!wanted.includes(f)) {
+      if (!wanted.includes(f) && !this.shown.has(f)) {
         this.viewer.world.removeItem(item);
         this.items.delete(f);
       }
@@ -99,6 +109,7 @@ export class ZBlender {
               return;
             }
             this.items.set(frame, e.item);
+            e.item.addHandler("fully-loaded-change", () => this.applyOpacity());
             // higher planes above lower planes
             [...this.items.keys()].sort((a, b) => a - b).forEach((f, i) => this.viewer.world.setItemIndex(this.items.get(f)!, i));
             this.prune();
@@ -114,16 +125,36 @@ export class ZBlender {
       .catch(() => this.pending.delete(frame));
   }
 
+  private loaded(frame: number): boolean {
+    return this.items.get(frame)?.getFullyLoaded() ?? false;
+  }
+
   /** Opacity of every loaded plane for the current position. */
   private applyOpacity(): void {
     const base = Math.floor(this.pos);
     const f = this.pos - base;
     const nearest = Math.round(this.pos);
-    for (const [frame, item] of this.items) {
+    // the plane that carries the picture must be complete before anything changes (or something is shown at all)
+    const need = this.opts.blend ? base : nearest;
+    const ready = this.loaded(need) || this.giveUp || this.shown.size === 0 || ![...this.shown].some((x) => this.items.has(x));
+    if (!ready) {
+      if (!this.waiting)
+        this.waiting = setTimeout(() => {
+          this.waiting = null;
+          this.giveUp = true; // a tile that never arrives must not freeze the view
+          this.applyOpacity();
+        }, 4000);
+      return;
+    }
+    if (this.waiting) clearTimeout(this.waiting);
+    this.waiting = null;
+    this.giveUp = false;
+    const next = new Map<number, number>();
+    for (const frame of this.items.keys()) {
       let o = PRELOAD_OPACITY;
       if (!this.opts.blend) {
         o = frame === nearest ? 1 : PRELOAD_OPACITY;
-        // the nearest plane may still be loading: show what is there instead of nothing
+        // the nearest plane is not there: show what is there instead of nothing
         if (!this.items.has(nearest) && Math.abs(frame - this.pos) < 1.0001) o = 1;
       } else if (frame === base) {
         o = 1;
@@ -133,7 +164,19 @@ export class ZBlender {
       } else if (frame === base - 1 && !this.items.has(base) && f === 0) {
         o = 1;
       }
-      item.setOpacity(o);
+      next.set(frame, o);
+    }
+    // planes that leave the display stay for a moment under the new ones (tiles fade in over a few frames)
+    const leaving = [...this.shown].filter((x) => this.items.has(x) && (next.get(x) ?? 0) <= PRELOAD_OPACITY);
+    for (const [frame, item] of this.items) item.setOpacity(leaving.includes(frame) ? 1 : (next.get(frame) ?? PRELOAD_OPACITY));
+    this.shown = new Set([...next].filter(([, o]) => o > PRELOAD_OPACITY).map(([x]) => x));
+    if (this.settle) clearTimeout(this.settle);
+    if (leaving.length) {
+      this.settle = setTimeout(() => {
+        this.settle = null;
+        for (const x of leaving) if (!this.shown.has(x)) this.items.get(x)?.setOpacity(PRELOAD_OPACITY);
+        this.prune();
+      }, 180);
     }
   }
 }

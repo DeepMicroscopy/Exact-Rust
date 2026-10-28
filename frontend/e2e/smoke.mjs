@@ -16,6 +16,7 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 // the anonymous /auth/me probe on the login screen legitimately answers 401
 page.on("console", (m) => m.type() === "error" && !m.text().includes("401") && errors.push(m.text()));
+page.on("response", (r) => r.status() === 400 && console.log("HTTP400", r.url()));
 const shot = (n) => shots && page.screenshot({ path: `${shots}/${n}.png` });
 const check = (cond, msg) => {
   if (!cond) throw new Error("FAILED: " + msg);

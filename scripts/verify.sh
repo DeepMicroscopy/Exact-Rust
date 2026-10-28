@@ -37,5 +37,7 @@ EXACT_URL=http://127.0.0.1:8002 $PY -m pytest -q test_v2_auth.py test_v2_passkey
 cd "$ROOT"; pkill -f "target/debug/exact-server"; pkill -f "manage.py runserver"
 step "schema sync: shared tables, both creation orders"
 PGBIN="${PGBIN:-/Applications/Postgres.app/Contents/Versions/latest/bin}" scripts/check-schema-sync.sh 2>&1 | grep -E "^(ok|FAIL)" || fail=1
+step "source files of the test images still on disk"
+scripts/check-images.sh && echo "ok   - all images present" || fail=1
 echo; echo "(scratch DB now contains test-created users; run 'make restore' before the next conformance run)"
 exit $fail
