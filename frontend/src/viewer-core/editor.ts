@@ -67,6 +67,8 @@ export interface EditorHost {
   onContextMany(shapes: Shape[], clientX: number, clientY: number): void;
   /** right click or long press on an annotation (client coordinates) */
   onContext(shape: Shape, clientX: number, clientY: number): void;
+  /** the type the pen annotates with when no tool is chosen (the toolbox's "Annotate with"), null when there is none */
+  penType(): number | null;
   /** something the user should know ("select a polygon first", ...) */
   notify(msg: string): void;
   /** tool, selection or draft changed */
@@ -83,7 +85,9 @@ interface Ev {
 type Session =
   | { kind: "move"; shape: Shape; start: Pt; moved: boolean }
   | { kind: "handle"; shape: Shape; handle: Handle; moved: boolean; points: Pt[]; box: Box }
-  | { kind: "drag"; typeId: number; start: Pt; cur: Pt }
+  | { kind: "drag"; typeId: number; start: Pt; cur: Pt; auto?: boolean }
+  // the pen as a brush: paints (Add) or erases (Subtract); the first polygon the brush touches is the one the stroke is about, unless one was selected
+  | { kind: "penbrush"; target: Shape | null; locked: boolean; typeId: number | null; erase: boolean; start: Pt; last: Pt; moved: boolean; swept: Ring[] }
   | { kind: "brush"; shape: Shape; erase: boolean; last: Pt; swept: Ring[]; moved: boolean }
   | { kind: "groupmove"; shapes: Shape[]; start: Pt; moved: boolean }
   | { kind: "marquee"; start: Pt; cur: Pt; additive: boolean }
@@ -153,6 +157,8 @@ export class AnnotationEditor {
   brushMode: BrushMode = "off";
   /** radius of the brush in screen pixels */
   brushRadius = 18;
+  /** what the pen's brush does: paint onto polygons (and make new ones) or erase from them */
+  penMode: "add" | "erase" = "add";
   private brushPreview: Ring[] | null = null;
   private preview: Shape | null = null;
   private hover: Pt | null = null;
@@ -514,6 +520,21 @@ export class AnnotationEditor {
     const p = this.toImage(this.at(e));
     if (!p) return;
     const t = this.tol(this.kind(e));
+    if (this.kind(e) === "pen") {
+      const plan = this.penPlan();
+      if (plan?.kind === "brush") {
+        const q = clampPoint(p, this.host.image());
+        this.session = { kind: "penbrush", target: plan.locked, locked: !!plan.locked, typeId: plan.typeId, erase: this.penMode === "erase", start: q, last: q, moved: false, swept: [] };
+        e.preventDefaultAction = true;
+        return; // a tap that does not move is no stroke: the click selects
+      }
+      if (plan?.kind === "drag") {
+        this.session = { kind: "drag", typeId: plan.typeId, start: clampPoint(p, this.host.image()), cur: p, auto: true };
+        e.preventDefaultAction = true;
+        this.consumedPress = true;
+        return;
+      }
+    }
     if (this.tool.kind === "draw") {
       const info = this.host.type(this.tool.typeId);
       if (info && this.dragDrawn(info) && !this.tool.oneClick) {
@@ -670,6 +691,10 @@ export class AnnotationEditor {
       this.strokeMove(s, e);
       return;
     }
+    if (s.kind === "penbrush") {
+      this.penBrushMove(s, this.toImage(this.at(e)));
+      return;
+    }
     const p = this.toImage(this.at(e));
     if (!p) return;
     const bounds = this.host.image();
@@ -744,6 +769,10 @@ export class AnnotationEditor {
       this.strokeEnd(s);
       return;
     }
+    if (s.kind === "penbrush") {
+      this.penBrushEnd(s);
+      return;
+    }
     if (s.kind === "marquee") {
       const tiny = dist(s.start, s.cur) * this.zoom() < 4;
       if (tiny) {
@@ -776,7 +805,8 @@ export class AnnotationEditor {
       if (keep && info) {
         const tiny = dist(s.start, s.cur) * this.zoom() < 4;
         if (!tiny) this.create(s.typeId, vectorOfShape(keep));
-      }
+        else if (s.auto) this.consumedPress = false; // the pen only tapped: that selects (or deselects) as usual
+      } else if (s.auto) this.consumedPress = false;
     } else if (s.kind === "handle" && !s.moved && s.handle.kind === "vertex" && isPathType(s.shape.vectorType)) {
       this.selectedVertex = s.handle.index; // a click on a vertex selects it (Delete removes it)
     } else if ((s.kind === "move" || s.kind === "handle") && keep && s.moved) {
@@ -900,6 +930,100 @@ export class AnnotationEditor {
     }
     this.select(hit.id);
     this.host.onContext(hit, clientX, clientY);
+  }
+
+  /**
+   * What the pen does on the next press. The pen annotates by itself, without the "Annotate with" tool being switched on (and the tool
+   * stays what it was when the pen is lifted):
+   *  - a polygon is selected: the brush works on that one only (a polygon type of any number of corners)
+   *  - another annotation is selected: the pen edits it (null: the ordinary select logic)
+   *  - nothing is selected: the "Annotate with" type decides: a polygon type brushes (the first polygon touched is the one meant, else a
+   *    new one is made), a box or line type draws by dragging; anything else is left to the select tool
+   * An explicitly chosen drawing type is used the same way; polygon types brush instead of outlining.
+   */
+  private penPlan(): { kind: "brush"; locked: Shape | null; typeId: number | null } | { kind: "drag"; typeId: number } | null {
+    if (this.suspended) return null;
+    const t = this.tool;
+    if (t.kind === "op") return null;
+    const brushable = (info: TypeInfo | undefined | null) => !!info && info.vectorType === VectorType.Polygon && info.nodeCount === 0;
+    if (t.kind === "draw") {
+      const info = this.host.type(t.typeId);
+      return info && brushable(info) ? { kind: "brush", locked: null, typeId: info.id } : null;
+    }
+    const sel = this.selected;
+    if (sel) return this.canReshape(sel) ? { kind: "brush", locked: sel, typeId: sel.typeId } : null;
+    const tid = this.host.penType();
+    const info = tid != null ? this.host.type(tid) : null;
+    if (!info) return null;
+    if (brushable(info)) return { kind: "brush", locked: null, typeId: info.id };
+    if (this.dragDrawn(info)) return { kind: "drag", typeId: info.id };
+    return null;
+  }
+
+  /** Whether the pen's brush is what the pen does now (the round buttons for mode and size are shown while this is so). */
+  get penBrush(): boolean {
+    return this.penPlan()?.kind === "brush";
+  }
+
+  togglePenMode(): void {
+    this.penMode = this.penMode === "add" ? "erase" : "add";
+    this.refresh();
+  }
+
+  /** The first polygon the brush touches is the one the stroke is about (none until then). */
+  private penTarget(s: Extract<Session, { kind: "penbrush" }>, at: Pt): void {
+    if (s.target || s.locked) return;
+    const polygons = this.host.shapes().filter((q) => q.vectorType === VectorType.Polygon && this.canReshape(q));
+    s.target = hitShape(polygons, at, this.brushRadius / this.zoom());
+  }
+
+  private penBrushMove(s: Extract<Session, { kind: "penbrush" }>, p: Pt | null): void {
+    if (!p) return;
+    const q = clampPoint(p, this.host.image());
+    if (!s.moved) {
+      if (dist(s.start, q) * this.zoom() < STROKE_START) return; // set down (a tap may wander a little), not yet stroking
+      s.moved = true;
+      s.last = s.start;
+      this.penTarget(s, s.start);
+    }
+    s.swept = union(capsule(s.last, q, this.brushRadius / this.zoom()), s.swept).rings;
+    s.last = q;
+    this.penTarget(s, q);
+    this.hover = q;
+    if (s.target) {
+      const base = ringOf(s.target);
+      const res = s.erase ? difference(base, s.swept) : union(base, s.swept);
+      this.brushPreview = res.rings;
+      this.preview = res.rings[0] ? reshape(s.target, null, res.rings[0]) : null;
+    } else if (!s.erase && s.typeId != null && s.swept[0]) {
+      this.brushPreview = s.swept;
+      this.preview = toShape(NEW_ID, s.typeId, VectorType.Polygon, true, vectorOf(s.swept[0])) as Shape;
+    } else {
+      this.brushPreview = null;
+      this.preview = null;
+    }
+    this.refresh();
+  }
+
+  private penBrushEnd(s: Extract<Session, { kind: "penbrush" }>): void {
+    this.brushPreview = null;
+    if (!s.moved) {
+      this.refresh();
+      return; // a tap
+    }
+    this.consumedPress = true;
+    if (s.target) {
+      const res = s.erase ? difference(ringOf(s.target), s.swept) : union(ringOf(s.target), s.swept);
+      this.applyRings(s.target, res);
+    } else if (!s.erase && s.typeId != null) {
+      const tol = 1 / this.zoom();
+      const b = this.host.image();
+      for (const ring of s.swept) {
+        const r = tidy(simplify(ring.map((q) => clampPoint(q, b)), tol));
+        if (r.length >= 3) this.create(s.typeId, vectorOf(r));
+      }
+    }
+    this.refresh();
   }
 
   /** Paints one more piece of the brush stroke and shows what the polygon would look like. */
@@ -1046,10 +1170,17 @@ export class AnnotationEditor {
         color: op === "scissors" ? "#ff5a5a" : op === "glue" ? "#5adc7a" : op === "knife" ? "#ffffff" : (info?.color ?? "#fff"),
       };
     }
-    if (this.brushPreview && this.brushPreview.length > 1 && sel) o.extra = { rings: this.brushPreview.slice(1), color: this.host.type(sel.typeId)?.color ?? "#fff" };
+    const ps = this.session?.kind === "penbrush" ? this.session : null;
+    const extraType = ps ? (ps.target?.typeId ?? ps.typeId) : sel?.typeId;
+    if (this.brushPreview && this.brushPreview.length > 1 && extraType != null) o.extra = { rings: this.brushPreview.slice(1), color: this.host.type(extraType)?.color ?? "#fff" };
     if (sel && this.tool.kind === "select" && this.canReshape(sel) && this.hover && (this.brushMode !== "off" || this.mods.shift || this.mods.alt)) {
       const erase = this.session?.kind === "brush" ? this.session.erase : this.mods.alt || (this.brushMode === "erase" && !this.mods.shift);
       o.brush = { at: this.hover, r: this.brushRadius / this.zoom(), erase };
+    }
+    if ((this.penHover || ps) && this.hover && this.penPlan()?.kind === "brush") {
+      // the pen is a brush: its ring shows where and how big; the crosshair of a hovering pen would only add to it
+      o.brush = { at: this.hover, r: this.brushRadius / this.zoom(), erase: ps ? ps.erase : this.penMode === "erase" };
+      o.pen = null;
     }
     if (this.tool.kind === "draw" && !this.draft && !this.session && this.hover) {
       const info = this.host.type(this.tool.typeId);

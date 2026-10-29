@@ -266,20 +266,22 @@ export class AnnotationLayer {
     }
 
     if (o.pen) {
-      // the tip of a hovering pen: a small ring with a dot, readable on light and dark
+      // where a hovering pen points: a dotted crosshair (a dot or ring would hide what is underneath), readable on light and dark
       const [cx, cy] = toPx(o.pen[0], o.pen[1]);
-      ctx.beginPath();
-      ctx.arc(cx, cy, 11, 0, Math.PI * 2);
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(0,0,0,0.55)";
-      ctx.stroke();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "#fff";
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(cx, cy, 1.8, 0, Math.PI * 2);
-      ctx.fillStyle = "#fff";
-      ctx.fill();
+      const arm = 20;
+      ctx.setLineDash([2, 4]);
+      ctx.lineCap = "butt";
+      for (const [col, wd] of [["rgba(0,0,0,0.6)", 3.5], ["#fff", 1.5]] as const) {
+        ctx.strokeStyle = col;
+        ctx.lineWidth = wd;
+        ctx.beginPath();
+        ctx.moveTo(cx - arm, cy);
+        ctx.lineTo(cx + arm, cy);
+        ctx.moveTo(cx, cy - arm);
+        ctx.lineTo(cx, cy + arm);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
     }
 
     if (o.label) {

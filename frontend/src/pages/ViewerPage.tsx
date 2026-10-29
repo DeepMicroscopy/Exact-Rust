@@ -25,7 +25,7 @@ import type { ZRange } from "../viewer-core/zFormat";
 import { RepairBanner } from "../components/RepairBanner";
 import { TimeSlider, ZSlider } from "../components/FrameControls";
 import { Toolbox } from "../components/Toolbox";
-import { PenPalette } from "../components/PenPalette";
+import { PenTools } from "../components/PenTools";
 import { AnnotationInfo } from "../components/AnnotationInfo";
 import { ConfirmDelete } from "../components/ConfirmDelete";
 import { ConfirmResize } from "../components/ConfirmResize";
@@ -77,6 +77,7 @@ function hostProxy(ref: { current: EditorHost }): EditorHost {
     onContextMany: (s, x, y) => ref.current.onContextMany(s, x, y),
     notify: (m) => ref.current.notify(m),
     onState: () => ref.current.onState(),
+    penType: () => ref.current.penType(),
   };
 }
 
@@ -254,6 +255,8 @@ export function ViewerPage() {
   }, [annotations.data, styles, annotationsHere, framed, frame1, multiFrameTypes]);
 
   // the editor reads the current data through this object, so it does not have to be rebuilt when the data changes
+  const currentTypeRef = useRef(currentTypeId);
+  currentTypeRef.current = currentTypeId;
   const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
   hostState.current = { shapes, info, hiddenAll, image: image.data, actions };
   const editorHost: EditorHost = useMemo(
@@ -271,6 +274,7 @@ export function ViewerPage() {
       onContextMany: (shapes, x, y) => setGroupMenu({ shapes, x, y }),
       notify: (m) => notify(m),
       onState: () => setTick((n) => n + 1),
+      penType: () => currentTypeRef.current,
     }),
     [notify],
   );
@@ -1016,25 +1020,15 @@ export function ViewerPage() {
         <button className="tools-toggle btn glass" onClick={() => setToolsOpen((o) => !o)} aria-expanded={toolsOpen} title="Annotation tools">
           {toolsOpen ? "✕" : "✎"}
         </button>
-        <PenPalette
-          mode={editorRef.current?.brushMode ?? "off"}
+        <PenTools
+          show={editorRef.current?.penBrush ?? false}
+          mode={editorRef.current?.penMode ?? "add"}
           radius={editorRef.current?.brushRadius ?? 18}
-          reshapable={!!editorRef.current?.selected && editorRef.current.selected.vectorType === VectorType.Polygon && !((editorRef.current.selected && info(editorRef.current.selected.typeId)?.nodeCount) || 0)}
           on={{
-            mode: (m) => {
-              if (m !== "off") {
-                // painting needs the select tool: the polygon to paint on is the selected one
-                setDrawing(false);
-                setPolyOp(null);
-                setSegTypeId(null);
-              }
-              editorRef.current?.setBrush(m);
-              syncFromEditor();
-            },
+            toggle: () => editorRef.current?.togglePenMode(),
             radius: (r) => {
               if (editorRef.current) editorRef.current.brushRadius = r;
               editorRef.current?.refresh();
-              syncFromEditor();
             },
           }}
         />
