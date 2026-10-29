@@ -1260,10 +1260,6 @@
       "data_type": "double precision",
       "nullable": false
     },
-    "registration_id": {
-      "data_type": "bigint",
-      "nullable": true
-    },
     "target_image_id": {
       "data_type": "bigint",
       "nullable": true
