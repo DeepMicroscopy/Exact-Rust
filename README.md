@@ -2,20 +2,32 @@
 
 A Rust port of [EXACT](https://github.com/DeepMicroscopy/Exact) (annotation tool for microscopy images): one binary plus
 PostgreSQL, a new React front end, and the same REST interface for [exact-sync](https://github.com/DeepMicroscopy/EXACT-Sync)
-and ML workers. **Work in progress, private for now.**
+and ML workers. **Work in progress.**
 
 The server runs against the *existing EXACT (Django) database*: no schema change except additive tables, so Django can
 be rolled back at any time. The plan, decisions, measurements and the status of every phase are in [PLAN.md](PLAN.md).
 
+![The viewer with annotations on a whole-slide image](docs/assets/screenshots/viewer.png)
+
+<p>
+<img src="docs/assets/screenshots/home.png" alt="Image sets" width="49%">
+<img src="docs/assets/screenshots/imageset.png" alt="An image set" width="49%">
+</p>
+<p>
+<img src="docs/assets/screenshots/planes.png" alt="Three-plane view of a CT volume" width="100%">
+</p>
+
+Documentation: `docs/` (published with GitHub Pages: user guide, shortcuts, administration, API, installation).
+
 ## Status
 | Area | State |
 |---|---|
-| Auth: password (all Django hash formats), tokens, sessions, passkeys, invitations, impersonation | done |
-| REST: 22 resources + legacy endpoints for exact-sync (read), `/api/v2` read API | done; writes (Phase 5) not yet |
-| Slides: OpenSlide formats, TIFF/BigTIFF, OME-TIFF z-stacks, NIfTI (3 planes), DICOM, MKT, MP4/AVI, CZI/VSI (helper) | done; iSyntax dropped |
-| Pyramid repair (damaged TIFF pyramids), level registration (CZI) | done |
-| Front end: login, image sets, viewer with z-stack blending / volume / movie controls | first slice |
-| Annotation editing, uploads, processing write API, admin screens | open |
+| Auth: password (all Django hash formats), tokens, sessions, passkeys (server side), invitations, impersonation (API) | done |
+| REST: `/api/v1` byte-compatible with EXACT incl. writes and the legacy endpoints of exact-sync; `/api/v2` for the new UI | done |
+| Slides: OpenSlide formats, TIFF/BigTIFF, OME-TIFF z-stacks, NIfTI/DICOM (three-plane view), MKT, MP4/AVI, CZI/VSI (helper) | done; iSyntax dropped |
+| Pyramid repair, level registration, image registration (manual and by worker plugins), job queue | done |
+| Front end: image sets, uploads, viewer with annotation tools and polygon operations, crops, export, registration, jobs, administration | done |
+| Deployment: Dockerfile, compose, systemd units, runbook ([docs/DEPLOY.md](docs/DEPLOY.md)) | beta on a copy of production in progress |
 
 ## Layout
 - `crates/exact-core` config, errors - `exact-db` queries and additive migrations - `exact-auth` hashes, tokens, WebAuthn

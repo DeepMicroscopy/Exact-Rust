@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fresh scratch database, the Rust server on :8002 with the built UI, then the browser tests (frontend/e2e). Leaves the server running
 # so that the result can be tried by hand; stop it with `pkill -f target/debug/exact-server`.
-# Usage: scripts/run-e2e.sh [annotate|smoke|imageset|admin|all]   (default: annotate)
+# Usage: scripts/run-e2e.sh [annotate|smoke|imageset|admin|all|serve]   (default: annotate)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 export SDKROOT="${SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
@@ -18,6 +18,7 @@ cargo build -q -p exact-server || exit 1
 for i in $(seq 1 30); do curl -s -m 2 -o /dev/null http://127.0.0.1:8002/api/version && break; sleep 1; done
 cd frontend; rc=0
 case "${1:-annotate}" in
+  serve) ;; # only the fresh database and the server (e.g. for scripts/screenshots.sh)
   annotate) SHOTS=/tmp/shots node e2e/annotate.mjs || rc=$? ;;
   smoke) SHOTS=/tmp/shots node e2e/smoke.mjs || rc=$? ;;
   imageset) SHOTS=/tmp/shots node e2e/imageset.mjs || rc=$? ;;

@@ -1,3 +1,8 @@
+---
+title: QueueRunner and the v2 claim
+nav_order: 8
+---
+
 # EXACT-QueueRunner and the v2 claim
 
 `EXACT-QueueRunner` takes a job in four steps (`QueueRunner.py`, lines 92-145): list *all* jobs, filter the free ones on

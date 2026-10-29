@@ -1,22 +1,42 @@
-# Beta installation: server + registration worker (the database is an existing PostgreSQL with the copy of the production data).
+# Beta installation: PostgreSQL + server + registration worker, like EXACT's own docker-compose (database in a container).
 #   cp deploy/exact.env.example deploy/exact.env   # fill in; IMAGE_PATH, MEDIA_ROOT, EXACT_CACHE_DIR are the host folders
 #   alias dc='docker compose --env-file deploy/exact.env -f deploy/docker-compose.yml'   # the env file also fills ${...} below
-#   dc build
+#   dc build && dc up -d db
+#   dc exec -T db pg_restore --no-owner --role="$SQL_USER" -U "$SQL_USER" -d "$SQL_DATABASE" < production.dump   # a pg_dump -Fc of EXACT (PostgreSQL 12 or newer)
 #   dc run --rm server sh -c 'exact-cli migrate --confirm-db "$SQL_DATABASE"'
 #   dc up -d
-# Inside the containers the folders are /data/images, /data/media and /data/cache; SQL_HOST must be reachable from the container
-# (host.docker.internal on Docker Desktop, the host's address on Linux).
+# The database lives in the volume `pgdata` (`dc down -v` throws it away) and is reachable by the other services as host `db`
+# (SQL_HOST in exact.env is ignored here). For psql / scripts/audit-backup.sh on the host it is published on 127.0.0.1:5433.
+# Inside the containers the folders are /data/images, /data/media and /data/cache.
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${SQL_USER:?set SQL_USER in exact.env}
+      POSTGRES_PASSWORD: ${SQL_PASSWORD:?set SQL_PASSWORD}
+      POSTGRES_DB: ${SQL_DATABASE:?set SQL_DATABASE}
+    ports: ["127.0.0.1:5433:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 12
+    restart: unless-stopped
   server:
     build: { context: .., dockerfile: deploy/Dockerfile }
     image: exact-rust
     env_file: exact.env
     environment:
+      SQL_HOST: db
+      SQL_PORT: "5432"
       EXACT_LISTEN: 0.0.0.0:8002
       IMAGE_PATH: /data/images
       MEDIA_ROOT: /data/media
       EXACT_CACHE_DIR: /data/cache
       EXACT_NIFTI_CACHE: /data/cache/nifti
+    depends_on:
+      db: { condition: service_healthy }
     ports: ["127.0.0.1:8002:8002"]   # the reverse proxy runs on the host
     volumes:
       - ${IMAGE_PATH:?set IMAGE_PATH in exact.env and export it for compose}:/data/images
@@ -34,3 +54,5 @@ services:
       - ${IMAGE_PATH}:/data/images:ro
     command: ["sh", "-c", "python /app/helpers/queue_worker.py --url http://server:8002 --user \"$WORKER_USER\" --password \"$WORKER_PASSWORD\" --exact-dir /opt/exact/exact"]
     restart: unless-stopped
+volumes:
+  pgdata:

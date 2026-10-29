@@ -1,0 +1,11 @@
+title: EXACT-Rust
+description: Annotation tool for microscopy images, a Rust port of EXACT
+remote_theme: just-the-docs/just-the-docs@v0.10.0
+color_scheme: dark
+search_enabled: true
+heading_anchors: true
+aux_links:
+  "GitHub": "https://github.com/DeepMicroscopy/Exact-Rust"
+gh_edit_link: false
+exclude:
+  - old-ui-shortcuts.md

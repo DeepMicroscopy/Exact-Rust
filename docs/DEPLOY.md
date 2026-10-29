@@ -1,3 +1,8 @@
+---
+title: Installation
+nav_order: 7
+---
+
 # Beta installation on a copy of the production data
 
 Goal: the Rust server on a **copy** of the production database and image files, next to (never instead of) the running
@@ -7,7 +12,7 @@ additive tables/columns the beta adds exist only in the copy.
 ## 0. What you need
 | | |
 |---|---|
-| Host | Linux (or macOS) with PostgreSQL 16, disk for a copy of the image store, an https host name |
+| Host | Linux (or macOS) with Docker (the database runs in a container, as in EXACT's own compose) or, for a native install, PostgreSQL 16; disk for a copy of the image store, an https host name |
 | Database | the production `pg_dump -Fc` (custom format) |
 | Files | the production image store (`IMAGE_PATH`: folders `exact_<team>_<set>/`) and `MEDIA_ROOT` (aux files, plugin icons, registration files, exports) |
 | Accounts | the PostgreSQL role the server uses; an EXACT account with the permissions `images.change_imageregistration` and `processing.change_pluginjob` for the registration worker (an existing ML/worker account or a superuser) |
@@ -20,6 +25,14 @@ production folders. Use a copy that costs no extra disk where the file system ca
 `.nii.gz` volumes, grows) on their own folders.
 
 ## 2. Database
+**With Docker** (`deploy/docker-compose.yml`): `dc up -d db` creates the empty database in the volume `pgdata` (name, user, password from `exact.env`), then
+```
+dc exec -T db pg_restore --no-owner --role="$SQL_USER" -U "$SQL_USER" -d "$SQL_DATABASE" < production.dump
+dc run --rm server sh -c 'exact-cli migrate --confirm-db "$SQL_DATABASE"'
+```
+(`dc` is the alias from the compose file's header; a dump of the production PostgreSQL 12 restores into 16.) A dump of the beta: `dc exec -T db pg_dump -Fc -U "$SQL_USER" "$SQL_DATABASE" > beta.dump`; throw it all away: `dc down -v`.
+
+**Native** (existing PostgreSQL):
 ```
 createdb -O exact exact_beta
 pg_restore --no-owner --role=exact -d exact_beta production.dump        # scripts/restore-backup.sh does the same for a scratch DB
@@ -54,7 +67,7 @@ Production has probably not applied EXACT PR #167 (migration `processing/0015_re
 ## 5. Start
 Native: build (`cargo build --release -p exact-server -p exact-cli`, needs libclang and ffmpeg dev libraries; `cd frontend && pnpm
 install && pnpm build`), install the binary and `frontend/dist`, then `deploy/exact-server.service` and `deploy/exact-worker.service`
-(systemd) or the container: `docker build -f deploy/Dockerfile -t exact-rust .` and `deploy/docker-compose.yml` (one image for the server, the worker and `exact-cli`; build it on the target architecture: `slideio` has wheels for Linux x86_64 only, an arm64 build works without CZI/VSI/DICOM and says so; tested: image builds, server starts and serves the UI and API, the worker's Python imports `qt_wsi_reg`).
+(systemd) or the container: `deploy/docker-compose.yml` starts PostgreSQL, the server and the worker (`docker build -f deploy/Dockerfile -t exact-rust .` builds the one image for the server, the worker and `exact-cli`; build it on the target architecture: `slideio` has wheels for Linux x86_64 only, an arm64 build works without CZI/VSI/DICOM and says so; tested: image builds, server starts and serves the UI and API, the worker's Python imports `qt_wsi_reg`).
 Runtime libraries for the native install: libopenslide, libav* (video), and a Python with `slideio` (CZI, VSI, DICOM) and
 `qt-wsi-registration` + `opencv`, `openslide-python` (registration) and an EXACT checkout (`REGISTRATION_EXACT_DIR`: its
 `util.slide_server` reads the slides for registration and its classes are in the stored registration files).

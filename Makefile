@@ -1,7 +1,7 @@
 # Dev workflow for the Phase 1 test environment (local scratch DB `exact_rust_test`, never the live `exact`).
 PY := reference/.venv/bin/python
 
-.PHONY: rust-release mutation-parity enroll-passkey migrate restore seed django rust test conformance sync-tests record-goldens sweep
+.PHONY: screenshots rust-release mutation-parity enroll-passkey migrate restore seed django rust test conformance sync-tests record-goldens sweep
 restore:         ## recreate exact_rust_test from the newest dump, seed test users, create Rust tables
 	scripts/restore-backup.sh && reference/seed-users.sh && $(MAKE) migrate
 migrate:         ## additive Rust tables in the scratch DB only
@@ -31,6 +31,8 @@ ui:             ## build the frontend (served by the server from frontend/dist)
 	cd frontend && pnpm install && pnpm build
 e2e:            ## browser tests against a running server (system Chrome): smoke (viewer, frames) and annotation tools; screenshots in /tmp/shots
 	cd frontend && SHOTS=/tmp/shots node e2e/smoke.mjs && SHOTS=/tmp/shots node e2e/annotate.mjs
+screenshots:    ## README / documentation screenshots into docs/assets/screenshots (restores the scratch DB, starts the server)
+	scripts/run-e2e.sh serve && cd frontend && node e2e/screenshots.mjs
 e2e-repair:     ## browser test of the one-time image repair on a scratch copy (needs make ui)
 	scripts/e2e-repair.sh
 schema-sync:    ## shared tables must have the same structure whichever side (EXACT/Django or this port) creates them
