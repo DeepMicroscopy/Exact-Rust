@@ -25,6 +25,7 @@ import type { ZRange } from "../viewer-core/zFormat";
 import { RepairBanner } from "../components/RepairBanner";
 import { TimeSlider, ZSlider } from "../components/FrameControls";
 import { Toolbox } from "../components/Toolbox";
+import { PenPalette } from "../components/PenPalette";
 import { AnnotationInfo } from "../components/AnnotationInfo";
 import { ConfirmDelete } from "../components/ConfirmDelete";
 import { ConfirmResize } from "../components/ConfirmResize";
@@ -1015,6 +1016,28 @@ export function ViewerPage() {
         <button className="tools-toggle btn glass" onClick={() => setToolsOpen((o) => !o)} aria-expanded={toolsOpen} title="Annotation tools">
           {toolsOpen ? "✕" : "✎"}
         </button>
+        <PenPalette
+          mode={editorRef.current?.brushMode ?? "off"}
+          radius={editorRef.current?.brushRadius ?? 18}
+          reshapable={!!editorRef.current?.selected && editorRef.current.selected.vectorType === VectorType.Polygon && !((editorRef.current.selected && info(editorRef.current.selected.typeId)?.nodeCount) || 0)}
+          on={{
+            mode: (m) => {
+              if (m !== "off") {
+                // painting needs the select tool: the polygon to paint on is the selected one
+                setDrawing(false);
+                setPolyOp(null);
+                setSegTypeId(null);
+              }
+              editorRef.current?.setBrush(m);
+              syncFromEditor();
+            },
+            radius: (r) => {
+              if (editorRef.current) editorRef.current.brushRadius = r;
+              editorRef.current?.refresh();
+              syncFromEditor();
+            },
+          }}
+        />
         {toolsOpen && (
         <Toolbox
           palette={drawable}

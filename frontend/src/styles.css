@@ -391,3 +391,19 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .mpr-slider:hover, .mpr-slider:focus { opacity: 1; }
 .mpr-info { padding: 12px 16px; overflow: auto; }
 @media (max-width: 800px) { .mpr-grid { grid-template-columns: 1fr; grid-template-rows: repeat(4, minmax(240px, 1fr)); overflow: auto; } }
+
+/* the pen palette: reached with the hand that does not draw */
+.pen-palette { position: absolute; top: 50%; transform: translateY(-50%); z-index: 6; width: 104px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: rgba(15, 15, 20, 0.82); }
+.pen-palette.left, .pen-palette-handle.left { left: 12px; }
+.pen-palette.right, .pen-palette-handle.right { right: 12px; }
+.pen-palette-handle { position: absolute; top: 50%; transform: translateY(-50%); z-index: 6; width: 48px; height: 48px; padding: 0; font-size: 1.25rem; }
+.pp-modes { display: flex; flex-direction: column; gap: 6px; }
+.pp-mode { min-height: 52px; border-radius: 10px; border: 1px solid var(--border); background: var(--glass); color: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+.pp-mode.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+.pp-size { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0; }
+.pp-size input[type="range"] { width: 100%; accent-color: var(--purple); }
+.pp-ring { border: 2px solid var(--purple); border-radius: 50%; display: block; max-width: 84px; max-height: 84px; }
+.pp-note { margin: 0; font-size: 0.75rem; color: var(--muted, #9a9aa8); text-align: center; }
+.pp-foot { display: flex; justify-content: space-between; gap: 6px; }
+.pp-small { flex: 1; min-height: 36px; padding: 0; }
+@media (max-width: 760px) { .pen-palette { width: 92px; } }

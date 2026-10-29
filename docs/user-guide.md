@@ -66,6 +66,10 @@ The toolbox at the bottom changes with what you are doing.
 * **Polygons**: select one, hold `Shift` and drag to add area with a brush, `Alt` and drag to erase. `S` cuts an area away
   (scissors), `G` adds one (glue), `D` splits along a line (knife); with these you can outline freehand as well (the knife cuts
   where you drew, as soon as you lift the pen). On a touch screen use the buttons in the toolbox.
+* **Pen palette**: once you have used a pen, a palette stays at the edge of the screen for the hand that does not draw. **New**
+  draws and selects as usual, **Add** and **Subtract** make the pen paint area onto, or erase it from, the selected polygon, and
+  the slider sets the brush size. The arrows button moves it to the other side, ✕ hides it (the ✎ handle brings it back). A
+  browser cannot see the squeeze or double tap of an Apple Pencil, which is why the palette is on the screen.
 * **Several at once**: `Ctrl+A` selects all, `Ctrl+C` / `Ctrl+V` copy and paste, `Delete` removes the selection.
 * **Right click** (long press on a touch screen) on an annotation opens its menu: *Info* (who created and edited it, area,
   position), *Change class*, *Crop to new image* and *Delete*.

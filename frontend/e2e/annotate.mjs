@@ -670,6 +670,48 @@ try {
   await waitFor(async () => (await annotations(admin)).length === before2 + 1, "a freehand knife stroke splits the polygon, too");
   await admin.keyboard.press("Control+z");
   await waitFor(async () => (await annotations(admin)).length === before2 && JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "...(undone)");
+
+  // the pen palette: it appears once a pen was used, sets what the pen does and the brush size
+  const palette = admin.locator('[data-testid="pen-palette"]');
+  check((await palette.count()) === 0, "no pen palette before a pen was used");
+  await penCdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: loopAt[0].x, y: loopAt[0].y, pointerType: "pen", button: "left", buttons: 0 });
+  await waitFor(async () => (await palette.count()) === 1, "the pen palette appears when a pen has been used");
+  await admin.evaluate((id) => window.__editor.select(id), poly.id);
+  const palAreaOf = (v) => { const n = Object.keys(v).filter((k) => /^x\d+$/.test(k)).length; let a = 0; for (let i = 1; i <= n; i++) { const j = i % n + 1; a += v[`x${i}`] * v[`y${j}`] - v[`x${j}`] * v[`y${i}`]; } return Math.abs(a / 2); };
+  const palStroke = async (a, b) => {
+    const [pa, pb] = [await screenOf(admin, a[0], a[1]), await screenOf(admin, b[0], b[1])];
+    const at = (t) => ({ x: pa.x + (pb.x - pa.x) * t, y: pa.y + (pb.y - pa.y) * t, pointerType: "pen", button: "left" });
+    await penCdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...at(0), buttons: 0 });
+    await penCdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...at(0), buttons: 1, clickCount: 1, force: 0.5 });
+    for (let t = 1; t <= 12; t++) await penCdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...at(t / 12), buttons: 1, force: 0.5 });
+    await penCdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at(1), buttons: 0, clickCount: 1 });
+  };
+  const palArea0 = palAreaOf(pStart.vector);
+  await palette.locator(".pp-mode", { hasText: "Add" }).click();
+  check((await admin.evaluate(() => window.__editor.brushMode)) === "add", "Add on the palette switches the brush to adding");
+  await palStroke([2500, 1500], [2800, 1500]);
+  const palGrown = await waitFor(async () => { const v = (await polyNow()).vector; return palAreaOf(v) > palArea0 * 1.05 ? v : null; }, "a pen stroke with Add on paints area onto the polygon");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "...(undone)");
+  await admin.evaluate((id) => window.__editor.select(id), poly.id);
+  await palette.locator(".pp-mode", { hasText: "Subtract" }).click();
+  check((await admin.evaluate(() => window.__editor.brushMode)) === "erase", "Subtract switches it to erasing");
+  const palSizeBefore = await admin.evaluate(() => window.__editor.brushRadius);
+  await palette.locator('input[type="range"]').fill("60");
+  check((await admin.evaluate(() => window.__editor.brushRadius)) === 60 && palSizeBefore !== 60, "the size slider sets the brush size");
+  await palStroke([2000, 1250], [2300, 1250]);
+  await waitFor(async () => { const v = (await polyNow()).vector; return palAreaOf(v) < palArea0 * 0.97 ? v : null; }, "a pen stroke with Subtract erases area from the polygon");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "...(undone)");
+  await palette.locator(".pp-mode", { hasText: "New" }).click();
+  check((await admin.evaluate(() => window.__editor.brushMode)) === "off", "New switches the brush off again");
+  await palette.locator('[aria-label="Other side"]').click();
+  check((await palette.evaluate((e) => e.classList.contains("right"))) === true, "the palette can move to the other side");
+  await palette.locator('[aria-label="Hide the pen palette"]').click();
+  await waitFor(async () => (await admin.locator('[data-testid="pen-palette-open"]').count()) === 1, "...and be hidden, leaving a handle to bring it back");
+  await admin.locator('[data-testid="pen-palette-open"]').click();
+  await waitFor(async () => (await palette.count()) === 1, "...which opens it again");
+  await admin.evaluate((id) => window.__editor.select(id), poly.id); // the checks below go on with the polygon selected
   await admin.screenshot({ path: shots ? `${shots}/a7-ops.png` : undefined });
 
   // the Reshape menu switches the brush on and off (the way for touch screens, which have no Shift / Alt)
