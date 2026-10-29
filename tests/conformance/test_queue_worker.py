@@ -48,9 +48,9 @@ def psql(sql):
 def folder(tmp_path):
     name = f"shift-{uuid.uuid4().hex[:6]}"
     (tmp_path / "shift.py").write_text(textwrap.dedent(PLUGIN).format(name=name))
-    psql("update exact_rust_registration_job set status = 'failed' where status in ('queued', 'running')")
+    psql("update processing_pluginjob set error_message = 'test cleanup' where error_message is null and processing_complete < 100 and plugin_id in (select id from processing_plugin where plugin_type = 2)")
     yield tmp_path, name
-    psql(f"delete from exact_rust_registration_job where plugin_id in (select id from processing_plugin where name = '{name}')")
+    psql(f"delete from processing_pluginjob where plugin_id in (select id from processing_plugin where name = '{name}')")
     psql(f"delete from processing_plugin where name = '{name}'")
     c = client()
     for r in c.get("/api/v2/registrations", params={"source_image": JSRC, "target_image": JTGT}).json()["items"]:

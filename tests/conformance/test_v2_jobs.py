@@ -6,7 +6,7 @@ import uuid
 
 import httpx
 import pytest
-from common import BASE, PW
+from common import BASE, PW, drop_registration_plugin, registration_plugin
 
 pytestmark = pytest.mark.skipif(httpx.get(BASE + "/api/version").status_code != 200, reason="server has no /api/version (Django)")
 
@@ -27,9 +27,11 @@ def psql(sql):
 
 @pytest.fixture(autouse=True)
 def quiet_queue():
-    psql("update exact_rust_registration_job set status = 'failed' where status in ('queued', 'running')")
+    psql("update processing_pluginjob set error_message = 'test cleanup' where error_message is null and processing_complete < 100 and plugin_id in (select id from processing_plugin where plugin_type = 2)")
+    registration_plugin(client())
     yield
-    psql("delete from exact_rust_registration_job where source_image_id = 15")
+    psql("delete from processing_pluginjob where image_id = 15 and plugin_id in (select id from processing_plugin where plugin_type = 2)")
+    drop_registration_plugin()
 
 
 @pytest.fixture
@@ -150,3 +152,15 @@ def test_a_job_can_concern_several_images_in_order(plugin):
     assert p["image"] == IMAGE and p["images"] == [IMAGE, 15]
     assert any(j["id"] == pj["id"] for j in listed(c, kind="plugin", image=15, limit=500))
     c.delete(f"/api/v2/plugin-jobs/{pj['id']}")
+
+
+def test_a_registration_job_is_a_plugin_job_of_two_images():
+    c = client("aubreville")
+    rj = registration_job(c)
+    row = subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc",
+                          f"select q.image_id, pl.plugin_type, (select string_agg(ji.image_id::text, ',' order by ji.position) from processing_pluginjobimage ji where ji.job_id = q.id) "
+                          f"from processing_pluginjob q join processing_plugin pl on pl.id = q.plugin_id where q.id = {rj['id']}"], capture_output=True, text=True).stdout.strip()
+    assert row == f"{JSRC}|2|{JSRC},{JTGT}"
+    # asking again for the same pair reuses the open job
+    assert registration_job(c)["id"] == rj["id"]
+    c.delete(f"/api/v2/jobs/registration/{rj['id']}")

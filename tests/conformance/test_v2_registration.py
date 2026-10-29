@@ -9,7 +9,7 @@ import time
 
 import httpx
 import pytest
-from common import BASE, PW
+from common import BASE, PW, drop_registration_plugin, registration_plugin
 
 pytestmark = pytest.mark.skipif(httpx.get(BASE + "/api/version").status_code != 200, reason="server has no /api/version (Django)")
 
@@ -49,10 +49,12 @@ def fake_worker(c, name, error=0.5, fail=False):
 def drain_queue():
     c = client()
     subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc",
-                    "update exact_rust_registration_job set status = 'failed' where status in ('queued', 'running')"], capture_output=True)
+                    "update processing_pluginjob set error_message = 'test cleanup' where error_message is null and processing_complete < 100 and plugin_id in (select id from processing_plugin where plugin_type = 2)"], capture_output=True)
+    registration_plugin(c)
     while fake_worker(c, "drain", fail=True):
         pass
     yield
+    drop_registration_plugin()
     for r in c.get("/api/v2/registrations", params={"source_image": JSRC, "target_image": JTGT}).json()["items"]:
         c.delete(f"/api/v2/registrations/{r['id']}")
 
@@ -188,7 +190,9 @@ def test_real_worker_registers_and_the_helper_converts_through_the_pickle():
     c = client()
     py = os.environ.get("REGISTRATION_PYTHON", "/opt/miniconda3/envs/env311/bin/python")
     src, tgt = int(os.environ.get("REG_SRC", 43)), int(os.environ.get("REG_TGT", 2))
-    j = c.post(f"/api/v2/images/{src}/register", json={"target_image": tgt, "maxFeatures": 256, "thumbnail_size": [512, 512]}).json()
+    # the worker serves its own plugin (the same name and package as it announces), a job names the plugin it is for
+    plugin = c.post("/api/v2/plugins/register", json={"name": "Quad-tree SIFT registration", "author": "tests", "package": "qt_wsi_reg", "plugin_type": 2}).json()
+    j = c.post(f"/api/v2/images/{src}/register", json={"target_image": tgt, "plugin": plugin["id"], "maxFeatures": 256, "thumbnail_size": [512, 512]}).json()
     env = {**os.environ, "EXACT_URL": BASE, "EXACT_USER": "aubreville", "EXACT_PASSWORD": PW,
            "EXACT_DIR": os.environ.get("REGISTRATION_EXACT_DIR", str(pathlib.Path.home() / "code/Exact/exact"))}
     out = subprocess.run([py, str(ROOT / "helpers/registration_worker.py"), "--once", "--name", "e2e"], env=env, capture_output=True, text=True, timeout=1200)

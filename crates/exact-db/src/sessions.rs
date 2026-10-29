@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use exact_core::Result;
 use sqlx::PgPool;
 
-pub const MIGRATIONS: [&str; 7] = [
+pub const MIGRATIONS: [&str; 8] = [
     include_str!("../migrations/0001_sessions.sql"),
     include_str!("../migrations/0002_session_impersonation.sql"),
     include_str!("../migrations/0003_challenges_invitations.sql"),
@@ -14,6 +14,7 @@ pub const MIGRATIONS: [&str; 7] = [
     include_str!("../migrations/0005_pyramid_registration.sql"),
     include_str!("../migrations/0006_registration_jobs.sql"),
     include_str!("../migrations/0007_registration_plugins.sql"),
+    include_str!("../migrations/0008_registration_jobs_in_pluginjob.sql"),
 ];
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {

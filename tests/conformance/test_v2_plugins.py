@@ -35,10 +35,10 @@ def psql(sql):
 
 @pytest.fixture(autouse=True)
 def quiet_queue():
-    psql("delete from exact_rust_registration_job where source_image_id = 15")
-    psql("update exact_rust_registration_job set status = 'failed' where status in ('queued', 'running')")
+    psql("delete from processing_pluginjob where image_id = 15 and plugin_id in (select id from processing_plugin where plugin_type = 2)")
+    psql("update processing_pluginjob set error_message = 'test cleanup' where error_message is null and processing_complete < 100 and plugin_id in (select id from processing_plugin where plugin_type = 2)")
     yield
-    psql("delete from exact_rust_registration_job where source_image_id = 15")
+    psql("delete from processing_pluginjob where image_id = 15 and plugin_id in (select id from processing_plugin where plugin_type = 2)")
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def plugin():
     r = c.post("/api/v2/plugins/register", json={"name": name, "author": "t", "package": "t_pkg", "plugin_type": 2, "parameters_schema": SCHEMA})
     assert r.status_code == 201, r.text
     yield r.json()
-    psql(f"delete from exact_rust_registration_job where plugin_id = {r.json()['id']}")
+    psql(f"delete from processing_pluginjob where plugin_id = {r.json()['id']}")
     c.delete(f"/api/v2/plugins/{r.json()['id']}")
 
 

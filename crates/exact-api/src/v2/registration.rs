@@ -1,8 +1,10 @@
 //! Image registration: jobs, the worker API, coordinate conversion and inverse registrations.
 //!
-//! Computing a registration (`qt-wsi-registration`, Python) is done by a worker that claims jobs from the queue
-//! `exact_rust_registration_job`; the server owns storage, permissions, the job lifecycle, the geometry
-//! (`convert_coodinates`, `create_inverse_registration`) and the compat endpoints.
+//! Computing a registration (`qt-wsi-registration`, Python) is done by a worker that claims jobs from the queue: jobs of
+//! registration plugins in `processing_pluginjob` (`image` and the position 0 of `processing_pluginjobimage` is the image that
+//! is registered, position 1 the image it is registered onto; the result is the `ImageRegistration` of the pair, which a new
+//! result overwrites). The server owns storage, permissions, the job lifecycle, the geometry (`convert_coodinates`,
+//! `create_inverse_registration`) and the compat endpoints.
 //!
 //! v2: `POST /api/v2/images/{id}/register` (202, answers the job), `GET /api/v2/registration-jobs[/{id}]`,
 //!     worker: `POST /api/v2/registration-jobs/claim`, `POST .../{id}/complete`, `POST .../{id}/fail`,
@@ -194,9 +196,16 @@ fn job_params(d: &Map<String, Value>, schema_names: &[String]) -> Value {
 
 /// The plugin that computes a job (`plugin`: a registration plugin; none: the default one) and the parameters it accepts
 /// (those the plugin's schema names, plus `create_inverse_registration`).
-async fn plan(s: &AppState, d: &Map<String, Value>) -> ApiResult<(Option<i32>, Value)> {
-    let plugin: Option<i32> = match d.get("plugin") {
-        None | Some(Value::Null) => crate::v2::plugins::default_registration_plugin(s).await?,
+async fn plan(s: &AppState, d: &Map<String, Value>) -> ApiResult<(i32, Value)> {
+    let plugin: i32 = match d.get("plugin") {
+        None | Some(Value::Null) => crate::v2::plugins::default_registration_plugin(s)
+            .await?
+            .ok_or_else(|| {
+                ApiError::detail(
+                    StatusCode::CONFLICT,
+                    "No registration plugin is registered: start a registration worker (helpers/queue_worker.py) first.",
+                )
+            })?,
         Some(v) => {
             let id = v
                 .as_i64()
@@ -211,23 +220,18 @@ async fn plan(s: &AppState, d: &Map<String, Value>) -> ApiResult<(Option<i32>, V
             if !ok {
                 return Err(bad("plugin: there is no registration plugin with this id."));
             }
-            Some(id as i32)
+            id as i32
         }
     };
-    let names = match plugin {
-        Some(id) => {
-            let schema: Option<Value> =
-                sqlx::query_scalar("SELECT parameters_schema FROM processing_plugin WHERE id = $1")
-                    .bind(id)
-                    .fetch_one(&s.pool)
-                    .await
-                    .map_err(db_err)?;
-            schema
-                .map(|v| crate::v2::plugins::schema_names(&v))
-                .unwrap_or_default()
-        }
-        None => Vec::new(),
-    };
+    let schema: Option<Value> =
+        sqlx::query_scalar("SELECT parameters_schema FROM processing_plugin WHERE id = $1")
+            .bind(plugin)
+            .fetch_one(&s.pool)
+            .await
+            .map_err(db_err)?;
+    let names = schema
+        .map(|v| crate::v2::plugins::schema_names(&v))
+        .unwrap_or_default();
     Ok((plugin, job_params(d, &names)))
 }
 
@@ -238,17 +242,17 @@ async fn enqueue(
     source: i64,
     target: i64,
     params: Value,
-    plugin: Option<i32>,
+    plugin: i32,
 ) -> ApiResult<i64> {
     if source == target {
         return Err(bad("Source and target image have to differ."));
     }
     readable_image(s, p, source).await?;
     readable_image(s, p, target).await?;
-    let open: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM exact_rust_registration_job WHERE source_image_id = $1 AND target_image_id = $2 \
-         AND status IN ('queued', 'running') ORDER BY id LIMIT 1",
-    )
+    let open: Option<i64> = sqlx::query_scalar(&job_select(
+        "WHERE j.source = $1 AND j.target = $2 AND j.status IN ('queued', 'running') ORDER BY j.id LIMIT 1",
+        "j.id",
+    ))
     .bind(source)
     .bind(target)
     .fetch_optional(&s.pool)
@@ -257,42 +261,83 @@ async fn enqueue(
     if let Some(id) = open {
         return Ok(id);
     }
-    sqlx::query_scalar(
-        "INSERT INTO exact_rust_registration_job (source_image_id, target_image_id, params, created_by, plugin_id) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
+    let id: i32 = sqlx::query_scalar(
+        "INSERT INTO processing_pluginjob (plugin_id, image_id, creator_id, parameters, processing_complete, created_time, updated_time, eta_time) \
+         VALUES ($1, $2::bigint, $3::bigint, $4, 0, now(), now(), now()) RETURNING id",
     )
-    .bind(source)
-    .bind(target)
-    .bind(params)
-    .bind(p.user.id)
     .bind(plugin)
-    .fetch_one(&s.pool)
+    .bind(source)
+    .bind(p.user.id)
+    .bind(params)
+    .fetch_one(&mut *tx)
     .await
-    .map_err(db_err)
-}
-
-async fn job_json(s: &AppState, id: i64) -> ApiResult<Value> {
-    let r = sqlx::query(
-        "SELECT id, source_image_id, target_image_id, params, status, error, worker, registration_id, created_by, \
-         created_at, started_at, finished_at, plugin_id FROM exact_rust_registration_job WHERE id = $1",
+    .map_err(db_err)?;
+    sqlx::query(
+        "INSERT INTO processing_pluginjobimage (job_id, image_id, position) VALUES ($1, $2, 0), ($1, $3, 1)",
     )
     .bind(id)
-    .fetch_optional(&s.pool)
+    .bind(source)
+    .bind(target)
+    .execute(&mut *tx)
     .await
-    .map_err(db_err)?
-    .ok_or_else(|| ApiError::not_found("Not found."))?;
+    .map_err(db_err)?;
+    tx.commit().await.map_err(db_err)?;
+    Ok(id as i64)
+}
+
+/// `SELECT {columns} FROM <registration jobs> j {tail}`: the jobs of registration plugins that have their two images, with
+/// `id, source, target, params, status, error, worker, created_by, created_at, updated, plugin, registration` (the
+/// registration of the pair, if there is one) and the status words of `GET /api/v2/jobs`.
+pub(crate) fn job_select(tail: &str, columns: &str) -> String {
+    format!(
+        "SELECT {columns} FROM (SELECT q.id::bigint AS id, q.image_id::bigint AS source, t.image_id::bigint AS target, \
+                COALESCE(q.parameters, '{{}}'::jsonb) AS params, ({status}) AS status, q.error_message AS error, \
+                NULLIF(q.attached_worker, '') AS worker, q.creator_id::bigint AS created_by, q.created_time AS created_at, \
+                q.updated_time AS updated, q.plugin_id AS plugin, \
+                (SELECT r.id::bigint FROM images_imageregistration r WHERE r.source_image_id = q.image_id AND r.target_image_id = t.image_id LIMIT 1) AS registration \
+             FROM processing_pluginjob q JOIN processing_plugin pl ON pl.id = q.plugin_id AND pl.plugin_type = 2 \
+             JOIN processing_pluginjobimage t ON t.job_id = q.id AND t.position = 1) j {tail}",
+        status = crate::v2::jobs::plugin_job_status_sql()
+    )
+}
+
+/// The columns `row_json` reads.
+const JOB_COLUMNS: &str = "j.id, j.source, j.target, j.params, j.status, j.error, j.worker, j.registration, j.created_by, \
+                           j.created_at, j.updated, j.plugin";
+
+async fn job_json(s: &AppState, id: i64) -> ApiResult<Value> {
+    let r = sqlx::query(&job_select("WHERE j.id = $1", JOB_COLUMNS))
+        .bind(id)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?
+        .ok_or_else(|| ApiError::not_found("Not found."))?;
     Ok(row_json(&r))
 }
 
+/// A job as the registration endpoints show it. The tables keep no start and end time of their own: a running job was
+/// touched when it started, a finished one when it ended.
 fn row_json(r: &sqlx::postgres::PgRow) -> Value {
-    let t = |i: usize| {
-        r.get::<Option<chrono::DateTime<chrono::Utc>>, _>(i)
-            .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Micros, true))
+    let status = r.get::<String, _>(4);
+    let updated = r
+        .get::<chrono::DateTime<chrono::Utc>, _>(10)
+        .to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
+    let created = r
+        .get::<chrono::DateTime<chrono::Utc>, _>(9)
+        .to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
+    let (started, finished) = match status.as_str() {
+        "running" => (Some(updated), None),
+        "done" | "failed" => (None, Some(updated)),
+        _ => (None, None),
     };
     json!({
         "id": r.get::<i64, _>(0), "source_image": r.get::<i64, _>(1), "target_image": r.get::<i64, _>(2),
-        "params": r.get::<Value, _>(3), "status": r.get::<String, _>(4), "error": r.get::<Option<String>, _>(5),
-        "worker": r.get::<Option<String>, _>(6), "registration": r.get::<Option<i64>, _>(7), "created_by": r.get::<Option<i64>, _>(8),
-        "created_at": t(9), "started_at": t(10), "finished_at": t(11), "plugin": r.get::<Option<i32>, _>(12),
+        "params": r.get::<Value, _>(3), "error": r.get::<Option<String>, _>(5),
+        "worker": r.get::<Option<String>, _>(6),
+        "registration": if status == "done" { r.get::<Option<i64>, _>(7) } else { None },
+        "status": status, "created_by": r.get::<Option<i64>, _>(8),
+        "created_at": created, "started_at": started, "finished_at": finished, "plugin": r.get::<i32, _>(11),
     })
 }
 
@@ -360,13 +405,12 @@ async fn v2_register(
 }
 
 async fn job_visible(s: &AppState, p: &Principal, id: i64) -> ApiResult<()> {
-    let row: Option<(i64, i64)> = sqlx::query_as(
-        "SELECT source_image_id, target_image_id FROM exact_rust_registration_job WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&s.pool)
-    .await
-    .map_err(db_err)?;
+    let row: Option<(i64, i64)> =
+        sqlx::query_as(&job_select("WHERE j.id = $1", "j.source, j.target"))
+            .bind(id)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?;
     let (a, b) = row.ok_or_else(|| ApiError::not_found("Not found."))?;
     readable_image(s, p, a)
         .await
@@ -394,14 +438,13 @@ async fn jobs_list(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> A
             .into_owned()
             .collect();
     let v = p.viewer();
-    let rows = sqlx::query(
-        "SELECT j.id, j.source_image_id, j.target_image_id, j.params, j.status, j.error, j.worker, j.registration_id, j.created_by, \
-         j.created_at, j.started_at, j.finished_at, j.plugin_id FROM exact_rust_registration_job j \
-         WHERE ($1::text IS NULL OR j.status = $1) AND ($2::bigint IS NULL OR j.source_image_id = $2 OR j.target_image_id = $2) \
-           AND j.source_image_id IN (SELECT i.id FROM images_image i JOIN images_imageset st ON st.id = i.image_set_id \
+    let rows = sqlx::query(&job_select(
+        "WHERE ($1::text IS NULL OR j.status = $1) AND ($2::bigint IS NULL OR j.source = $2 OR j.target = $2) \
+           AND j.source IN (SELECT i.id FROM images_image i JOIN images_imageset st ON st.id = i.image_set_id \
                WHERE st.team_id IN (SELECT team_id FROM users_teammembership WHERE user_id = $3 AND ($4::bigint[] IS NULL OR team_id = ANY($4)))) \
          ORDER BY j.id DESC LIMIT 200",
-    )
+        JOB_COLUMNS,
+    ))
     .bind(q.get("status"))
     .bind(q.get("image").and_then(|v| v.parse::<i64>().ok()))
     .bind(v.id)
@@ -416,6 +459,7 @@ async fn jobs_list(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> A
 // worker API
 // ---------------------------------------------------------------------------------------------------------
 
+/// A running job that was not touched for this long is claimed again (its worker is lost).
 const LEASE: &str = "30 minutes";
 
 async fn worker_principal(
@@ -451,19 +495,25 @@ async fn claim(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> Ap
 }
 
 /// Marks the oldest waiting registration job as running for `worker`; the job as the worker needs it, or none. `plugins`
-/// are the registration plugins the worker serves (none given: any); jobs without a plugin go to every worker.
+/// are the registration plugins the worker serves (none given: any).
 pub(crate) async fn claim_one(
     s: &AppState,
     worker: &str,
     plugins: Option<&[i64]>,
 ) -> ApiResult<Option<Value>> {
     let row = sqlx::query(&format!(
-        "UPDATE exact_rust_registration_job SET status = 'running', worker = $1, started_at = now(), \
-         lease_expires = now() + interval '{LEASE}', error = NULL WHERE id = ( \
-           SELECT id FROM exact_rust_registration_job WHERE (status = 'queued' OR (status = 'running' AND lease_expires < now())) \
-             AND ($2::bigint[] IS NULL OR plugin_id IS NULL OR plugin_id = ANY($2)) \
-           ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED) \
-         RETURNING id, source_image_id, target_image_id, params, plugin_id"
+        "UPDATE processing_pluginjob SET attached_worker = $1, updated_time = now(), error_message = NULL, error_detail = NULL \
+         WHERE id = ( \
+           SELECT q.id FROM processing_pluginjob q \
+             JOIN processing_plugin pl ON pl.id = q.plugin_id AND pl.plugin_type = 2 \
+             JOIN processing_pluginjobimage t ON t.job_id = q.id AND t.position = 1 \
+           WHERE q.error_message IS NULL AND q.processing_complete < 100 \
+             AND (q.attached_worker IS NULL OR q.attached_worker = '' OR q.updated_time < now() - interval '{LEASE}') \
+             AND ($2::bigint[] IS NULL OR q.plugin_id = ANY($2)) \
+           ORDER BY q.created_time, q.id LIMIT 1 FOR UPDATE OF q SKIP LOCKED) \
+         RETURNING id::bigint, image_id::bigint, \
+           (SELECT t.image_id::bigint FROM processing_pluginjobimage t WHERE t.job_id = processing_pluginjob.id AND t.position = 1), \
+           COALESCE(parameters, '{{}}'::jsonb), plugin_id"
     ))
     .bind(worker)
     .bind(plugins)
@@ -473,17 +523,14 @@ pub(crate) async fn claim_one(
     let Some(row) = row else {
         return Ok(None);
     };
-    let (id, source, target, params, plugin_id): (i64, i64, i64, Value, Option<i32>) =
+    let (id, source, target, params, plugin_id): (i64, i64, i64, Value, i32) =
         (row.get(0), row.get(1), row.get(2), row.get(3), row.get(4));
-    let plugin: Option<Value> = match plugin_id {
-        Some(pid) => sqlx::query("SELECT id, name, package FROM processing_plugin WHERE id = $1")
-            .bind(pid)
-            .fetch_optional(&s.pool)
-            .await
-            .map_err(db_err)?
-            .map(|r| json!({"id": r.get::<i32, _>(0), "name": r.get::<String, _>(1), "package": r.get::<String, _>(2)})),
-        None => None,
-    };
+    let plugin: Option<Value> = sqlx::query("SELECT id, name, package FROM processing_plugin WHERE id = $1")
+        .bind(plugin_id)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?
+        .map(|r| json!({"id": r.get::<i32, _>(0), "name": r.get::<String, _>(1), "package": r.get::<String, _>(2)}));
     let path_of = |image: i64| {
         let s = s.clone();
         async move {
@@ -504,7 +551,7 @@ pub(crate) async fn claim_one(
     };
     let (sp, tp) = (path_of(source).await?, path_of(target).await?);
     let (Some(sp), Some(tp)) = (sp, tp) else {
-        sqlx::query("UPDATE exact_rust_registration_job SET status = 'failed', error = 'image no longer exists', finished_at = now() WHERE id = $1")
+        sqlx::query("UPDATE processing_pluginjob SET error_message = 'image no longer exists', updated_time = now() WHERE id::bigint = $1")
             .bind(id)
             .execute(&s.pool)
             .await
@@ -517,12 +564,15 @@ pub(crate) async fn claim_one(
 }
 
 async fn owned_running(s: &AppState, id: i64, worker: &str) -> ApiResult<(i64, i64, Value)> {
-    let r = sqlx::query("SELECT source_image_id, target_image_id, params, status, worker FROM exact_rust_registration_job WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&s.pool)
-        .await
-        .map_err(db_err)?
-        .ok_or_else(|| ApiError::not_found("Not found."))?;
+    let r = sqlx::query(&job_select(
+        "WHERE j.id = $1",
+        "j.source, j.target, j.params, j.status, j.worker",
+    ))
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(db_err)?
+    .ok_or_else(|| ApiError::not_found("Not found."))?;
     if r.get::<String, _>(3) != "running"
         || r.get::<Option<String>, _>(4).as_deref() != Some(worker)
     {
@@ -552,7 +602,7 @@ async fn fail(
         .chars()
         .take(4000)
         .collect();
-    sqlx::query("UPDATE exact_rust_registration_job SET status = 'failed', error = $2, finished_at = now(), lease_expires = NULL WHERE id = $1")
+    sqlx::query("UPDATE processing_pluginjob SET error_message = $2, updated_time = now() WHERE id::bigint = $1")
         .bind(id)
         .bind(error)
         .execute(&s.pool)
@@ -662,9 +712,8 @@ async fn complete(
     {
         let _ = insert_inverse(&mut tx, reg).await;
     }
-    sqlx::query("UPDATE exact_rust_registration_job SET status = 'done', registration_id = $2, finished_at = now(), lease_expires = NULL WHERE id = $1")
+    sqlx::query("UPDATE processing_pluginjob SET processing_complete = 100, updated_time = now() WHERE id::bigint = $1")
         .bind(id)
-        .bind(reg)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -1290,7 +1339,7 @@ async fn v1_register(
     let deadline = tokio::time::Instant::now() + Duration::from_secs(wait);
     loop {
         let (status, reg, error): (String, Option<i64>, Option<String>) = sqlx::query_as(
-            "SELECT status, registration_id, error FROM exact_rust_registration_job WHERE id = $1",
+            &job_select("WHERE j.id = $1", "j.status, j.registration, j.error"),
         )
         .bind(job)
         .fetch_one(&s.pool)

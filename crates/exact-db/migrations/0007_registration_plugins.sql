@@ -15,7 +15,3 @@ CREATE TABLE IF NOT EXISTS processing_pluginjobimage (
 );
 CREATE INDEX IF NOT EXISTS processing_pluginjobimage_job_id ON processing_pluginjobimage (job_id);
 CREATE INDEX IF NOT EXISTS processing_pluginjobimage_image_id ON processing_pluginjobimage (image_id);
-
--- Rust-owned queue of registration computations: which plugin computes the job (null: the default registration plugin).
-ALTER TABLE exact_rust_registration_job ADD COLUMN IF NOT EXISTS plugin_id integer
-    REFERENCES processing_plugin(id) ON DELETE SET NULL;

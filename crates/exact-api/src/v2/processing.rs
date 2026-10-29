@@ -85,7 +85,7 @@ pub(crate) async fn claim_plugin(
         "UPDATE processing_pluginjob SET attached_worker = $1, updated_time = now() WHERE id = ( \
            SELECT q.id FROM processing_pluginjob q \
            WHERE (q.attached_worker IS NULL OR q.attached_worker = '') AND q.processing_complete < 100 \
-             AND q.error_message IS NULL AND ($2::int IS NULL OR q.plugin_id = $2) \
+             AND q.plugin_id IN (SELECT id FROM processing_plugin WHERE plugin_type = 1) AND q.error_message IS NULL AND ($2::int IS NULL OR q.plugin_id = $2) \
              AND NOT EXISTS (SELECT 1 FROM processing_pluginresult r WHERE r.job_id = q.id) \
              AND q.image_id IN (SELECT i.id FROM images_image i JOIN images_imageset st ON st.id = i.image_set_id \
                  WHERE st.team_id IN (SELECT team_id FROM users_teammembership WHERE user_id = $3 \

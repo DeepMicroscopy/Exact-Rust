@@ -293,21 +293,6 @@ async fn overview_h(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<
             }
         }
     }
-    let registrations = sqlx::query("SELECT plugin_id, status::text, count(*)::bigint, max(created_at) FROM exact_rust_registration_job GROUP BY 1, 2")
-        .fetch_all(&s.pool)
-        .await
-        .map_err(db_err)?;
-    for r in &registrations {
-        let (id, status, n): (Option<i32>, String, i64) = (r.get(0), r.get(1), r.get(2));
-        let Some(id) = id.or(default) else { continue };
-        *counts.entry(id).or_default().entry(status).or_default() += n;
-        if let Some(t) = r.get::<Option<chrono::DateTime<chrono::Utc>>, _>(3) {
-            let e = last.entry(id).or_insert(t);
-            if t > *e {
-                *e = t;
-            }
-        }
-    }
     let results: HashMap<i32, i64> =
         sqlx::query("SELECT plugin_id, count(*)::bigint FROM processing_pluginresult GROUP BY 1")
             .fetch_all(&s.pool)

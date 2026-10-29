@@ -2,9 +2,9 @@
 //! (image analysis) jobs together, `POST /api/v2/jobs/claim` hands a worker the oldest waiting job of the kinds it can do,
 //! `POST /api/v2/jobs/{kind}/{id}/restart` and `DELETE /api/v2/jobs/{kind}/{id}` manage them.
 //!
-//! The two kinds keep their own tables (plugin jobs are Django's `processing_pluginjob`, shared; registration jobs are
-//! `exact_rust_registration_job`); this is the common face: the same status words (`queued`, `running`, `done`, `failed`),
-//! the same claim, the same list. Their specific endpoints (`/api/v2/plugin-jobs/claim`,
+//! Both kinds are rows of Django's `processing_pluginjob` (shared with EXACT): the kind is the type of the job's plugin
+//! (1 image analysis, 2 registration). This is the common face: the same status words (`queued`, `running`, `done`,
+//! `failed`), the same claim, the same list. Their specific endpoints (`/api/v2/plugin-jobs/claim`,
 //! `/api/v2/registration-jobs/...`) stay for the workers written against them.
 
 use crate::{
@@ -113,16 +113,20 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
          WHERE st.team_id IN (SELECT team_id FROM users_teammembership WHERE user_id = $4 AND ($5::bigint[] IS NULL OR team_id = ANY($5))))";
     let sql = format!(
         "SELECT * FROM ( \
-           SELECT 'registration'::text AS kind, j.id::bigint AS id, j.status::text AS status, j.source_image_id::bigint AS image, \
-                  ARRAY[j.source_image_id, j.target_image_id]::bigint[] AS images, j.plugin_id::bigint AS plugin, rp.name::text AS plugin_name, NULL::float8 AS progress, \
-                  j.worker::text AS worker, j.error::text AS error, j.created_by::bigint AS creator, j.created_at AS created, \
-                  j.started_at AS started, j.finished_at AS finished, j.registration_id::bigint AS result \
-           FROM exact_rust_registration_job j LEFT JOIN processing_plugin rp ON rp.id = j.plugin_id WHERE j.source_image_id {visible} \
-           UNION ALL \
-           SELECT 'plugin', q.id::bigint, ({status}), q.image_id::bigint, COALESCE((SELECT array_agg(ji.image_id ORDER BY ji.position) FROM processing_pluginjobimage ji WHERE ji.job_id = q.id), ARRAY[q.image_id::bigint]), q.plugin_id::bigint, pl.name::text, \
-                  (q.processing_complete / 100.0)::float8, q.attached_worker::text, q.error_message::text, q.creator_id::bigint, q.created_time, \
-                  NULL, (SELECT r.completed_time FROM processing_pluginresult r WHERE r.job_id = q.id LIMIT 1), \
-                  (SELECT r.id::bigint FROM processing_pluginresult r WHERE r.job_id = q.id LIMIT 1) \
+           SELECT CASE pl.plugin_type WHEN 2 THEN 'registration' ELSE 'plugin' END AS kind, q.id::bigint AS id, ({status}) AS status, \
+                  q.image_id::bigint AS image, \
+                  COALESCE((SELECT array_agg(ji.image_id::bigint ORDER BY ji.position) FROM processing_pluginjobimage ji WHERE ji.job_id = q.id), ARRAY[q.image_id::bigint]) AS images, \
+                  q.plugin_id::bigint AS plugin, pl.name::text AS plugin_name, \
+                  CASE WHEN pl.plugin_type = 2 THEN NULL ELSE (q.processing_complete / 100.0)::float8 END AS progress, \
+                  NULLIF(q.attached_worker, '')::text AS worker, q.error_message::text AS error, q.creator_id::bigint AS creator, \
+                  q.created_time AS created, \
+                  CASE WHEN pl.plugin_type = 2 AND q.attached_worker IS NOT NULL AND q.attached_worker <> '' AND q.error_message IS NULL \
+                            AND q.processing_complete < 100 THEN q.updated_time END AS started, \
+                  CASE WHEN pl.plugin_type = 2 THEN CASE WHEN q.error_message IS NOT NULL OR q.processing_complete >= 100 THEN q.updated_time END \
+                       ELSE (SELECT r.completed_time FROM processing_pluginresult r WHERE r.job_id = q.id LIMIT 1) END AS finished, \
+                  CASE WHEN pl.plugin_type = 2 THEN (SELECT r.id::bigint FROM images_imageregistration r WHERE r.source_image_id = q.image_id \
+                            AND r.target_image_id = (SELECT ji.image_id FROM processing_pluginjobimage ji WHERE ji.job_id = q.id AND ji.position = 1) LIMIT 1) \
+                       ELSE (SELECT r.id::bigint FROM processing_pluginresult r WHERE r.job_id = q.id LIMIT 1) END AS result \
            FROM processing_pluginjob q JOIN processing_plugin pl ON pl.id = q.plugin_id WHERE q.image_id {visible} \
          ) u \
          WHERE ($1::text IS NULL OR u.kind = $1) AND ($2::text IS NULL OR u.status = $2) \
@@ -153,7 +157,7 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
                 "progress": r.get::<Option<f64>, _>(7), "worker": r.get::<Option<String>, _>(8),
                 "error": r.get::<Option<String>, _>(9), "creator": r.get::<Option<i64>, _>(10),
                 "created_at": t(r, 11), "started_at": t(r, 12), "finished_at": t(r, 13),
-                "result": r.get::<Option<i64>, _>(14),
+                "result": if r.get::<String, _>(2) == "done" || r.get::<String, _>(0) == "plugin" { r.get::<Option<i64>, _>(14) } else { None },
             })
         })
         .collect();
@@ -226,13 +230,19 @@ async fn claim_h(
     for k in allowed {
         let oldest: Option<chrono::DateTime<chrono::Utc>> = match k {
             "registration" => sqlx::query_scalar(
-                "SELECT min(created_at) FROM exact_rust_registration_job WHERE status = 'queued' OR (status = 'running' AND lease_expires < now())",
+                "SELECT min(q.created_time) FROM processing_pluginjob q JOIN processing_plugin pl ON pl.id = q.plugin_id AND pl.plugin_type = 2 \
+                 WHERE q.error_message IS NULL AND q.processing_complete < 100 \
+                   AND (q.attached_worker IS NULL OR q.attached_worker = '' OR q.updated_time < now() - interval '30 minutes') \
+                   AND ($1::bigint[] IS NULL OR q.plugin_id = ANY($1)) \
+                   AND EXISTS (SELECT 1 FROM processing_pluginjobimage t WHERE t.job_id = q.id AND t.position = 1)",
             )
+            .bind(plugins.as_deref())
             .fetch_one(&s.pool)
             .await
             .map_err(db_err)?,
             _ => sqlx::query_scalar(
-                "SELECT min(q.created_time) FROM processing_pluginjob q WHERE (q.attached_worker IS NULL OR q.attached_worker = '') \
+                "SELECT min(q.created_time) FROM processing_pluginjob q JOIN processing_plugin pl ON pl.id = q.plugin_id AND pl.plugin_type = 1 \
+                 WHERE (q.attached_worker IS NULL OR q.attached_worker = '') \
                  AND q.processing_complete < 100 AND q.error_message IS NULL AND ($1::int IS NULL OR q.plugin_id = $1) \
                  AND NOT EXISTS (SELECT 1 FROM processing_pluginresult r WHERE r.job_id = q.id)",
             )
@@ -265,20 +275,16 @@ async fn claim_h(
 
 /// The job as far as the caller may touch it: (is the creator or may work on the kind, status).
 async fn actionable(s: &AppState, p: &Principal, kind: &str, id: i64) -> ApiResult<String> {
-    let (sql, perm): (String, (&str, &str)) = match kind {
-        "registration" => (
-            "SELECT j.status::text, j.created_by::bigint, j.source_image_id::bigint FROM exact_rust_registration_job j WHERE j.id = $1".into(),
-            ("images", "change_imageregistration"),
-        ),
-        "plugin" => (
-            format!(
-                "SELECT ({}), q.creator_id::bigint, q.image_id::bigint FROM processing_pluginjob q WHERE q.id::bigint = $1",
-                plugin_job_status_sql()
-            ),
-            ("processing", "change_pluginjob"),
-        ),
+    let (plugin_type, perm): (i16, (&str, &str)) = match kind {
+        "registration" => (2, ("images", "change_imageregistration")),
+        "plugin" => (1, ("processing", "change_pluginjob")),
         _ => return Err(ApiError::not_found("Not found.")),
     };
+    let sql = format!(
+        "SELECT ({}), q.creator_id::bigint, q.image_id::bigint FROM processing_pluginjob q \
+         JOIN processing_plugin pl ON pl.id = q.plugin_id AND pl.plugin_type = {plugin_type} WHERE q.id::bigint = $1",
+        plugin_job_status_sql()
+    );
     let r = sqlx::query(&sql)
         .bind(id)
         .fetch_optional(&s.pool)
@@ -317,25 +323,17 @@ async fn remove_h(
     let p = require_user(authenticate(&s, &headers, &Method::DELETE).await?)?;
     actionable(&s, &p, &kind, id).await?;
     let mut tx = s.pool.begin().await.map_err(db_err)?;
-    if kind == "plugin" {
-        let results: Vec<i64> = sqlx::query_scalar(
-            "SELECT id::bigint FROM processing_pluginresult WHERE job_id::bigint = $1",
-        )
-        .bind(id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(db_err)?;
-        if !results.is_empty() {
-            cascade::delete_rows(&mut tx, "processing_pluginresult", &results).await?;
-        }
-        cascade::delete_rows(&mut tx, "processing_pluginjob", &[id]).await?;
-    } else {
-        sqlx::query("DELETE FROM exact_rust_registration_job WHERE id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(db_err)?;
+    let results: Vec<i64> = sqlx::query_scalar(
+        "SELECT id::bigint FROM processing_pluginresult WHERE job_id::bigint = $1",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(db_err)?;
+    if !results.is_empty() {
+        cascade::delete_rows(&mut tx, "processing_pluginresult", &results).await?;
     }
+    cascade::delete_rows(&mut tx, "processing_pluginjob", &[id]).await?;
     tx.commit().await.map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -355,35 +353,24 @@ async fn restart_h(
         ));
     }
     let mut tx = s.pool.begin().await.map_err(db_err)?;
-    if kind == "plugin" {
-        let results: Vec<i64> = sqlx::query_scalar(
-            "SELECT id::bigint FROM processing_pluginresult WHERE job_id::bigint = $1",
-        )
-        .bind(id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(db_err)?;
-        if !results.is_empty() {
-            cascade::delete_rows(&mut tx, "processing_pluginresult", &results).await?;
-        }
-        sqlx::query(
-            "UPDATE processing_pluginjob SET processing_complete = 0, error_message = NULL, error_detail = NULL, \
-             attached_worker = NULL, created_time = now(), updated_time = now() WHERE id::bigint = $1",
-        )
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(db_err)?;
-    } else {
-        sqlx::query(
-            "UPDATE exact_rust_registration_job SET status = 'queued', error = NULL, worker = NULL, started_at = NULL, \
-             finished_at = NULL, lease_expires = NULL, created_at = now() WHERE id = $1",
-        )
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(db_err)?;
+    let results: Vec<i64> = sqlx::query_scalar(
+        "SELECT id::bigint FROM processing_pluginresult WHERE job_id::bigint = $1",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(db_err)?;
+    if !results.is_empty() {
+        cascade::delete_rows(&mut tx, "processing_pluginresult", &results).await?;
     }
+    sqlx::query(
+        "UPDATE processing_pluginjob SET processing_complete = 0, error_message = NULL, error_detail = NULL, \
+         attached_worker = NULL, created_time = now(), updated_time = now() WHERE id::bigint = $1",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(db_err)?;
     tx.commit().await.map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }

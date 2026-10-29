@@ -116,6 +116,7 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
             </label>
           )}
           {(plugins.data?.items.length ?? 0) === 1 && chosen && <p className="muted small">Method: {chosen.name}</p>}
+          {plugins.data && plugins.data.items.length === 0 && <p className="warn small">No registration method is available: start a registration worker (helpers/queue_worker.py) or pick the points by hand.</p>}
           {schema.length > 0 && (
             <>
               <button className="btn ghost small" onClick={() => setAdvanced((a) => !a)}>
@@ -131,7 +132,7 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
         <button className="btn ghost" onClick={onClose}>
           Cancel
         </button>
-        <button className="btn primary" onClick={() => void go()} disabled={busy || !source || !target || source === target}>
+        <button className="btn primary" onClick={() => void go()} disabled={busy || !source || !target || source === target || (mode === "auto" && !chosen)}>
           {mode === "auto" ? "Start" : "Pick points…"}
         </button>
       </div>

@@ -239,9 +239,12 @@ export function ManualRegistration({ source, target, names, review = false, onCl
           )}
           <CheckView source={source} target={target} matrix={shown.transformation_matrix} />
           <div className="reg-full-actions">
-            <button className="btn" onClick={() => setStage("pick")}>
-              {pairs.length ? "Edit the points" : "Pick points"}
-            </button>
+            {/* only a registration made from points has points to show; an automatic one is replaced by "Redo manually" */}
+            {pairs.length > 0 && (
+              <button className="btn" onClick={() => setStage("pick")}>
+                Edit the points
+              </button>
+            )}
             <button className="btn primary" onClick={onClose}>
               Close
             </button>

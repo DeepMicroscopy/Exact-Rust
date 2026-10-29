@@ -187,6 +187,8 @@ try {
   check((await page.locator(".toolbar strong", { hasText: "2 selected" }).count()) === 1, "two images can be selected");
 
   // ---------------------------------------------------------------------------------------- registration
+  // an automatic registration needs a registration method: the one a worker announces
+  await apiCall(root, "POST", "/api/v2/plugins/register", { name: "e2e registration", author: "e2e", package: "e2e", plugin_type: 2 });
   await page.locator("button", { hasText: "Register these two" }).click();
   await page.waitForSelector(".modal");
   await page.locator(".modal .check input").first().uncheck(); // no inverse yet: it is added by hand below
@@ -215,6 +217,12 @@ try {
   await waitFor(async () => (await page.locator(".reg").count()) === 1, "the finished registration appears");
   const facts = await page.locator(".reg-facts").innerText();
   check(facts.includes("error 0.75") && facts.includes("scale 2.000") && facts.includes("rotation 0.0"), `...with its numbers (${facts.replace(/\s+/g, " ")})`);
+  // an automatic registration has no points to show
+  await page.locator(".reg .btn", { hasText: "Review" }).click();
+  await page.waitForSelector(".reg-full .reg-full-actions");
+  await page.waitForTimeout(500);
+  check((await page.locator(".reg-full .btn", { hasText: "Edit the points" }).count()) === 0 && (await page.locator(".reg-full .btn", { hasText: "Pick points" }).count()) === 0, "reviewing an automatic registration offers no points");
+  await page.locator('.reg-full [aria-label="Close"]').click();
   await page.locator(".reg .btn", { hasText: "Add inverse" }).click();
   await waitFor(async () => (await page.locator(".reg").count()) === 2, "Add inverse creates the registration the other way");
   check((await page.locator(".reg-facts").first().innerText()).includes("scale 0.500") || (await page.locator(".reg-facts").nth(1).innerText()).includes("scale 0.500"), "...with the inverse scale");

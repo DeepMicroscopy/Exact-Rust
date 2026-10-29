@@ -94,3 +94,19 @@ def fetch(c: httpx.Client, path: str, params: dict):
     except Exception:
         body = {"_non_json_len": len(r.content)}
     return {"status": r.status_code, "body": body}
+
+
+REGISTRATION_PLUGIN = "conformance registration"
+
+
+def registration_plugin(c: httpx.Client) -> None:
+    """A registration plugin for the tests that queue a registration without naming one (the default plugin is needed)."""
+    r = c.post("/api/v2/plugins/register", json={"name": REGISTRATION_PLUGIN, "author": "tests", "package": "tests", "plugin_type": 2})
+    assert r.status_code in (200, 201), r.text
+
+
+def drop_registration_plugin() -> None:
+    import subprocess
+
+    subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc",
+                    f"delete from processing_plugin where name = '{REGISTRATION_PLUGIN}'"], capture_output=True)
