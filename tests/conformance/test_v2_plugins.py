@@ -24,6 +24,11 @@ def client(user="aubreville"):
     return c
 
 
+def scalar(sql):
+    out = subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc", sql], capture_output=True, text=True)
+    return out.stdout.strip()
+
+
 def psql(sql):
     subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc", sql], capture_output=True)
 
@@ -51,7 +56,7 @@ def test_announcing_creates_then_updates_and_checks_the_schema(plugin):
     c = client()
     assert plugin["created"] and plugin["plugin_type"] == 2 and plugin["parameters_schema"] == SCHEMA
     # clients of the plugin API (exact-sync, QueueRunner) refuse a plugin without an icon, so one is always set
-    assert c.get(f"/api/v1/processing/plugins/{plugin['id']}/").json()["icon"]
+    assert scalar(f"select icon from processing_plugin where id = {plugin['id']}")  # exact-sync clients need a non-empty icon
     again = c.post("/api/v2/plugins/register", json={"name": plugin["name"], "author": "t", "package": "t_pkg", "plugin_type": 2, "parameters_schema": SCHEMA[:1]})
     assert again.status_code == 200 and again.json()["id"] == plugin["id"] and again.json()["parameters_schema"] == SCHEMA[:1]
     bad = lambda **kw: c.post("/api/v2/plugins/register", json={"name": "x", "plugin_type": 2, **kw}).status_code  # noqa: E731
@@ -106,3 +111,21 @@ def test_overview_for_administrators(plugin):
     assert any(w["name"] == "ov-worker" for w in mine["workers"]) and any(w["name"] == "ov-worker" for w in ov["workers"])
     assert {"id", "name", "author", "package", "parameters_schema", "default", "products", "results"} <= mine.keys()
     assert client("rt_member").get("/api/v2/admin/plugins").status_code == 403
+
+
+def test_v1_knows_image_analyses_only(plugin):
+    c = client()
+    ana = c.post("/api/v2/plugins/register", json={"name": f"ana-{uuid.uuid4().hex[:6]}", "plugin_type": 1}).json()
+    v1 = c.get("/api/v1/processing/plugins/", params={"limit": 500}).json()["results"]
+    assert ana["id"] in [p["id"] for p in v1] and plugin["id"] not in [p["id"] for p in v1]
+    assert c.get(f"/api/v1/processing/plugins/{plugin['id']}/").status_code == 404
+    assert set(v1[0]) == {"id", "name", "author", "contact", "package", "abouturl", "icon", "products", "results"}
+    # jobs of a registration plugin are invisible to v1 workers
+    psql(f"insert into processing_pluginjob (plugin_id, image_id, processing_complete, created_time, updated_time, eta_time, creator_id) "
+         f"values ({plugin['id']}, {JSRC}, 0, now(), now(), now(), null)")
+    job = scalar(f"select max(id) from processing_pluginjob where plugin_id = {plugin['id']}")
+    assert job
+    assert job not in [str(j["id"]) for j in c.get("/api/v1/processing/pluginjobs/", params={"limit": 500}).json()["results"]]
+    assert c.get(f"/api/v1/processing/pluginjobs/{job}/").status_code == 404
+    psql(f"delete from processing_pluginjob where id = {job}")
+    c.delete(f"/api/v2/plugins/{ana['id']}")

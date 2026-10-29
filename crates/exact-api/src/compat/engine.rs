@@ -485,10 +485,21 @@ pub struct Ctx<'a> {
     pub v2: bool,
 }
 
-/// v2 scopes the processing resources to the teams of the image they belong to (v1 shows them to everybody).
+/// v2 scopes the processing resources to the teams of the image they belong to (v1 shows them to everybody). v1 knows
+/// image analyses only: registration plugins and their jobs belong to the new API.
 pub fn effective_scope(spec: &Spec, v2: bool) -> String {
-    if !v2 || !spec.scope.is_empty() {
+    if !spec.scope.is_empty() {
         return spec.scope.to_string();
+    }
+    if !v2 {
+        return match spec.name {
+            "Plugin" => "t.plugin_type = 1".to_string(),
+            "PluginJob" => {
+                "t.plugin_id IN (SELECT id FROM processing_plugin WHERE plugin_type = 1)"
+                    .to_string()
+            }
+            _ => String::new(),
+        };
     }
     let img = "t.image_id IN (SELECT i.id FROM images_image i WHERE i.image_set_id IN (SELECT s.id FROM images_imageset s WHERE s.team_id IN {VT}))";
     match spec.name {
