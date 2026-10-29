@@ -252,7 +252,7 @@ export function ImageSetPage() {
                 </button>
               </>
             ) : (
-              <span className="muted small">Select images to move, delete or register them</span>
+              <span className="muted small hide-narrow">Select images to move, delete or register them</span>
             )}
             <span className="spacer" />
             <select className="search" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort">

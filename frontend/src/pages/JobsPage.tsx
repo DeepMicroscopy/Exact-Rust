@@ -122,7 +122,7 @@ export function JobsPage() {
         </p>
       )}
       {error && <p className="error">{error}</p>}
-      <table className="admin-table" data-testid="jobs">
+      <table className="admin-table stack" data-testid="jobs">
         <thead>
           <tr>
             <th>Job</th>
@@ -162,8 +162,8 @@ export function JobsPage() {
                   </span>
                 )}
               </td>
-              <td className="muted small">{j.worker ?? ""}</td>
-              <td className="muted small" title={j.created_at ?? ""}>
+              <td className="muted small" data-label="Worker">{j.worker ?? ""}</td>
+              <td className="muted small" data-label="Started" title={j.created_at ?? ""}>
                 {ago(j.started_at ?? j.created_at)}
               </td>
               <td className="row-actions">

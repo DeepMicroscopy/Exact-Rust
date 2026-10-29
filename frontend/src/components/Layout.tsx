@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
@@ -8,6 +9,16 @@ import { useAdminMe } from "../pages/AdminPage";
 
 export function Layout() {
   const { user, logout } = useAuth();
+  const [menu, setMenu] = useState(false);
+  const nav = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: PointerEvent) => {
+      if (!nav.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.(".nav-toggle")) setMenu(false);
+    };
+    window.addEventListener("pointerdown", away, true);
+    return () => window.removeEventListener("pointerdown", away, true);
+  }, [menu]);
   const admin = useAdminMe();
   const jobs = useQuery({ queryKey: ["jobs-active"], queryFn: () => api<{ items: Job[] }>("/api/v2/jobs?status=queued&limit=50"), staleTime: 10_000, refetchInterval: 20_000 });
   const running = useQuery({ queryKey: ["jobs-running"], queryFn: () => api<{ items: Job[] }>("/api/v2/jobs?status=running&limit=50"), staleTime: 10_000, refetchInterval: 20_000 });
@@ -20,18 +31,23 @@ export function Layout() {
           <Logo height={18} />
         </Link>
         <span className="spacer" />
-        <Link to="/jobs" className="btn ghost">
+        <Link to="/jobs" className="btn ghost nowrap">
           Jobs{active > 0 ? ` (${active})` : ""}
         </Link>
-        {canAdmin && (
-          <Link to="/admin" className="btn ghost">
-            Administration
-          </Link>
-        )}
-        <span className="muted">{user?.username}</span>
-        <button className="btn ghost" onClick={() => void logout()}>
-          Sign out
+        <button className="btn ghost nav-toggle" aria-expanded={menu} aria-label="Menu" onClick={() => setMenu((m) => !m)}>
+          ☰
         </button>
+        <div ref={nav} className={`topnav ${menu ? "open" : ""}`} onClick={() => setMenu(false)}>
+          {canAdmin && (
+            <Link to="/admin" className="btn ghost">
+              Administration
+            </Link>
+          )}
+          <span className="muted">{user?.username}</span>
+          <button className="btn ghost" onClick={() => void logout()}>
+            Sign out
+          </button>
+        </div>
       </header>
       <main className="content">
         <Outlet />

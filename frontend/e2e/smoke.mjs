@@ -326,6 +326,25 @@ try {
   check((await page.locator(".osd.osd-hidden").count()) === 1 && (await page.evaluate(() => window.__viewer.world.getItemCount())) === 0, "an unknown image shows an error, not the image seen before");
   check((await page.locator('[data-testid="viewer-error"]').innerText()).includes("99999999"), "...which names the image");
   errors.length = known; // the 404 is expected
+
+  // a phone: no page is wider than the screen, the top bar folds into a menu, teams are a drop-down, jobs are cards
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const [path, what] of [["/", "the image sets"], ["/sets/1", "an image set"], ["/jobs", "the jobs list"], ["/admin", "the administration"]]) {
+    await page.goto(base + path);
+    await page.waitForSelector(".topbar");
+    await page.waitForTimeout(700);
+    const [wide, inner] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+    check(wide <= inner, `phone: no horizontal scroll on ${what} (${wide} of ${inner} px)`);
+  }
+  await page.goto(base + "/");
+  await page.waitForSelector(".team-select");
+  check((await page.locator(".team-select").isVisible()) && !(await page.locator(".teams-aside").isVisible()), "phone: the teams are a drop-down, not a list");
+  check((await page.locator(".topnav").isVisible()) === false, "phone: the sign-out and administration entries are folded away...");
+  await page.locator(".nav-toggle").click();
+  check((await page.locator(".topnav").getByText("Sign out").isVisible()), "...and shown by the menu button");
+  await page.setViewportSize({ width: 1400, height: 850 });
+  check((await page.locator(".nav-toggle").isVisible()) === false && (await page.locator(".topnav").getByText("Sign out").isVisible()), "a wide screen shows them in the top bar as before");
+
   check(errors.length === 0, "no console errors: " + errors.join(" | "));
 } finally {
   await browser.close();

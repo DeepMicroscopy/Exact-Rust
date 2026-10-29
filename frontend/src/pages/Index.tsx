@@ -79,7 +79,7 @@ export function Index() {
 
   return (
     <div className="two-col">
-      <aside className="sidebar">
+      <aside className="sidebar teams-aside">
         <div className="sidebar-title">Teams</div>
         {teams.data?.map((t) => (
           <button key={t.id} className={`side-item ${teamId === t.id ? "active" : ""}`} onClick={() => pickTeam(t.id)} aria-pressed={teamId === t.id}>
@@ -88,6 +88,13 @@ export function Index() {
         ))}
       </aside>
       <section className="main">
+        <select className="team-select" value={teamId ?? ""} onChange={(e) => pickTeam(Number(e.target.value))} aria-label="Team">
+          {teams.data?.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
         <div className="toolbar">
           <span className="spacer" />
           <input className="search" placeholder="Search all teams…" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
