@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capsule, difference, ringArea, simplify, split, stroke, tidy, union } from "./polyops";
+import { capsule, difference, ringArea, simplify, simplifyPath, split, stroke, tidy, union } from "./polyops";
 import type { Pt } from "./geometry";
 
 const sq = (x: number, y: number, s: number): Pt[] => [[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
@@ -56,5 +56,24 @@ describe("polygon operations", () => {
   });
   it("tidy rounds and drops repeated vertices and a repeated closing vertex", () => {
     expect(tidy([[0.2, 0], [0.4, 0.1], [10, 0], [10, 10], [0, 0]])).toEqual([[0, 0], [10, 0], [10, 10]]);
+  });
+});
+
+describe("simplifyPath", () => {
+  it("keeps the ends and the corners, drops points on straight runs", () => {
+    const path: [number, number][] = [];
+    for (let x = 0; x <= 100; x += 5) path.push([x, 0]);
+    for (let y = 5; y <= 100; y += 5) path.push([100, y]);
+    const out = simplifyPath(path, 1);
+    expect(out).toEqual([[0, 0], [100, 0], [100, 100]]);
+  });
+  it("keeps a bump larger than the tolerance and drops a smaller one", () => {
+    const bump = (h: number): [number, number][] => [[0, 0], [50, h], [100, 0]];
+    expect(simplifyPath(bump(5), 1)).toHaveLength(3);
+    expect(simplifyPath(bump(0.5), 1)).toHaveLength(2);
+  });
+  it("leaves a path of two points and a closed-in-place path alone", () => {
+    expect(simplifyPath([[0, 0], [5, 5]], 1)).toEqual([[0, 0], [5, 5]]);
+    expect(simplifyPath([[3, 3], [3, 3], [3, 3]], 1)).toHaveLength(2);
   });
 });

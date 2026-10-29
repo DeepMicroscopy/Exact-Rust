@@ -56,9 +56,9 @@ export function hintFor(e: PaletteEntry, oneClick: boolean): string {
     case VectorType.Line:
       return "Drag to draw a line";
     case VectorType.MultiLine:
-      return "Click to add points · Enter or double-click to finish";
+      return "Drag along it, or click to add points · Enter or double-click to finish";
     case VectorType.Polygon:
-      return e.nodeCount > 0 ? `Click ${e.nodeCount} points` : "Click to add points · click the first point, Enter or double-click to close";
+      return e.nodeCount > 0 ? `Click ${e.nodeCount} points` : "Drag around it (lift near the start to close), or click to add points · Enter or double-click to finish";
   }
   return "";
 }

@@ -177,7 +177,9 @@ try {
   await admin.mouse.move(free.x - 120, free.y - 60, { steps: 6 });
   await admin.mouse.up();
   const c1 = await centre();
-  check(Math.abs(c1[0] - c0[0]) < 1e-9 && Math.abs(c1[1] - c0[1]) < 1e-9, "dragging while drawing a polygon does not move the image");
+  check(Math.abs(c1[0] - c0[0]) < 1e-9 && Math.abs(c1[1] - c0[1]) < 1e-9, "dragging while drawing a polygon does not move the image (it outlines freehand)");
+  const strokePoints = await admin.evaluate(() => window.__editor.draftPoints);
+  check(strokePoints > 4, `...the stroke added its points to the draft (${strokePoints})`);
   await admin.keyboard.down("Shift");
   await admin.mouse.move(free.x, free.y);
   await admin.mouse.down();
@@ -186,11 +188,54 @@ try {
   await admin.keyboard.up("Shift");
   const c2 = await centre();
   check(Math.abs(c2[0] - c1[0]) > 1e-4, "...but Shift + drag does");
-  check((await admin.evaluate(() => window.__editor.draftPoints)) === 4, "...and neither added a polygon point");
+  check((await admin.evaluate(() => window.__editor.draftPoints)) === strokePoints, "...and Shift + drag adds no point");
   await admin.locator(".toolbox .btn", { hasText: "Finish" }).first().click();
   await waitFor(async () => (await annotations(admin)).length === penBefore + 1, "...and Finish saves the polygon");
   await admin.keyboard.press("Control+z");
   await waitFor(async () => (await annotations(admin)).length === penBefore, "...(undone again)");
+
+  // freehand: dragging outlines the polygon, lifting near the start closes and saves it (mouse and pen alike)
+  const loopAt = [];
+  for (const [x, y] of [[800, 900], [1400, 900], [1400, 1500], [800, 1500], [815, 930]]) loopAt.push(await screenOf(admin, x, y));
+  const polyBox = (v) => { const xs = Object.keys(v).filter((k) => /^x\d+$/.test(k)).map((k) => v[k]); const ys = Object.keys(v).filter((k) => /^y\d+$/.test(k)).map((k) => v[k]); return { n: xs.length, w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; };
+  const lastVector = async () => (await annotations(admin)).sort((x, y) => y.id - x.id)[0].vector;
+  await admin.mouse.move(loopAt[0].x, loopAt[0].y);
+  await admin.mouse.down();
+  for (const q of loopAt.slice(1)) await admin.mouse.move(q.x, q.y, { steps: 12 });
+  await admin.mouse.up();
+  await waitFor(async () => (await annotations(admin)).length === penBefore + 1, "a freehand mouse stroke that returns to its start saves a polygon");
+  const mouseLoop = polyBox(await lastVector());
+  check(mouseLoop.w > 540 && mouseLoop.w < 660 && mouseLoop.h > 540 && mouseLoop.h < 660 && mouseLoop.n >= 4 && mouseLoop.n <= 8, `...outlining what was drawn, simplified to its corners (${mouseLoop.n} vertices, ${Math.round(mouseLoop.w)} x ${Math.round(mouseLoop.h)} px)`);
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === penBefore, "...(undone)");
+  await penCdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: loopAt[0].x, y: loopAt[0].y, pointerType: "pen", button: "left", buttons: 0 });
+  await penCdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: loopAt[0].x, y: loopAt[0].y, pointerType: "pen", button: "left", buttons: 1, clickCount: 1, force: 0.5 });
+  for (let k = 1; k < loopAt.length; k++)
+    for (let t = 1; t <= 12; t++) {
+      const [a, b] = [loopAt[k - 1], loopAt[k]];
+      await penCdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + ((b.x - a.x) * t) / 12, y: a.y + ((b.y - a.y) * t) / 12, pointerType: "pen", button: "left", buttons: 1, force: 0.5 });
+    }
+  await penCdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: loopAt[4].x, y: loopAt[4].y, pointerType: "pen", button: "left", buttons: 0, clickCount: 1 });
+  await waitFor(async () => (await annotations(admin)).length === penBefore + 1, "the same stroke with the pen saves a polygon");
+  const penLoop = polyBox(await lastVector());
+  check(penLoop.w > 540 && penLoop.w < 660 && penLoop.n >= 4 && penLoop.n <= 8, `...too (${penLoop.n} vertices, ${Math.round(penLoop.w)} px wide)`);
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === penBefore, "...(undone)");
+  // a stroke that stops far from its start stays a draft: it goes on with the next stroke and ends with Finish
+  const open = [await screenOf(admin, 2400, 1000), await screenOf(admin, 3000, 1000), await screenOf(admin, 3000, 1600)];
+  await admin.mouse.move(open[0].x, open[0].y);
+  await admin.mouse.down();
+  for (const q of open.slice(1)) await admin.mouse.move(q.x, q.y, { steps: 10 });
+  await admin.mouse.up();
+  check((await admin.evaluate(() => window.__editor.draftPoints)) >= 3 && (await annotations(admin)).length === penBefore, "a stroke that does not return to its start stays a draft");
+  await admin.mouse.move(open[2].x, open[2].y + 20);
+  await admin.mouse.down();
+  await admin.mouse.move(open[0].x, open[2].y + 20, { steps: 10 });
+  await admin.mouse.up();
+  await admin.locator(".toolbox .btn", { hasText: "Finish" }).first().click();
+  await waitFor(async () => (await annotations(admin)).length === penBefore + 1, "...the next stroke adds to it and Finish saves the polygon");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === penBefore, "...(undone)");
   await openImage(admin); // forget that a pen was seen: the checks below start without one
 
   // draw a bounding box with key 1 and a drag
@@ -503,7 +548,7 @@ try {
   // ---------------------------------------------------------------------------------------- polygon
   await openImage(admin);
   await pickType(admin, "e2e polygon");
-  check((await admin.locator(".toolbox .hint").first().innerText()).includes("Click to add points"), "polygon type: click to add points");
+  check((await admin.locator(".toolbox .hint").first().innerText()).includes("click to add points"), "polygon type: click to add points");
   const corners = [[2000, 1200], [2600, 1200], [2600, 1800], [2000, 1800]]; // the toolbox covers the lower edge of the image
   for (const [x, y] of corners) {
     const p = await screenOf(admin, x, y);
@@ -588,6 +633,19 @@ try {
   await admin.keyboard.press("Control+z");
   await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "undo restores the polygon after the scissors");
 
+  // the same notch freehand: one stroke that returns to its start cuts it when the pen is lifted
+  await admin.keyboard.press("s");
+  const stroke = [];
+  for (const [x, y] of [[2400, 1100], [2700, 1100], [2700, 1350], [2400, 1350], [2410, 1120]]) stroke.push(await screenOf(admin, x, y));
+  await admin.mouse.move(stroke[0].x, stroke[0].y);
+  await admin.mouse.down();
+  for (const q of stroke.slice(1)) await admin.mouse.move(q.x, q.y, { steps: 10 });
+  await admin.mouse.up();
+  const cutFree = await waitFor(async () => { const v = (await polyNow()).vector; return xs(v).length > 4 ? v : null; }, "a freehand scissors stroke cuts a notch out as well");
+  check(xs(cutFree).length >= 6 && Math.max(...xs(cutFree)) === 2600, `...without Enter (${xs(cutFree).length} vertices)`);
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "...(undone)");
+
   // knife (D): a line through the polygon makes two polygons
   const before2 = (await annotations(admin)).length;
   await admin.keyboard.press("d");
@@ -602,6 +660,16 @@ try {
   check(pieces.some((h) => Math.max(...xs(h.vector)) <= 2302) && pieces.some((h) => Math.min(...xs(h.vector)) >= 2298), "the polygon was split at the line into a left and a right polygon");
   await admin.keyboard.press("Control+z");
   await waitFor(async () => (await annotations(admin)).length === before2 && JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "one undo takes the split back completely");
+  // ...and the knife freehand: the stroke is the cut, lifting finishes it
+  await admin.keyboard.press("d");
+  const [k0, k1] = [await screenOf(admin, 2300, 1000), await screenOf(admin, 2300, 2000)];
+  await admin.mouse.move(k0.x, k0.y);
+  await admin.mouse.down();
+  await admin.mouse.move(k1.x, k1.y, { steps: 14 });
+  await admin.mouse.up();
+  await waitFor(async () => (await annotations(admin)).length === before2 + 1, "a freehand knife stroke splits the polygon, too");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === before2 && JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "...(undone)");
   await admin.screenshot({ path: shots ? `${shots}/a7-ops.png` : undefined });
 
   // the Reshape menu switches the brush on and off (the way for touch screens, which have no Shift / Alt)

@@ -56,11 +56,16 @@ The toolbox at the bottom changes with what you are doing.
 | are drawing | hints for the shape, `Enter` to finish, `Esc` to cancel |
 
 * **Select** an annotation by clicking it. Drag a handle to resize, drag the body to move. Dragging anywhere else pans.
-* **Draw** by dragging (boxes, lines), clicking (points, fixed-size boxes) or clicking corners and finishing with `Enter`,
-  a double click or a click on the first point (polygons).
+* **Draw** by dragging (boxes, lines), clicking (points, fixed-size boxes), or outlining (polygons and polylines): **drag around
+  the shape** with the pen or mouse, and lifting near where you started closes and saves the polygon. A stroke that ends elsewhere
+  stays open: continue with the next stroke or with clicks, and finish with `Enter`, a double click or the *Finish* button.
+  Alternatively click the corners one by one (clicking the first point closes a polygon).
+* **Move the image while drawing** with `Shift` + drag, `Space` + drag, the middle mouse button or (on a touch screen) a finger.
+  A plain drag with the pen or mouse never moves the image while a polygon, polyline, point or one-click box is being drawn.
 * **One-click mode** (`A`): every click places an annotation of the type's default size. A ghost outline shows where.
-* **Polygons**: hold `Shift` and drag to add area with a brush, `Alt` and drag to erase. `S` cuts an area away (scissors),
-  `G` adds one (glue), `D` splits along a line (knife). On a touch screen use the buttons in the toolbox.
+* **Polygons**: select one, hold `Shift` and drag to add area with a brush, `Alt` and drag to erase. `S` cuts an area away
+  (scissors), `G` adds one (glue), `D` splits along a line (knife); with these you can outline freehand as well (the knife cuts
+  where you drew, as soon as you lift the pen). On a touch screen use the buttons in the toolbox.
 * **Several at once**: `Ctrl+A` selects all, `Ctrl+C` / `Ctrl+V` copy and paste, `Delete` removes the selection.
 * **Right click** (long press on a touch screen) on an annotation opens its menu: *Info* (who created and edited it, area,
   position), *Change class*, *Crop to new image* and *Delete*.

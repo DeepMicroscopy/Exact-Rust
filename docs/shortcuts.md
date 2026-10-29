@@ -20,6 +20,7 @@ The shortcuts of the old EXACT interface were kept. Shortcuts are ignored while 
 | `G` | glue: add an area to the selected polygon |
 | `D` | knife: split the selected polygon along a line |
 | `Shift` + drag / `Alt` + drag | brush: add area / erase area of a selected polygon |
+| `Shift` + drag | while drawing by clicks or outlining (polygon, polyline, points, one-click boxes): move the image |
 | `Ctrl` / `⌘` + `Z` | undo |
 | `Ctrl` / `⌘` + `Shift` + `Z`, `Ctrl` + `Y` | redo |
 | `Ctrl` / `⌘` + `A`, `C`, `V` | select all, copy, paste annotations |

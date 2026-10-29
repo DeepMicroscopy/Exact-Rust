@@ -120,6 +120,30 @@ export function simplify(ring: Ring, tol: number): Ring {
   return out.length >= 3 ? out : ring;
 }
 
+/** Douglas-Peucker for an open path (a freehand stroke): the ends stay, every point farther than `tol` from the simplified line is kept. */
+export function simplifyPath(path: Pt[], tol: number): Pt[] {
+  if (path.length <= 2) return path;
+  const keep = new Array(path.length).fill(false);
+  keep[0] = keep[path.length - 1] = true;
+  const stack: [number, number][] = [[0, path.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    const [pa, pb] = [path[a], path[b]];
+    const len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
+    let [maxD, at] = [-1, -1];
+    for (let k = a + 1; k < b; k++) {
+      const q = path[k];
+      const d = len === 0 ? Math.hypot(q[0] - pa[0], q[1] - pa[1]) : Math.abs((pb[0] - pa[0]) * (pa[1] - q[1]) - (pa[0] - q[0]) * (pb[1] - pa[1])) / len;
+      if (d > maxD) [maxD, at] = [d, k];
+    }
+    if (maxD > tol && at > 0) {
+      keep[at] = true;
+      stack.push([a, at], [at, b]);
+    }
+  }
+  return path.filter((_, i) => keep[i]);
+}
+
 /** Integer vertices without repeated neighbours (what the server stores). */
 export function tidy(ring: Ring): Ring {
   const r = ring.map(([x, y]) => [Math.round(x), Math.round(y)] as Pt);

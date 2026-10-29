@@ -26,7 +26,7 @@ import {
   type Handle,
   type Pt,
 } from "./geometry";
-import { capsule, difference, simplify, split, tidy, union, type Ring } from "./polyops";
+import { capsule, difference, simplify, simplifyPath, split, tidy, union, type Ring } from "./polyops";
 import { formatArea, formatLength, measureShape } from "./measure";
 import { toShape } from "./shapes";
 import { VectorType, type Shape } from "./types";
@@ -87,7 +87,8 @@ type Session =
   | { kind: "brush"; shape: Shape; erase: boolean; last: Pt; swept: Ring[]; moved: boolean }
   | { kind: "groupmove"; shapes: Shape[]; start: Pt; moved: boolean }
   | { kind: "marquee"; start: Pt; cur: Pt; additive: boolean }
-  | { kind: "hold" }; // a press while clicking points or boxes: nothing is dragged, and the image is not moved either
+  | { kind: "hold" } // a press while clicking points or boxes: nothing is dragged, and the image is not moved either
+  | { kind: "stroke"; from: Pt; screen: { x: number; y: number }; active: boolean; first: number }; // freehand outline of a polygon / polyline
 
 const TOUCH_SLOP = 18;
 const MOUSE_SLOP = 7;
@@ -95,6 +96,10 @@ const CLOSE_SLOP = 12;
 const CLICK_DEBOUNCE_MS = 220;
 const PEN_TAP_SLOP = 10; // screen pixels a pen may wander during a tap
 const PEN_TAP_MAX_MS = 3000;
+const STROKE_START = 9; // screen pixels a pen or mouse must travel before a press becomes a freehand stroke (below: a tap)
+const STROKE_STEP = 3; // a point of the stroke every so many screen pixels
+const STROKE_TOL = 1.2; // the stroke is simplified to within this many screen pixels on lifting
+const STROKE_CLOSE = 28; // lifting this close to the start closes the outline
 
 const NEW_ID = -1;
 
@@ -515,11 +520,11 @@ export class AnnotationEditor {
         this.session = { kind: "drag", typeId: info.id, start: clampPoint(p, this.host.image()), cur: p };
         e.preventDefaultAction = true;
         this.consumedPress = true;
-      } else this.holdPress(e);
+      } else this.holdPress(e, info ? this.freehand(info) : false);
       return;
     }
     if (this.tool.kind === "op") {
-      this.holdPress(e);
+      this.holdPress(e, true);
       return;
     }
     if (this.tool.kind !== "select") return;
@@ -571,16 +576,76 @@ export class AnnotationEditor {
     this.startMarquee(e, p, !!oe?.shiftKey);
   }
 
+  /** Whether a drag outlines the shape of the type freehand (polygons of any number of corners, polylines). */
+  private freehand(info: TypeInfo): boolean {
+    return (info.vectorType === VectorType.Polygon && info.nodeCount === 0) || info.vectorType === VectorType.MultiLine;
+  }
+
   /**
-   * Drawing by clicks (polygon corners, one-click boxes, points): a drag is not part of it, and must not move the image either (a pen
-   * set down on a point always wanders a little). The image moves with Shift + drag, Space + drag, the middle button, a track pad
-   * swipe, and with a finger on a touch screen.
+   * Drawing by clicks (polygon corners, one-click boxes, points): a drag is not a click, and must not move the image (a pen set down
+   * on a point always wanders a little). Where the shape can be outlined (`stroke`), a drag of more than a few pixels draws the outline
+   * freehand, as one does with a pen. The image moves with Shift + drag, Space + drag, the middle button, a track pad swipe, and with a
+   * finger on a touch screen.
    */
-  private holdPress(e: Ev): void {
+  private holdPress(e: Ev, stroke: boolean): void {
     const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
     if (this.isTouch(e) || oe?.shiftKey || this.spaceDown || oe?.button === 1) return;
-    this.session = { kind: "hold" };
+    const p = this.toImage(this.at(e));
+    const at = this.at(e);
+    this.session = stroke && p ? { kind: "stroke", from: clampPoint(p, this.host.image()), screen: { x: at.x, y: at.y }, active: false, first: 0 } : { kind: "hold" };
     e.preventDefaultAction = true;
+  }
+
+  /** A freehand stroke grows the draft: from the press point on, a point every few screen pixels. */
+  private strokeMove(s: Extract<Session, { kind: "stroke" }>, e: Ev): void {
+    const at = this.at(e);
+    const p = this.toImage(at);
+    if (!p) return;
+    if (!s.active) {
+      if (Math.hypot(at.x - s.screen.x, at.y - s.screen.y) < STROKE_START) return;
+      const op = this.tool.kind === "op" ? this.tool.op : undefined;
+      const info = this.tool.kind === "draw" ? this.host.type(this.tool.typeId) : null;
+      const sel = this.selected;
+      if (op) {
+        if (!sel) return;
+        if (!this.draft) this.draft = { typeId: sel.typeId, points: [], op };
+      } else if (info) {
+        if (!this.draft || this.draft.typeId !== info.id) this.draft = { typeId: info.id, points: [] };
+      } else return;
+      s.active = true;
+      s.first = this.draft.points.length;
+      this.draft.points.push(s.from);
+    }
+    const d = this.draft;
+    if (!d) return;
+    const q = clampPoint(p, this.host.image());
+    if (dist(q, d.points[d.points.length - 1]) * this.zoom() >= STROKE_STEP) d.points.push(q);
+    this.hover = q;
+    this.refresh();
+  }
+
+  /**
+   * Lifting the pen ends a stroke: it is simplified to what the eye sees. An outline that returns to where it started is closed and
+   * saved; so is the knife's line. Anything else stays a draft that the next stroke, a click, Enter or the Finish button goes on with.
+   */
+  private strokeEnd(s: Extract<Session, { kind: "stroke" }>): void {
+    if (!s.active) return; // a tap: the click that follows places a point
+    this.consumedPress = true; // ...and a stroke is no click
+    const d = this.draft;
+    if (!d) return;
+    const tol = STROKE_TOL / this.zoom();
+    const mine = simplifyPath(d.points.slice(s.first), tol);
+    d.points.splice(s.first, d.points.length - s.first, ...mine);
+    const closes = d.points.length >= 4 && dist(d.points[d.points.length - 1], d.points[0]) * this.zoom() <= STROKE_CLOSE;
+    const info = d.op ? null : this.host.type(d.typeId);
+    const outline = d.op ? d.op !== "knife" : info?.vectorType === VectorType.Polygon;
+    if (d.op === "knife") {
+      this.finish();
+    } else if (outline && closes) {
+      d.points.pop(); // the last point only said "here is the start again"
+      this.finish();
+    }
+    this.refresh();
   }
 
   /**
@@ -601,6 +666,10 @@ export class AnnotationEditor {
     if (!s) return;
     e.preventDefaultAction = true;
     if (s.kind === "hold") return;
+    if (s.kind === "stroke") {
+      this.strokeMove(s, e);
+      return;
+    }
     const p = this.toImage(this.at(e));
     if (!p) return;
     const bounds = this.host.image();
@@ -671,6 +740,10 @@ export class AnnotationEditor {
     const keepMany = this.previews;
     this.previews = [];
     if (!s) return;
+    if (s.kind === "stroke") {
+      this.strokeEnd(s);
+      return;
+    }
     if (s.kind === "marquee") {
       const tiny = dist(s.start, s.cur) * this.zoom() < 4;
       if (tiny) {
