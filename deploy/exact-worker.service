@@ -1,0 +1,20 @@
+# Native installation: /etc/systemd/system/exact-worker.service (the registration worker; needs the server up)
+[Unit]
+Description=EXACT registration worker
+After=exact-server.service
+Wants=exact-server.service
+
+[Service]
+User=exact
+Group=exact
+WorkingDirectory=/opt/exact-rust
+EnvironmentFile=/etc/exact/exact.env
+# the Python with qt-wsi-registration, openslide, opencv; --exact-dir is the `exact` folder of an EXACT checkout
+ExecStart=/opt/exact-venv/bin/python /opt/exact-rust/helpers/queue_worker.py --url http://127.0.0.1:8002 \
+  --user ${WORKER_USER} --password ${WORKER_PASSWORD} --exact-dir /opt/exact/exact
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

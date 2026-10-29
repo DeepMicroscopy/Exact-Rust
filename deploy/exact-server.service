@@ -1,0 +1,21 @@
+# Native installation: /etc/systemd/system/exact-server.service (adjust the paths and the user)
+[Unit]
+Description=EXACT-Rust server
+After=network.target postgresql.service
+
+[Service]
+User=exact
+Group=exact
+WorkingDirectory=/opt/exact-rust
+EnvironmentFile=/etc/exact/exact.env
+ExecStart=/opt/exact-rust/bin/exact-server
+Restart=on-failure
+RestartSec=3
+# many slides open at once
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/srv/exact-beta
+
+[Install]
+WantedBy=multi-user.target

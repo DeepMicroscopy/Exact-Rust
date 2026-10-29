@@ -1,0 +1,36 @@
+# Beta installation: server + registration worker (the database is an existing PostgreSQL with the copy of the production data).
+#   cp deploy/exact.env.example deploy/exact.env   # fill in; IMAGE_PATH, MEDIA_ROOT, EXACT_CACHE_DIR are the host folders
+#   alias dc='docker compose --env-file deploy/exact.env -f deploy/docker-compose.yml'   # the env file also fills ${...} below
+#   dc build
+#   dc run --rm server sh -c 'exact-cli migrate --confirm-db "$SQL_DATABASE"'
+#   dc up -d
+# Inside the containers the folders are /data/images, /data/media and /data/cache; SQL_HOST must be reachable from the container
+# (host.docker.internal on Docker Desktop, the host's address on Linux).
+services:
+  server:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    image: exact-rust
+    env_file: exact.env
+    environment:
+      EXACT_LISTEN: 0.0.0.0:8002
+      IMAGE_PATH: /data/images
+      MEDIA_ROOT: /data/media
+      EXACT_CACHE_DIR: /data/cache
+      EXACT_NIFTI_CACHE: /data/cache/nifti
+    ports: ["127.0.0.1:8002:8002"]   # the reverse proxy runs on the host
+    volumes:
+      - ${IMAGE_PATH:?set IMAGE_PATH in exact.env and export it for compose}:/data/images
+      - ${MEDIA_ROOT:?set MEDIA_ROOT}:/data/media
+      - ${EXACT_CACHE_DIR:?set EXACT_CACHE_DIR}:/data/cache
+    restart: unless-stopped
+  worker:
+    image: exact-rust
+    depends_on: [server]
+    env_file: exact.env
+    environment:
+      IMAGE_PATH: /data/images
+    # the worker reads the slide files itself (the paths the server hands out are the server's: /data/images/...)
+    volumes:
+      - ${IMAGE_PATH}:/data/images:ro
+    command: ["sh", "-c", "python /app/helpers/queue_worker.py --url http://server:8002 --user \"$WORKER_USER\" --password \"$WORKER_PASSWORD\" --exact-dir /opt/exact/exact"]
+    restart: unless-stopped

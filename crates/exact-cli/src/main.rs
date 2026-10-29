@@ -26,6 +26,8 @@ enum Cmd {
     LevelOffsets { file: PathBuf },
     /// Repair one damaged TIFF in place: pyramid rebuilt from level 0, original kept as `<name>.orig.<ext>`.
     RepairImage { file: PathBuf },
+    /// Read every stored passkey (`passkeys_userpasskey`) the way the server does and report those it cannot use (reads only).
+    AuditPasskeys,
     /// Create the additive tables the Rust server needs (sessions). Safe to repeat; Django tables are untouched.
     Migrate {
         /// Must equal the configured database name; guards against running against the wrong database.
@@ -100,6 +102,35 @@ async fn main() -> anyhow::Result<()> {
                 r.levels,
                 r.backup.display()
             );
+        }
+        Cmd::AuditPasskeys => {
+            let pool = exact_db::connect(&cfg).await?;
+            let rows: Vec<(i32, i64, String, bool, String)> = sqlx::query_as(
+                "SELECT id, user_id::bigint, name, enabled, token FROM passkeys_userpasskey ORDER BY id",
+            )
+            .fetch_all(&pool)
+            .await
+            .context("reading passkeys_userpasskey")?;
+            let (mut es256, mut rs256, mut bad) = (0, 0, 0);
+            for (id, user, name, enabled, token) in &rows {
+                match exact_auth::webauthn::parse_stored_token(token) {
+                    Ok(c) => match c.public_key {
+                        exact_auth::webauthn::PublicKey::Es256(_) => es256 += 1,
+                        exact_auth::webauthn::PublicKey::Rs256(_) => rs256 += 1,
+                    },
+                    Err(e) => {
+                        bad += 1;
+                        println!("UNUSABLE  passkey {id} (user {user}, {name:?}, enabled: {enabled}): {e}");
+                    }
+                }
+            }
+            println!(
+                "{} passkeys: {es256} ES256, {rs256} RS256, {bad} unusable here (they would have to be enrolled again)",
+                rows.len()
+            );
+            if bad > 0 {
+                std::process::exit(1);
+            }
         }
         Cmd::Migrate { confirm_db } => {
             if confirm_db != cfg.db_name {

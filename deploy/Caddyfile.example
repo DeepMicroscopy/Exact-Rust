@@ -1,0 +1,16 @@
+# Reverse proxy with automatic https. The beta must not be public: restrict it (VPN / IP allow-list / basic auth) until login rate
+# limiting exists. Generate the hash with `caddy hash-password`.
+exact-beta.example.org {
+	@outside not remote_ip 134.0.0.0/8 10.0.0.0/8   # your network
+	handle @outside {
+		basicauth {
+			beta JDJhJDE0JGV4YW1wbGUtaGFzaC1yZXBsYWNlLW1l
+		}
+	}
+	request_body {
+		max_size 20GB   # slide uploads
+	}
+	reverse_proxy 127.0.0.1:8002 {
+		flush_interval -1
+	}
+}

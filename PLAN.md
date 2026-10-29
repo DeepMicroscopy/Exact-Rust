@@ -736,3 +736,10 @@ Not yet: rename of single images. (Auxiliary files, export and team statistics a
 - As in the old EXACT an annotation of a stack, volume or movie carries the frame it was drawn on in its vector (`vector.frame`, counted from 1) and is shown on that frame only; annotation types with *multi frame* are shown on every frame; an annotation without a frame (older ones, single images) is shown everywhere. New and pasted annotations get the current frame, every edit keeps the frame (`viewer-core/frames.ts`, `useAnnotationActions`). In a volume annotations live in the axial plane: the coronal and sagittal planes of the single-plane view show none (and cannot be drawn on); the three-plane view shows the axial slice's annotations read-only.
 - The vector validation (shared with the legacy writes) ignores the `frame` key when it counts coordinates; the REST API of EXACT takes it, only the legacy views count it.
 - Not done: the frame of a global annotation (no vector), segmentation masks per frame are separate (tiles carry their frame), moving an annotation to another frame, "copy to next frame".
+
+
+### 5aq. Beta deployment kit (2026-10-29)
+- `deploy/` (Dockerfile: UI + Rust build + Python with slideio/qt-wsi-registration + EXACT checkout for the registration worker; `docker-compose.yml` server + worker; `exact.env.example`; systemd units; `Caddyfile.example`), `docs/DEPLOY.md` (runbook: copy of files, restore, `exact-cli migrate`, audit, first checks, operating notes).
+- `scripts/audit-backup.sh` (reads only: migration state, sizes, formats, source files missing on disk, data quality, biggest image sets, annotation-load timing through the API) and `exact-cli audit-passkeys` (every stored passkey parsed the way the server does).
+- The server writes to the image store (uploads, move, delete, repair, crop): the beta runs on a copy of the files. `exact-cli migrate` is not run by the server on start.
+- Image build verified on arm64 (no slideio wheel there); not yet on x86_64.

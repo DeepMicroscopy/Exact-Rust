@@ -851,10 +851,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "exact-auth",
  "exact-core",
  "exact-db",
  "exact-wsi",
  "serde_json",
+ "sqlx",
  "tokio",
 ]
 
