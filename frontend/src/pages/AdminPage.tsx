@@ -456,6 +456,8 @@ function UsersTab({ me }: { me: AdminMe }) {
   const [newWorker, setNewWorker] = useState(false);
   const users = useQuery({ queryKey: ["admin-users"], queryFn: () => listAll<UserRow>("/api/v2/users", { fields: "id,username,is_active,is_staff,is_superuser,last_login,team_set" }), staleTime: 0 });
   const teams = useQuery({ queryKey: ["admin-teams"], queryFn: () => listAll<TeamRow>("/api/v2/teams", { fields: "id,name" }), staleTime: 0 });
+  const roles = useQuery({ queryKey: ["admin-roles"], queryFn: () => api<{ site_admin_ids: number[] }>("/api/v2/admin/roles"), staleTime: 0 });
+  const administrators = useMemo(() => new Set(roles.data?.site_admin_ids ?? []), [roles.data]);
   const names = useMemo(() => new Map((teams.data ?? []).map((t) => [t.id, t.name])), [teams.data]);
   const shown = (users.data ?? []).filter((u) => u.username.toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => a.username.localeCompare(b.username));
   const run = (fn: () => Promise<unknown>) =>
@@ -463,6 +465,7 @@ function UsersTab({ me }: { me: AdminMe }) {
       () => {
         setError(null);
         void qc.invalidateQueries({ queryKey: ["admin-users"] });
+        void qc.invalidateQueries({ queryKey: ["admin-roles"] });
       },
       (e) => setError(msg(e)),
     );
@@ -482,13 +485,18 @@ function UsersTab({ me }: { me: AdminMe }) {
         )}
       </div>
       {error && <p className="error">{error}</p>}
+      <p className="muted small roles-legend" data-testid="roles-legend">
+        <strong>Administrator</strong> manages users: activate and deactivate, reset passwords, delete, invite into any team, see the Users tab. <strong>Edits profiles</strong> (Django: staff) may change other
+        users' names and email. <strong>Full rights</strong> (superuser) holds every permission and is the only role that can hand out roles and permissions. What a user sees is decided by their teams, not by these roles.
+      </p>
       <table className="admin-table" data-testid="users">
         <thead>
           <tr>
             <th>User</th>
             <th>Teams</th>
             <th>Active</th>
-            <th>Staff</th>
+            <th title="Manages users: activate, deactivate, reset passwords, delete, invite into any team">Administrator</th>
+            <th title="May change other users' names and email (Django: staff)">Edits profiles</th>
             <th>Last login</th>
             <th />
           </tr>
@@ -500,14 +508,33 @@ function UsersTab({ me }: { me: AdminMe }) {
               <tr key={u.id}>
                 <td>
                   {u.username}
-                  {u.is_superuser && <span className="badge"> superuser</span>}
+                  {u.is_superuser && (
+                    <span className="badge" title="Superuser: holds every permission and may hand out roles and permissions"> full rights</span>
+                  )}
                 </td>
                 <td className="muted small">{u.team_set.map((t) => names.get(t) ?? t).join(", ")}</td>
                 <td>
                   <input type="checkbox" checked={u.is_active} disabled={self} onChange={(e) => patch(u.id, { is_active: e.target.checked })} aria-label={`${u.username} is active`} />
                 </td>
                 <td>
-                  <input type="checkbox" checked={u.is_staff} disabled={self || !me.is_superuser} onChange={(e) => patch(u.id, { is_staff: e.target.checked })} aria-label={`${u.username} is staff`} title={me.is_superuser ? undefined : "Only superusers change this"} />
+                  <input
+                    type="checkbox"
+                    checked={administrators.has(u.id)}
+                    disabled={self || !me.is_superuser}
+                    onChange={(e) => patch(u.id, { is_site_admin: e.target.checked })}
+                    aria-label={`${u.username} is administrator`}
+                    title={me.is_superuser ? "Manages users: activate, deactivate, reset passwords, delete, invite into any team" : "Only superusers change this"}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={u.is_staff}
+                    disabled={self || !me.is_superuser}
+                    onChange={(e) => patch(u.id, { is_staff: e.target.checked })}
+                    aria-label={`${u.username} edits profiles`}
+                    title={me.is_superuser ? "May change other users' names and email (Django: staff)" : "Only superusers change this"}
+                  />
                 </td>
                 <td className="muted small">{u.last_login ? new Date(u.last_login).toLocaleDateString() : "never"}</td>
                 <td className="row-actions">

@@ -6,7 +6,7 @@
 //! admin; the last member leaving deletes the team).
 //!
 //! Users (rules of `administration/views.py`): `PATCH /api/v2/users/{id}` (staff: names, email, username, frontend; site
-//! admin: `is_active`; superuser: `is_staff`), `DELETE` (site admin), `POST /api/v2/users/{id}/random-password` (site admin,
+//! admin: `is_active`; superuser: `is_staff` and `is_site_admin`), `DELETE` (site admin), `POST /api/v2/users/{id}/random-password` (site admin,
 //! answers the new password once). Nobody can change or delete their own account here, and only superusers touch
 //! superusers.
 //!
@@ -54,6 +54,7 @@ pub fn routes() -> Router<AppState> {
             axum::routing::get(permission_catalog),
         )
         .route("/api/v2/admin/users", axum::routing::post(user_create))
+        .route("/api/v2/admin/roles", axum::routing::get(roles))
         .route(
             "/api/v2/admin/users/{id}/permissions",
             axum::routing::get(user_permissions_get).put(user_permissions_put),
@@ -487,6 +488,18 @@ pub async fn user_patch(
     };
     let active = flag(d.get("is_active"));
     let staff = flag(d.get("is_staff"));
+    let site_admin_flag = flag(d.get("is_site_admin"));
+    if site_admin_flag.is_some() {
+        if id == p.user.id {
+            return Err(ApiError::detail(
+                StatusCode::BAD_REQUEST,
+                "You cannot change your own administrator status here.",
+            ));
+        }
+        if !p.user.is_superuser {
+            return Err(forbidden("Only superusers may make users administrators."));
+        }
+    }
     if active.is_some() {
         if id == p.user.id {
             return Err(ApiError::detail(
@@ -539,8 +552,32 @@ pub async fn user_patch(
             .await
             .map_err(db_err)?;
     }
+    if let Some(a) = site_admin_flag {
+        sqlx::query(
+            "INSERT INTO users_userpreferences (user_id, frontend, is_site_admin) VALUES ($1, 2, $2)
+             ON CONFLICT (user_id) DO UPDATE SET is_site_admin = $2",
+        )
+        .bind(id)
+        .bind(a)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    }
     tx.commit().await.map_err(db_err)?;
     Ok(Json(serialized(&s, &p, &headers, "User", id).await?).into_response())
+}
+
+/// `GET /api/v2/admin/roles` (site admins): the ids of the users who are site admins (the flag is not part of the user resource).
+async fn roles(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    site_admin(&s, &p).await?;
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT user_id FROM users_userpreferences WHERE is_site_admin ORDER BY user_id",
+    )
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(json!({"site_admin_ids": ids})).into_response())
 }
 
 async fn site_admin(s: &AppState, p: &Principal) -> ApiResult<()> {

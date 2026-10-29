@@ -138,6 +138,13 @@ try {
   check((await workerPage.locator(".side-item", { hasText: teamName }).count()) === 1, "the worker can sign in and is a member of the chosen team");
   await root.fill('input[aria-label="Filter users"]', workerName);
   await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 1, "the users list finds the worker");
+  check((await root.locator('[data-testid="roles-legend"]').innerText()).includes("Administrator") && (await root.locator('[data-testid="users"] th', { hasText: "Edits profiles" }).count()) === 1, "the Users tab explains the roles");
+  const adminBox = root.locator(`input[aria-label="${workerName} is administrator"]`);
+  check(!(await adminBox.isChecked()), "a worker account is no administrator");
+  await adminBox.click({ force: true });
+  await waitFor(() => adminBox.isChecked(), "a superuser can make a user an administrator (the role of the Users tab)...");
+  await adminBox.click({ force: true });
+  await waitFor(async () => !(await adminBox.isChecked()), "...and take it away again");
   await root.locator(".btn", { hasText: "Permissions" }).click();
   await root.waitForSelector('[data-testid="permissions"]');
   const isOn = (key) => root.locator(`.modal input[data-key="${key}"]`).isChecked();

@@ -103,3 +103,21 @@ def test_a_worker_account_without_a_preset_has_no_permissions_and_no_teams():
         assert admin.get(f"/api/v2/admin/users/{r.json()['id']}/permissions").json()["direct"] == []
     finally:
         admin.delete(f"/api/v2/users/{r.json()['id']}")
+
+
+def test_the_administrator_flag_can_be_read_and_set_by_superusers_only(worker):
+    admin, w = worker
+    assert w["id"] not in admin.get("/api/v2/admin/roles").json()["site_admin_ids"]
+    r = admin.patch(f"/api/v2/users/{w['id']}", json={"is_site_admin": True})
+    assert r.status_code == 200, r.text
+    assert w["id"] in admin.get("/api/v2/admin/roles").json()["site_admin_ids"]
+    # that user now administers users (the Users tab's rights): a site admin may read the roles
+    assert client(w["username"], w["password"]).get("/api/v2/admin/roles").status_code == 200
+    assert admin.patch(f"/api/v2/users/{w['id']}", json={"is_site_admin": False}).status_code == 200
+    assert w["id"] not in admin.get("/api/v2/admin/roles").json()["site_admin_ids"]
+    assert client(w["username"], w["password"]).get("/api/v2/admin/roles").status_code == 403
+    me = admin.get("/api/v2/auth/me").json()["id"]
+    assert admin.patch(f"/api/v2/users/{me}", json={"is_site_admin": False}).status_code == 400  # not one's own
+    # brummel is staff and site admin, not a superuser: administers users but does not hand out the role
+    assert client("brummel").patch(f"/api/v2/users/{w['id']}", json={"is_site_admin": True}).status_code == 403
+    assert client("rt_member").get("/api/v2/admin/roles").status_code == 403

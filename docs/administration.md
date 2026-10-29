@@ -20,9 +20,20 @@ Lists the analysis and registration plugins that workers have announced, with th
 themselves when a worker starts.
 
 ## Users
-Create users and edit their name and e-mail, see their teams, whether they are active or staff and when they last logged in,
-and give them a **reset link** or a **random password** (shown once). The server can also let a superuser impersonate a user
-(`/api/v2/admin/users/{id}/impersonate`); there is no button for it yet.
+The Users tab (for administrators) lists everybody. Create users through invitations (Teams) or, for services, **New worker account…**
+(see below). Edit a user's name and e-mail, give them a **reset link** or a **random password** (shown once), deactivate or delete them.
+The server can also let a superuser impersonate a user (`/api/v2/admin/users/{id}/impersonate`); there is no button for it yet.
+
+Four roles are in play, and the table shows them in plain words:
+
+| Role | Meaning |
+|---|---|
+| **Administrator** (the "site admin" flag) | Manages users: activate and deactivate, reset passwords, delete, invite into any team, sees the Users tab and the plugin overview. Superusers can switch it on and off. |
+| **Edits profiles** (Django: "staff") | May change other users' names and e-mail addresses. |
+| **Full rights** (Django: "superuser") | Holds every permission without being granted it, can hand out roles and permissions, create worker accounts, delete annotation types, and touch other superusers. Set by the database or by another superuser. |
+| **Team admin** (Teams tab) | Manages one team: members, invitations, name. |
+
+What a user can see is decided by their teams, not by these roles: a superuser sees only the images of their own teams.
 
 ## Workers
 Analysis and registration are done by a separate process, usually the Python queue worker (`helpers/queue_worker.py`). It logs in like a
