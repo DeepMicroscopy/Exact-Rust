@@ -222,6 +222,15 @@ impl OpenSlidePool {
         let n = std::thread::available_parallelism()
             .map_or(2, |n| n.get())
             .clamp(2, 4);
+        Self::open_n(path, n)
+    }
+
+    /// One handle only: enough for a thumbnail, and a quarter of the opening cost and of the cache memory.
+    pub fn open_single(path: &str) -> Result<Self> {
+        Self::open_n(path, 1)
+    }
+
+    fn open_n(path: &str, n: usize) -> Result<Self> {
         let handles = (0..n)
             .map(|_| OpenSlide::open(path).map(std::sync::Mutex::new))
             .collect::<Result<Vec<_>>>()?;

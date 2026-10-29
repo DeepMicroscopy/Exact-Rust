@@ -18,15 +18,21 @@ import sys
 import numpy as np
 import slideio
 
+# the last slides opened, bounded: a helper that serves thumbnails of hundreds of different files must not keep them all open
+MAX_OPEN = int(os.environ.get("SLIDEIO_MAX_OPEN", "12"))
 slides = {}
 
 
 def open_slide(path):
     if path in slides:
+        slides[path] = slides.pop(path)  # most recently used last
         return slides[path]
     fh = slideio.open_slide(path)
     scene = fh.get_scene(0)
     slides[path] = (fh, scene)
+    while len(slides) > MAX_OPEN:
+        old = slides.pop(next(iter(slides)))
+        del old
     return slides[path]
 
 

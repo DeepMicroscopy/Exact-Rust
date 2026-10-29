@@ -49,7 +49,7 @@ fn pool() -> Option<&'static Pool> {
         let n = std::env::var("SLIDEIO_WORKERS")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(2usize)
+            .unwrap_or(4usize)
             .max(1);
         Some(Pool {
             python,

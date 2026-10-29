@@ -11,6 +11,7 @@ import { Thumb } from "../components/Thumb";
 
 const LAST_TEAM = "exact.team";
 const MAX_FOUND = 60; // sets shown for a search
+const PAGE = 48; // cards of a team drawn at first (each is a thumbnail that may have to be rendered): "Show more" adds this many
 
 /** A team is always selected (the last one used, else the first): only its image sets are loaded and drawn. The search covers all teams. */
 export function Index() {
@@ -18,6 +19,7 @@ export function Index() {
   const [stats, setStats] = useState(false);
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
+  const [shown, setShown] = useState(PAGE);
   const navigate = useNavigate();
   const teams = useQuery({ queryKey: ["teams"], queryFn: () => listAll<Team>("/api/v2/teams", { fields: "id,name" }) });
   useEffect(() => {
@@ -32,6 +34,7 @@ export function Index() {
   }, [teams.data, teamId]);
   const pickTeam = (id: number) => {
     setTeamId(id);
+    setShown(PAGE);
     try {
       localStorage.setItem(LAST_TEAM, String(id));
     } catch {
@@ -111,7 +114,7 @@ export function Index() {
         {(cards.error || index.error) && <p className="error">Could not load image sets.</p>}
         {q && matches.length > MAX_FOUND && <p className="muted">Showing {MAX_FOUND} of {matches.length} image sets: narrow the search.</p>}
         <div className="cards">
-          {visible.map((s) => (
+          {visible.slice(0, q ? MAX_FOUND : shown).map((s) => (
             <Link key={s.id} to={`/sets/${s.id}`} className="card glass">
               <Thumb imageId={s.images[0]} alt={s.name} />
               <div className="card-body">
@@ -123,6 +126,13 @@ export function Index() {
             </Link>
           ))}
         </div>
+        {!q && visible.length > shown && (
+          <p>
+            <button className="btn" onClick={() => setShown((n) => n + PAGE)}>
+              Show more ({visible.length - shown} more image sets)
+            </button>
+          </p>
+        )}
         {cards.data && !cards.isFetching && visible.length === 0 && hits.length === 0 && !found.isFetching && <p className="muted">{q ? "Nothing found." : "This team has no image sets yet."}</p>}
         {q.length >= 2 && hits.length > 0 && (
           <>

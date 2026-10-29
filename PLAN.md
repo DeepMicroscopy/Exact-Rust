@@ -743,3 +743,14 @@ Not yet: rename of single images. (Auxiliary files, export and team statistics a
 - `scripts/audit-backup.sh` (reads only: migration state, sizes, formats, source files missing on disk, data quality, biggest image sets, annotation-load timing through the API) and `exact-cli audit-passkeys` (every stored passkey parsed the way the server does).
 - The server writes to the image store (uploads, move, delete, repair, crop): the beta runs on a copy of the files. `exact-cli migrate` is not run by the server on start.
 - Image build verified on arm64 (no slideio wheel there); not yet on x86_64.
+
+### 5ar. Thumbnails under load (2026-10-29)
+The beta on the real image store (24k images, mostly SVS / MRXS / VSI / NDPI) was slow when the overview of a team with 200+ image sets asked for 200 covers
+at once, with the CPUs idle: `htop` showed the slideio helpers in disk waits (D). Causes found in the code: the thumbnail handler did a `stat` of the slide file on the
+async runtime thread; every cache miss opened the slide as a pool of up to four handles and put it into the 20-entry viewing cache (evicting what was being viewed);
+the number of renderings at once was unbounded (all the blocking threads), the helper pool had two processes and kept every slide it had ever opened.
+Now: file access off the async threads, `EXACT_THUMBNAIL_JOBS` (4) and `SLIDEIO_WORKERS` (4) semaphores (helper formats have their own queue), single-flight per
+thumbnail, atomic cache writes, a five-minute negative cache, a single light handle that is not cached (`SlideCache::get_light`), the helper keeps at most 12 slides
+(`SLIDEIO_MAX_OPEN`), the home page draws 48 sets and loads thumbnails at low priority, and `scripts/warm-thumbnails.py` renders the covers ahead.
+Test: `tests/conformance/test_v2_thumbnails.py` (a burst of 40 requests for different images; 24 at once for one thumbnail renders and stores it once).
+Not measured on the production storage: the numbers there decide `EXACT_THUMBNAIL_JOBS`.

@@ -92,3 +92,21 @@ until login rate limiting exists. Mail is not configured: users get in through i
 * Update: stop, replace binary (and `frontend/dist`), `exact-cli migrate`, start.
 * Throw away: stop both units, `dropdb exact_beta`, delete the file copy. Production is untouched.
 * Known gaps: no window/level in the three-plane view, no editor for export formats, global annotations have no frame, no per-user rate limiting (hence the access restriction).
+
+## 8. When many requests make it slow
+The first look at a team with hundreds of image sets asks for a thumbnail of every cover, and a thumbnail of a whole-slide file means opening
+the file on the storage. That is waiting for the disk, not computing, which is why the CPUs stay idle (`ps -eo stat,pid,args | awk '$1 ~ /^D/'`
+lists the processes stuck in disk waits; `iostat -x 1` shows how busy the disks are, and `mount` whether the image store is a network file system).
+What the server does about it:
+* thumbnails are rendered a few at a time (`EXACT_THUMBNAIL_JOBS`, default 4; the CZI / VSI / DICOM ones through the Python helper have a queue of their own,
+  `SLIDEIO_WORKERS`, default 4), a thumbnail asked for twice at once is rendered once, a file that cannot be read is not tried again for five minutes,
+  and a thumbnail does not open a pool of handles or push the slides being viewed out of the cache;
+* a rendered thumbnail is a small file in `EXACT_CACHE_DIR/thumbnails` and a browser keeps it: only the first look is slow;
+* the home page draws 48 image sets at first ("Show more" adds more).
+
+Render the covers ahead of the users, a few at a time (nights are best; Ctrl+C stops, what is done stays done):
+```
+scripts/warm-thumbnails.py --url https://<host> --user <name> --jobs 3              # the cover of every image set
+scripts/warm-thumbnails.py --url https://<host> --user <name> --jobs 3 --all-images # every image (long)
+```
+If the storage is fast (local NVMe) raise `EXACT_THUMBNAIL_JOBS`; on slow network storage keep it low. Each helper process uses about 0.5 GB.

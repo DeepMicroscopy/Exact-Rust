@@ -85,6 +85,18 @@ pub fn is_tiff_magic(head: [u8; 4]) -> bool {
 
 /// Opens a slide file of any supported format.
 pub fn open(path: &str) -> Result<Arc<dyn Slide>> {
+    open_with(path, false)
+}
+
+/// `light`: for one look (a thumbnail): a single OpenSlide handle instead of a pool of several.
+fn open_with(path: &str, light: bool) -> Result<Arc<dyn Slide>> {
+    let pool = |p: &str| -> Result<Arc<dyn Slide>> {
+        Ok(Arc::new(if light {
+            openslide::OpenSlidePool::open_single(p)?
+        } else {
+            openslide::OpenSlidePool::open(p)?
+        }))
+    };
     let mut f = std::fs::File::open(path).map_err(|e| WsiError(format!("{path}: {e}")))?;
     let head = magic_at(&mut f, 0);
     let ext = Path::new(path)
@@ -137,14 +149,14 @@ pub fn open(path: &str) -> Result<Arc<dyn Slide>> {
     }
     // vendor formats (SVS, NDPI, MRXS, Ventana, Leica, DICOM, generic pyramidal TIFF, ...)
     if openslide::available() && openslide::detect_vendor(path).is_some() {
-        return Ok(Arc::new(openslide::OpenSlidePool::open(path)?));
+        return pool(path);
     }
     if matches!(head, [0xff, 0xd8, 0xff, _] | [0x89, b'P', b'N', b'G']) || (tiff && ext != "ndpi") {
         return Ok(Arc::new(PlainImage::open(path)?));
     }
     if openslide::available() {
-        if let Ok(s) = openslide::OpenSlidePool::open(path) {
-            return Ok(Arc::new(s));
+        if let Ok(s) = pool(path) {
+            return Ok(s);
         }
     }
     err(format!("no reader for {path}"))
@@ -162,6 +174,15 @@ impl SlideCache {
     /// Forgets a slide, e.g. after its file was replaced.
     pub fn invalidate(&self, path: &str) {
         self.0.invalidate(path);
+    }
+
+    /// For a single look (a thumbnail): the cached slide if it is open anyway, else a lightly opened one that is not kept, so that
+    /// browsing many slides does not push the ones being viewed out of the cache. Blocking.
+    pub fn get_light(&self, path: &str) -> Result<Arc<dyn Slide>> {
+        if let Some(s) = self.0.get(path) {
+            return Ok(s);
+        }
+        open_with(path, true)
     }
 
     /// Blocking: call from `spawn_blocking`.

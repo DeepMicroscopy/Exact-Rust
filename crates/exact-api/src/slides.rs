@@ -35,6 +35,24 @@ pub struct SlideState {
     dz: Cache<String, Arc<DeepZoom>>,
     tiles: Cache<String, Bytes>,
     build_locks: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+    /// Thumbnails being rendered at once: slide files are read from slow storage, and a burst of renderings of many different slides
+    /// (the covers of a team's 200 image sets) is slower for everybody than the same work one after the other (`EXACT_THUMBNAIL_JOBS`).
+    thumb_jobs: Arc<tokio::sync::Semaphore>,
+    /// ...and of those that go through the Python helper (CZI, VSI, DICOM), which has few processes: a queue of its own, so that it does not
+    /// hold up the other formats.
+    thumb_jobs_helper: Arc<tokio::sync::Semaphore>,
+    /// Thumbnails being rendered, by cache file: a second request for the same one waits for the first instead of rendering it again.
+    thumb_flight: Arc<std::sync::Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>>,
+    /// Files that could not be rendered, for a few minutes: a corrupt file is not opened again by every page view.
+    thumb_failed: Cache<PathBuf, ()>,
+}
+
+fn env_count(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(default)
 }
 
 impl SlideState {
@@ -45,6 +63,19 @@ impl SlideState {
             slides: SlideCache::new(20),
             dz: Cache::new(20),
             build_locks: Default::default(),
+            thumb_jobs: Arc::new(tokio::sync::Semaphore::new(env_count(
+                "EXACT_THUMBNAIL_JOBS",
+                4,
+            ))),
+            thumb_jobs_helper: Arc::new(tokio::sync::Semaphore::new(env_count(
+                "SLIDEIO_WORKERS",
+                4,
+            ))),
+            thumb_flight: Default::default(),
+            thumb_failed: Cache::builder()
+                .time_to_live(std::time::Duration::from_secs(300))
+                .max_capacity(5000)
+                .build(),
             tiles: Cache::builder()
                 .weigher(|_, v: &Bytes| v.len().try_into().unwrap_or(u32::MAX))
                 .max_capacity(512 * 1024 * 1024)
@@ -323,26 +354,80 @@ async fn thumbnail(
     Path(pk): Path<String>,
 ) -> ApiResult<Response> {
     let p = principal(&s, &headers).await?;
-    let img = image_of(&s, &p, &pk).await?;
-    let thumb_path = img.thumbnail_path(&s);
-    let path = img.path(&s, 1, 1);
+    let img = Arc::new(image_of(&s, &p, &pk).await?);
     let st = s.slides.clone();
-    let bytes = tokio::task::spawn_blocking(move || -> exact_wsi::Result<Vec<u8>> {
-        if let Ok(b) = std::fs::read(&thumb_path) {
-            return Ok(b);
+    let path = img.path(&s, 1, 1);
+    // everything that touches the file system runs off the async threads (the storage may be slow: even a stat can take a while)
+    let (thumb_path, hit) = {
+        let (s, img) = (s.clone(), img.clone());
+        tokio::task::spawn_blocking(move || {
+            let tp = img.thumbnail_path(&s);
+            let hit = std::fs::read(&tp).ok();
+            (tp, hit)
+        })
+        .await
+        .map_err(blocking_err)?
+    };
+    if let Some(b) = hit {
+        return Ok(browser_cached("image/png", b));
+    }
+    if st.thumb_failed.contains_key(&thumb_path) {
+        return Err(slide_err(exact_wsi::WsiError("failed before".into())));
+    }
+    // one rendering per thumbnail at a time, and a limited number of renderings altogether
+    let flight = {
+        let mut m = st.thumb_flight.lock().unwrap_or_else(|e| e.into_inner());
+        m.entry(thumb_path.clone()).or_default().clone()
+    };
+    let _one = flight.lock().await;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let queue = if matches!(ext.as_str(), "czi" | "vsi" | "dcm") {
+        st.thumb_jobs_helper.clone()
+    } else {
+        st.thumb_jobs.clone()
+    };
+    let _permit = queue
+        .acquire_owned()
+        .await
+        .map_err(|e| ApiError::detail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (slides, tp) = (st.clone(), thumb_path.clone());
+    let result = tokio::task::spawn_blocking(move || -> exact_wsi::Result<Vec<u8>> {
+        if let Ok(b) = std::fs::read(&tp) {
+            return Ok(b); // another request finished it while this one waited
         }
-        let slide = st.slides.get(&path.to_string_lossy())?;
+        let slide = slides.slides.get_light(&path.to_string_lossy())?;
         let b = png(&slide.thumbnail((128, 128))?);
-        if let Some(dir) = thumb_path.parent() {
+        if let Some(dir) = tp.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let _ = std::fs::write(&thumb_path, &b); // best effort cache
+        // best effort cache; written whole under another name, so that nobody reads half a file
+        let tmp = tp.with_extension(format!("tmp{}", std::process::id()));
+        if std::fs::write(&tmp, &b).is_ok() && std::fs::rename(&tmp, &tp).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
         Ok(b)
     })
     .await
-    .map_err(blocking_err)?
-    .map_err(slide_err)?;
-    Ok(browser_cached("image/png", bytes))
+    .map_err(blocking_err)?;
+    {
+        let mut m = st.thumb_flight.lock().unwrap_or_else(|e| e.into_inner());
+        if m.get(&thumb_path)
+            .is_some_and(|f| Arc::strong_count(f) <= 2)
+        {
+            m.remove(&thumb_path); // nobody else waits for it
+        }
+    }
+    match result {
+        Ok(bytes) => Ok(browser_cached("image/png", bytes)),
+        Err(e) => {
+            st.thumb_failed.insert(thumb_path, ());
+            Err(slide_err(e))
+        }
+    }
 }
 
 async fn get_patch(

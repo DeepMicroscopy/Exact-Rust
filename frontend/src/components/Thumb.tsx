@@ -4,5 +4,5 @@ import { useState } from "react";
 export function Thumb({ imageId, alt }: { imageId: number | undefined; alt: string }) {
   const [failed, setFailed] = useState(false);
   if (imageId === undefined || failed) return <div className="thumb placeholder" aria-label={alt} />;
-  return <img className="thumb" loading="lazy" alt={alt} src={`/api/v2/images/${imageId}/thumbnail`} onError={() => setFailed(true)} />;
+  return <img className="thumb" loading="lazy" decoding="async" fetchPriority="low" alt={alt} src={`/api/v2/images/${imageId}/thumbnail`} onError={() => setFailed(true)} />;
 }
