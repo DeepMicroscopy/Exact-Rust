@@ -15,7 +15,7 @@ additive tables/columns the beta adds exist only in the copy.
 | Host | Linux (or macOS) with Docker (the database runs in a container, as in EXACT's own compose) or, for a native install, PostgreSQL 16; disk for a copy of the image store, an https host name |
 | Database | the production `pg_dump -Fc` (custom format) |
 | Files | the production image store (`IMAGE_PATH`: folders `exact_<team>_<set>/`) and `MEDIA_ROOT` (aux files, plugin icons, registration files, exports) |
-| Accounts | the PostgreSQL role the server uses; an EXACT account with the permissions `images.change_imageregistration` and `processing.change_pluginjob` for the registration worker (an existing ML/worker account or a superuser) |
+| Accounts | the PostgreSQL role the server uses; an account for the registration worker: in the beta, **Administration → Users → New worker account…** creates it (permissions, teams, password; see [Administration](administration)); an existing ML/worker account works too if it has `processing.add_plugin`, `processing.change_pluginjob` and `images.change_imageregistration` and is a member of the teams to serve |
 | Name | passkeys only work on the host name they were enrolled for: **`FIDO_SERVER_ID=exact.hs-flensburg.de`** works on that host and below it. On any other host everyone enrolls a new passkey (passwords keep working) |
 
 ## 1. Files: a copy, or the real store mounted read-only

@@ -440,3 +440,15 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .pt-slider { position: relative; width: 42px; height: 170px; }
 .pt-slider input[type="range"] { position: absolute; left: 50%; top: 50%; width: 150px; transform: translate(-50%, -50%) rotate(-90deg); accent-color: var(--purple); margin: 0; }
 .pt-flip { min-height: 36px; width: 42px; padding: 0; }
+
+/* permissions and worker accounts */
+.modal.perm-modal { width: min(680px, 100%); }
+.presets { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.preset { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--glass); }
+.perm-list { max-height: 38vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px 10px; margin: 10px 0; }
+.perm-list details { padding: 4px 0; }
+.perm-list summary { cursor: pointer; font-size: 0.9rem; padding: 4px 0; }
+.perm-row { display: flex; align-items: center; gap: 8px; padding: 3px 4px; font-size: 0.9rem; cursor: pointer; }
+.team-pick { max-height: 24vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px 10px; }
+.spacer-left { margin-right: auto; align-self: center; }
+@media (max-width: 640px) { .preset { flex-direction: column; align-items: stretch; } }

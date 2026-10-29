@@ -9,6 +9,11 @@
 //! admin: `is_active`; superuser: `is_staff`), `DELETE` (site admin), `POST /api/v2/users/{id}/random-password` (site admin,
 //! answers the new password once). Nobody can change or delete their own account here, and only superusers touch
 //! superusers.
+//!
+//! Model permissions (superusers only): `GET /api/v2/admin/permissions` (the permissions that matter here, grouped by model, and the
+//! presets for service accounts), `GET` / `PUT /api/v2/admin/users/{id}/permissions` (`{"permissions": ["app.codename", ...]}` replaces
+//! the user's own permissions; the ones that come from groups are shown, not changed), `POST /api/v2/admin/users` (a service account
+//! with a random password, answered once, optional preset / permissions and teams).
 
 use crate::{
     auth::{authenticate, require_user, AuthKind, Principal},
@@ -43,6 +48,15 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/users/{id}/random-password",
             axum::routing::post(random_password),
+        )
+        .route(
+            "/api/v2/admin/permissions",
+            axum::routing::get(permission_catalog),
+        )
+        .route("/api/v2/admin/users", axum::routing::post(user_create))
+        .route(
+            "/api/v2/admin/users/{id}/permissions",
+            axum::routing::get(user_permissions_get).put(user_permissions_put),
         )
 }
 
@@ -623,4 +637,309 @@ async fn random_password(
         .await
         .map_err(db_err)?;
     Ok(Json(json!({"password": password})).into_response())
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// model permissions and service accounts
+// ---------------------------------------------------------------------------------------------------------
+
+/// The apps whose permissions are offered. `view_*` is left out: reading is not decided by a model permission here.
+const PERMISSION_APPS: [&str; 4] = ["administration", "annotations", "images", "processing"];
+
+struct Preset {
+    id: &'static str,
+    label: &'static str,
+    description: &'static str,
+    permissions: &'static [&'static str],
+}
+
+const PRESETS: &[Preset] = &[
+    Preset {
+        id: "registration_worker",
+        label: "Registration worker",
+        description: "helpers/queue_worker.py: announces its registration plugin, takes registration jobs and stores the registrations. Add the account to the teams whose images it should serve.",
+        permissions: &[
+            "processing.add_plugin",
+            "processing.change_pluginjob",
+            "images.change_imageregistration",
+        ],
+    },
+    Preset {
+        id: "analysis_worker",
+        label: "Analysis worker (ML plugin)",
+        description: "A QueueRunner or exact-sync script: announces its plugin, takes analysis jobs, reports progress and stores results and annotations. Adjust the list if your plugin does more. Add the account to the teams whose images it should serve.",
+        permissions: &[
+            "processing.add_plugin",
+            "processing.change_pluginjob",
+            "processing.add_pluginresult",
+            "processing.add_pluginresultentry",
+            "processing.add_pluginresultannotation",
+            "processing.add_pluginresultbitmap",
+            "annotations.add_annotation",
+        ],
+    },
+];
+
+async fn superuser(s: &AppState, headers: &HeaderMap, method: &Method) -> ApiResult<Principal> {
+    let p = require_user(authenticate(s, headers, method).await?)?;
+    if !p.user.is_superuser {
+        return Err(forbidden("Superuser permission required."));
+    }
+    Ok(p)
+}
+
+/// `app.codename` of every permission on offer, with what the interface needs to list them.
+async fn catalog_rows(s: &AppState) -> ApiResult<Vec<(String, String, String, String)>> {
+    let apps: Vec<String> = PERMISSION_APPS.iter().map(|a| a.to_string()).collect();
+    sqlx::query_as(
+        "SELECT ct.app_label, ct.model, p.codename, p.name
+           FROM auth_permission p JOIN django_content_type ct ON ct.id = p.content_type_id
+          WHERE ct.app_label = ANY($1) AND left(p.codename, 5) <> 'view_'
+          ORDER BY ct.app_label, ct.model, p.codename",
+    )
+    .bind(&apps)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)
+}
+
+async fn permission_catalog(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    superuser(&s, &headers, &Method::GET).await?;
+    let permissions: Vec<Value> = catalog_rows(&s)
+        .await?
+        .into_iter()
+        .map(|(app, model, codename, name)| json!({"key": format!("{app}.{codename}"), "app": app, "model": model, "codename": codename, "name": name}))
+        .collect();
+    let presets: Vec<Value> = PRESETS
+        .iter()
+        .map(|p| json!({"id": p.id, "label": p.label, "description": p.description, "permissions": p.permissions}))
+        .collect();
+    Ok(Json(json!({"permissions": permissions, "presets": presets})).into_response())
+}
+
+async fn permission_state(s: &AppState, id: i64) -> ApiResult<Value> {
+    let t = users::user_by_id(&s.pool, id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Not found."))?;
+    let apps: Vec<String> = PERMISSION_APPS.iter().map(|a| a.to_string()).collect();
+    let direct: Vec<String> = sqlx::query_scalar(
+        "SELECT ct.app_label || '.' || p.codename
+           FROM users_user_user_permissions up
+           JOIN auth_permission p ON p.id = up.permission_id
+           JOIN django_content_type ct ON ct.id = p.content_type_id
+          WHERE up.user_id = $1 AND ct.app_label = ANY($2) AND left(p.codename, 5) <> 'view_'
+          ORDER BY 1",
+    )
+    .bind(id)
+    .bind(&apps)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let groups: Vec<(String, Vec<String>)> = sqlx::query_as(
+        "SELECT g.name, COALESCE(array_agg(ct.app_label || '.' || p.codename ORDER BY ct.app_label, p.codename)
+                                  FILTER (WHERE p.id IS NOT NULL AND ct.app_label = ANY($2) AND left(p.codename, 5) <> 'view_'), '{}')
+           FROM users_user_groups ug
+           JOIN auth_group g ON g.id = ug.group_id
+           LEFT JOIN auth_group_permissions gp ON gp.group_id = g.id
+           LEFT JOIN auth_permission p ON p.id = gp.permission_id
+           LEFT JOIN django_content_type ct ON ct.id = p.content_type_id
+          WHERE ug.user_id = $1
+          GROUP BY g.name ORDER BY g.name",
+    )
+    .bind(id)
+    .bind(&apps)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    Ok(json!({
+        "id": t.id,
+        "username": t.username,
+        "is_superuser": t.is_superuser,
+        "direct": direct,
+        "groups": groups.into_iter().map(|(name, permissions)| json!({"name": name, "permissions": permissions})).collect::<Vec<_>>(),
+    }))
+}
+
+async fn user_permissions_get(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    superuser(&s, &headers, &Method::GET).await?;
+    Ok(Json(permission_state(&s, id).await?).into_response())
+}
+
+/// Keys of `d["permissions"]`, each one of the permissions on offer.
+async fn requested_permissions(s: &AppState, d: &Map<String, Value>) -> ApiResult<Vec<String>> {
+    let Some(list) = d.get("permissions") else {
+        return Ok(vec![]);
+    };
+    let Value::Array(items) = list else {
+        return Err(field_err("permissions", "Expected a list."));
+    };
+    let known: std::collections::HashSet<String> = catalog_rows(s)
+        .await?
+        .into_iter()
+        .map(|(app, _, codename, _)| format!("{app}.{codename}"))
+        .collect();
+    let mut out: Vec<String> = vec![];
+    for v in items {
+        let Some(k) = v.as_str() else {
+            return Err(field_err("permissions", "Expected permission names."));
+        };
+        if !known.contains(k) {
+            return Err(field_err(
+                "permissions",
+                &format!("Unknown permission: {k}"),
+            ));
+        }
+        if !out.iter().any(|o| o == k) {
+            out.push(k.to_string());
+        }
+    }
+    Ok(out)
+}
+
+async fn set_permissions(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: i64,
+    keys: &[String],
+) -> ApiResult<()> {
+    let apps: Vec<String> = PERMISSION_APPS.iter().map(|a| a.to_string()).collect();
+    sqlx::query(
+        "DELETE FROM users_user_user_permissions up
+          USING auth_permission p, django_content_type ct
+          WHERE up.user_id = $1 AND p.id = up.permission_id AND ct.id = p.content_type_id
+            AND ct.app_label = ANY($2) AND left(p.codename, 5) <> 'view_'",
+    )
+    .bind(id)
+    .bind(&apps)
+    .execute(&mut **tx)
+    .await
+    .map_err(db_err)?;
+    sqlx::query(
+        "INSERT INTO users_user_user_permissions (user_id, permission_id)
+         SELECT $1, p.id FROM auth_permission p JOIN django_content_type ct ON ct.id = p.content_type_id
+          WHERE ct.app_label || '.' || p.codename = ANY($2)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(id)
+    .bind(keys)
+    .execute(&mut **tx)
+    .await
+    .map_err(db_err)?;
+    Ok(())
+}
+
+async fn user_permissions_put(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let p = superuser(&s, &headers, &Method::PUT).await?;
+    target(
+        &s,
+        &p,
+        id,
+        "You cannot change the permissions of your own account.",
+        "Only superusers may change the permissions of superusers.",
+    )
+    .await?;
+    let d = object(&body)?;
+    let keys = requested_permissions(&s, &d).await?;
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
+    set_permissions(&mut tx, id, &keys).await?;
+    tx.commit().await.map_err(db_err)?;
+    tracing::info!(by = %p.user.username, user = id, permissions = ?keys, "permissions set");
+    Ok(Json(permission_state(&s, id).await?).into_response())
+}
+
+/// A service account (a worker): active, no staff rights, a random password that is answered once, optional permissions (a preset, or a
+/// list) and team memberships.
+async fn user_create(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let p = superuser(&s, &headers, &Method::POST).await?;
+    let d = object(&body)?;
+    let username = d
+        .get("username")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    if username.is_empty() || username.chars().count() > 150 {
+        return Err(field_err(
+            "username",
+            "Enter a username of at most 150 characters.",
+        ));
+    }
+    if !username
+        .chars()
+        .all(|c| c.is_alphanumeric() || "@.+-_".contains(c))
+    {
+        return Err(field_err("username", "Letters, digits and @ . + - _ only."));
+    }
+    let email = d
+        .get("email")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    if email.chars().count() > 254 {
+        return Err(field_err("email", "At most 254 characters."));
+    }
+    let mut keys = requested_permissions(&s, &d).await?;
+    if let Some(id) = d.get("preset").and_then(Value::as_str) {
+        let Some(preset) = PRESETS.iter().find(|p| p.id == id) else {
+            return Err(field_err("preset", "Unknown preset."));
+        };
+        for k in preset.permissions {
+            if !keys.iter().any(|o| o == k) {
+                keys.push(k.to_string());
+            }
+        }
+    }
+    let teams: Vec<i64> = match d.get("teams") {
+        None => vec![],
+        Some(Value::Array(a)) => a.iter().filter_map(Value::as_i64).collect(),
+        Some(_) => return Err(field_err("teams", "Expected a list of team ids.")),
+    };
+    let password = exact_auth::tokens::random_token(24);
+    let mut tx = s.pool.begin().await.map_err(db_err)?;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO users_user (password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined, points)
+         VALUES ($1, NULL, false, $2, '', '', $3, false, true, now(), 0) RETURNING id",
+    )
+    .bind(make_password(&password))
+    .bind(username)
+    .bind(email)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(db) if db.is_unique_violation() => {
+            field_err("username", "A user with that username already exists.")
+        }
+        other => db_err(other),
+    })?;
+    sqlx::query("INSERT INTO users_userpreferences (user_id, frontend, is_site_admin) VALUES ($1, 2, false)")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    let joined = sqlx::query("INSERT INTO users_teammembership (team_id, user_id, is_admin) SELECT t.id, $2, false FROM users_team t WHERE t.id = ANY($1)")
+        .bind(&teams)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?
+        .rows_affected();
+    set_permissions(&mut tx, id, &keys).await?;
+    tx.commit().await.map_err(db_err)?;
+    tracing::info!(by = %p.user.username, user = %username, permissions = ?keys, teams = joined, "account created");
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({"id": id, "username": username, "password": password, "permissions": keys, "teams": joined})),
+    )
+        .into_response())
 }

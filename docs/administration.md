@@ -25,15 +25,21 @@ and give them a **reset link** or a **random password** (shown once). The server
 (`/api/v2/admin/users/{id}/impersonate`); there is no button for it yet.
 
 ## Workers
-Analysis and registration are done by a separate process, usually the Python queue worker (`helpers/queue_worker.py`):
+Analysis and registration are done by a separate process, usually the Python queue worker (`helpers/queue_worker.py`). It logs in like a
+user, so it needs an account. **Users → New worker account…** (superusers) creates one in a single step:
 
-```
-python helpers/queue_worker.py --url https://exact.example.org --user worker --password … --exact-dir /opt/exact/exact
-```
+1. a user name and **what the worker does**: *Registration worker* or *Analysis worker (ML plugin)*. The dialog lists the permissions that
+   kind of worker gets (a registration worker: `processing.add_plugin`, `processing.change_pluginjob`, `images.change_imageregistration`);
+2. the **teams whose images it serves**. A worker is offered jobs for the images of its own teams only, so choose every team it should work for;
+3. **Create account**: the user name and a random password are shown once, as the two lines for the env file
+   (`WORKER_USER=…`, `WORKER_PASSWORD=…`). Put them in `deploy/exact.env` and restart the worker.
 
-The account needs the permissions `processing.change_pluginjob` and `images.change_imageregistration`. The worker announces its
-plugin (`POST /api/v2/plugins/register`), claims jobs atomically and reports progress. Unmodified QueueRunner scripts keep
-working through `/api/v1`; see [the claim](queuerunner-v2).
+The same permissions are available for any account: **Users → Permissions** (superusers) shows the permissions by model with the presets on
+top (*Use* replaces the ticks), and *Save* applies them at once. Permissions that an account has through a group are shown, not changed.
+Reading images and annotations needs no model permission here; the list covers what an account may change.
+
+The worker announces its plugin (`POST /api/v2/plugins/register`), claims jobs atomically and reports progress. Unmodified QueueRunner
+scripts keep working through `/api/v1`; see [the claim](queuerunner-v2).
 
 ## Image repair and storage
 The server writes into the image store (uploads, move, delete, repair, crop), so back up `IMAGE_PATH` and `MEDIA_ROOT` like the

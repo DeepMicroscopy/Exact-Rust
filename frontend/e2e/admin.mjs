@@ -120,6 +120,41 @@ try {
   check((await again.locator(".tabs button", { hasText: "Users" }).count()) === 0, "a team admin sees the teams but not the user list");
   await root.locator(".btn", { hasText: "Delete" }).click();
   await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 0, "a user can be deleted");
+  // ---- a worker account: created with a preset and teams, its permissions changed in a dialog
+  const workerName = `e2e-worker-${String(Date.now()).slice(-6)}`;
+  await root.fill('input[aria-label="Filter users"]', "");
+  await root.locator(".btn", { hasText: "New worker account" }).click();
+  await root.fill('.modal input[aria-label="User name"]', workerName);
+  check((await root.locator('[data-testid="preset-info"]').innerText()).includes("processing.add_plugin"), "the new-worker dialog says what the preset grants");
+  await root.fill('.modal input[aria-label="Filter teams"]', teamName);
+  await root.locator('[data-testid="team-pick"] label', { hasText: teamName }).locator("input").check();
+  await root.locator(".modal .btn.primary", { hasText: "Create account" }).click();
+  await root.waitForSelector('[data-testid="worker-env"]');
+  const workerEnv = await root.inputValue('[data-testid="worker-env"]');
+  check(workerEnv.includes(`WORKER_USER=${workerName}`) && /WORKER_PASSWORD=\S{20,}/.test(workerEnv), "the account name and password are shown once, as the lines for the env file");
+  const workerPw = workerEnv.match(/WORKER_PASSWORD=(\S+)/)[1];
+  await root.locator(".modal .btn.primary", { hasText: "Done" }).click();
+  const workerPage = await login(workerName, workerPw);
+  check((await workerPage.locator(".side-item", { hasText: teamName }).count()) === 1, "the worker can sign in and is a member of the chosen team");
+  await root.fill('input[aria-label="Filter users"]', workerName);
+  await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 1, "the users list finds the worker");
+  await root.locator(".btn", { hasText: "Permissions" }).click();
+  await root.waitForSelector('[data-testid="permissions"]');
+  const isOn = (key) => root.locator(`.modal input[data-key="${key}"]`).isChecked();
+  check((await isOn("processing.add_plugin")) && (await isOn("processing.change_pluginjob")) && (await isOn("images.change_imageregistration")), "the permissions dialog shows the preset's permissions as ticked");
+  await root.locator(".preset", { hasText: "Analysis worker" }).locator(".btn").click();
+  check((await isOn("processing.add_pluginresult")) && !(await isOn("images.change_imageregistration")), "another preset replaces the ticks");
+  await root.locator('.modal input[data-key="processing.change_pluginjob"]').uncheck();
+  await root.locator(".modal .btn.primary", { hasText: "Save" }).click();
+  await waitFor(async () => (await root.locator(".modal").count()) === 0, "the permissions are saved");
+  await root.locator(".btn", { hasText: "Permissions" }).click();
+  await root.waitForSelector('[data-testid="permissions"]');
+  check((await isOn("processing.add_pluginresult")) && !(await isOn("processing.change_pluginjob")) && !(await isOn("images.change_imageregistration")), "...and read back as saved");
+  await root.locator(".modal .btn", { hasText: "Cancel" }).click();
+  check((await again.locator('[data-testid="users"]').count()) === 0, "a team admin has no permission dialogs");
+  await root.locator(".btn", { hasText: "Delete" }).click();
+  await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 0, "the worker account can be deleted");
+  await root.fill('input[aria-label="Filter users"]', "");
   // ---- products and annotation types
   await root.locator(".tabs button", { hasText: "Products" }).click();
   await root.locator(".btn", { hasText: "New product" }).click();
@@ -180,6 +215,8 @@ try {
   // ---- jobs: registrations and image analyses in one list
   await root.evaluate(async () => {
     const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    // a registration needs a plugin (the overview test above removed its own); this suite must not depend on another one having left one
+    await fetch("/api/v2/plugins/register", { method: "POST", headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: JSON.stringify({ name: "E2E jobs method", package: "e2e_jobs", plugin_type: 2 }) });
     const r = await fetch("/api/v2/images/15/register", { method: "POST", headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: JSON.stringify({ target_image: 16 }) });
     if (r.status !== 202) throw new Error("register " + r.status);
   });

@@ -6,6 +6,7 @@ import { PluginsTab } from "../components/PluginsAdmin";
 import { ProductsTab, type ProductPerms } from "../components/ProductsAdmin";
 import { Modal } from "../components/Modal";
 import { SecretDialog } from "../components/SecretDialog";
+import { NewWorkerDialog, PermissionsDialog } from "../components/UserPermissions";
 
 export interface AdminMe {
   is_site_admin: boolean;
@@ -451,6 +452,8 @@ function UsersTab({ me }: { me: AdminMe }) {
   const [error, setError] = useState<string | null>(null);
   const [secret, setSecret] = useState<{ title: string; intro: string; value: string } | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
+  const [permsOf, setPermsOf] = useState<{ id: number; username: string } | null>(null);
+  const [newWorker, setNewWorker] = useState(false);
   const users = useQuery({ queryKey: ["admin-users"], queryFn: () => listAll<UserRow>("/api/v2/users", { fields: "id,username,is_active,is_staff,is_superuser,last_login,team_set" }), staleTime: 0 });
   const teams = useQuery({ queryKey: ["admin-teams"], queryFn: () => listAll<TeamRow>("/api/v2/teams", { fields: "id,name" }), staleTime: 0 });
   const names = useMemo(() => new Map((teams.data ?? []).map((t) => [t.id, t.name])), [teams.data]);
@@ -469,6 +472,14 @@ function UsersTab({ me }: { me: AdminMe }) {
       <div className="toolbar">
         <input className="search" placeholder="Filter users…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter users" />
         <span className="muted small">{shown.length} of {users.data?.length ?? 0}</span>
+        {me.is_superuser && (
+          <>
+            <span className="spacer" />
+            <button className="btn" onClick={() => setNewWorker(true)} title="An account for a worker or script: permissions, teams and a password in one go">
+              New worker account…
+            </button>
+          </>
+        )}
       </div>
       {error && <p className="error">{error}</p>}
       <table className="admin-table" data-testid="users">
@@ -503,6 +514,11 @@ function UsersTab({ me }: { me: AdminMe }) {
                   <button className="btn ghost small" onClick={() => setEditing(u.id)}>
                     Edit
                   </button>
+                  {me.is_superuser && !self && !u.is_superuser && (
+                    <button className="btn ghost small" onClick={() => setPermsOf({ id: u.id, username: u.username })}>
+                      Permissions
+                    </button>
+                  )}
                   {!self && (
                     <>
                       <button
@@ -540,6 +556,8 @@ function UsersTab({ me }: { me: AdminMe }) {
         </tbody>
       </table>
       {secret && <SecretDialog {...secret} onClose={() => setSecret(null)} />}
+      {permsOf && <PermissionsDialog userId={permsOf.id} username={permsOf.username} onSaved={() => void qc.invalidateQueries({ queryKey: ["admin-users"] })} onClose={() => setPermsOf(null)} />}
+      {newWorker && <NewWorkerDialog teams={teams.data ?? []} onCreated={() => void qc.invalidateQueries({ queryKey: ["admin-users"] })} onClose={() => setNewWorker(false)} />}
       {editing !== null && <EditUserDialog userId={editing} onSaved={() => void qc.invalidateQueries({ queryKey: ["admin-users"] })} onClose={() => setEditing(null)} />}
     </div>
   );

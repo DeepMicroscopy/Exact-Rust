@@ -754,3 +754,11 @@ thumbnail, atomic cache writes, a five-minute negative cache, a single light han
 (`SLIDEIO_MAX_OPEN`), the home page draws 48 sets and loads thumbnails at low priority, and `scripts/warm-thumbnails.py` renders the covers ahead.
 Test: `tests/conformance/test_v2_thumbnails.py` (a burst of 40 requests for different images; 24 at once for one thumbnail renders and stores it once).
 Not measured on the production storage: the numbers there decide `EXACT_THUMBNAIL_JOBS`.
+
+### 5as. Permissions and worker accounts in the UI (2026-10-29)
+Model permissions (the registration worker needs `processing.add_plugin`, `processing.change_pluginjob`, `images.change_imageregistration`) could only be set in the Django
+admin or SQL. Now (superusers): `GET /api/v2/admin/permissions` (catalog of the apps administration / annotations / images / processing without `view_*`, and the presets
+`registration_worker` and `analysis_worker`), `GET` / `PUT /api/v2/admin/users/{id}/permissions` (replaces the user's own permissions in that range; group permissions are shown
+read-only; not for one's own account), `POST /api/v2/admin/users` (service account: random password shown once, preset / permissions, team memberships). UI: Users tab, "New
+worker account…" and "Permissions" per user (`components/UserPermissions.tsx`). Tests: `test_v2_admin_permissions.py`, `e2e/admin.mjs`.
+Not done: group management, permission editing for non-superusers (site admins), an audit trail beyond the server log.
