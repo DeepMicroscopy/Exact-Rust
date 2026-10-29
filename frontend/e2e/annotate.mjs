@@ -151,6 +151,23 @@ try {
   await admin.keyboard.press("Control+z");
   await waitFor(async () => (await annotations(admin)).length === penBefore, "...and undo removes it again");
   await admin.keyboard.press("Escape");
+  // a pen is set down on the point it means and rests there: OpenSeadragon calls a press of over 300 ms no click, the polygon must take it
+  await pickType(admin, "e2e polygon");
+  const penPoly = [await screenOf(admin, 800, 900), await screenOf(admin, 1400, 950), await screenOf(admin, 1350, 1500), await screenOf(admin, 850, 1450)];
+  const penCdp = await admin.context().newCDPSession(admin);
+  for (const q of penPoly) {
+    const e = { x: q.x, y: q.y, pointerType: "pen", button: "left" };
+    await penCdp.send("Input.dispatchMouseEvent", { ...e, type: "mouseMoved", buttons: 0 });
+    await penCdp.send("Input.dispatchMouseEvent", { ...e, type: "mousePressed", buttons: 1, clickCount: 1, force: 0.5 });
+    await admin.waitForTimeout(600);
+    await penCdp.send("Input.dispatchMouseEvent", { ...e, type: "mouseReleased", buttons: 0, clickCount: 1 });
+    await admin.waitForTimeout(200);
+  }
+  check((await admin.evaluate(() => window.__editor.draftPoints)) === 4, "slow pen taps (600 ms) place the four polygon points");
+  await admin.locator(".toolbox .btn", { hasText: "Finish" }).first().click();
+  await waitFor(async () => (await annotations(admin)).length === penBefore + 1, "...and Finish saves the polygon");
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === penBefore, "...(undone again)");
   await openImage(admin); // forget that a pen was seen: the checks below start without one
 
   // draw a bounding box with key 1 and a drag

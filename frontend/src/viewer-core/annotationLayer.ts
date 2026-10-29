@@ -281,9 +281,10 @@ export class AnnotationLayer {
       const [a, b] = [toPx(o.label.box[0], o.label.box[1]), toPx(o.label.box[2], o.label.box[3])];
       const [vx0, vy0] = [Math.max(0, Math.min(a[0], b[0])), Math.max(0, Math.min(a[1], b[1]))];
       const [vx1, vy1] = [Math.min(w, Math.max(a[0], b[0])), Math.min(h, Math.max(a[1], b[1]))];
-      if (vx1 > vx0 && vy1 > vy0) {
-        ctx.font = "600 13px system-ui, sans-serif";
-        const tw = ctx.measureText(o.label.text).width;
+      ctx.font = "600 13px system-ui, sans-serif";
+      const tw = ctx.measureText(o.label.text).width;
+      // only once the label fits into what is visible of the shape (with a margin): a tiny box is not covered by its own size
+      if (vx1 - vx0 >= tw + 16 + 8 && vy1 - vy0 >= 24 + 8) {
         const [cx, cy] = [(vx0 + vx1) / 2, (vy0 + vy1) / 2];
         ctx.fillStyle = "rgba(10,10,16,0.78)";
         ctx.beginPath();

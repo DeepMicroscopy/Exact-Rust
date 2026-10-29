@@ -92,6 +92,8 @@ const TOUCH_SLOP = 18;
 const MOUSE_SLOP = 7;
 const CLOSE_SLOP = 12;
 const CLICK_DEBOUNCE_MS = 220;
+const PEN_TAP_SLOP = 10; // screen pixels a pen may wander during a tap
+const PEN_TAP_MAX_MS = 3000;
 
 const NEW_ID = -1;
 
@@ -151,6 +153,8 @@ export class AnnotationEditor {
   private mods = { shift: false, alt: false };
   private longPressedUntil = 0;
   private touch = false;
+  /** where and when a pen went down: a deliberate tap (pen held on the spot a moment) still counts as a click */
+  private penPress: { x: number; y: number; t: number } | null = null;
   private consumedPress = false;
   private lastCreate = { t: 0, at: [0, 0] as [number, number] };
   private cleanup: (() => void)[] = [];
@@ -449,6 +453,11 @@ export class AnnotationEditor {
     return this.viewer.world.getItemCount() ? this.viewer.world.getItemAt(0) : null;
   }
 
+  /** The device of an event: OpenSeadragon's click and double-click events carry none of their own, only the original event does. */
+  private kind(e: Ev): string | undefined {
+    return e.pointerType ?? (e as unknown as { originalEvent?: { pointerType?: string } }).originalEvent?.pointerType;
+  }
+
   /**
    * Where the pointer of this event is, in canvas pixels. From the browser's own event rather than OpenSeadragon's `position`: for a
    * drag OpenSeadragon reports the first pointer it tracks of that device type, and an iPad's Apple Pencil is tracked twice (hovering
@@ -479,7 +488,7 @@ export class AnnotationEditor {
   }
 
   private isTouch(e: Ev): boolean {
-    return (e.pointerType ?? "mouse") === "touch";
+    return this.kind(e) === "touch";
   }
 
   private editableHandles(s: Shape): Handle[] {
@@ -491,12 +500,14 @@ export class AnnotationEditor {
   // ---- pointer events ------------------------------------------------------------------------------------------
 
   private press(e: Ev): void {
-    if (this.suspended || pen.ignores(e.pointerType)) return; // fingers move the image once a pen is in use
+    if (this.suspended || pen.ignores(this.kind(e))) return; // fingers move the image once a pen is in use
     this.touch = this.isTouch(e);
     this.consumedPress = false;
+    const at = this.at(e);
+    this.penPress = this.kind(e) === "pen" ? { x: at.x, y: at.y, t: performance.now() } : null;
     const p = this.toImage(this.at(e));
     if (!p) return;
-    const t = this.tol(e.pointerType);
+    const t = this.tol(this.kind(e));
     if (this.tool.kind === "draw") {
       const info = this.host.type(this.tool.typeId);
       if (info && this.dragDrawn(info) && !this.tool.oneClick) {
@@ -684,14 +695,25 @@ export class AnnotationEditor {
     this.refresh();
   }
 
+  /**
+   * OpenSeadragon calls a press that lasts longer than 300 ms no click. A finger taps quickly, but a pen is set down on the point it
+   * means (a polygon vertex, a box position) and often rests there: such a tap, with the pen where it went down, is a click.
+   */
+  private slowPenTap(e: Ev): boolean {
+    const pp = this.penPress;
+    if (this.kind(e) !== "pen" || !pp) return false;
+    const at = this.at(e);
+    return Math.hypot(at.x - pp.x, at.y - pp.y) <= PEN_TAP_SLOP && performance.now() - pp.t <= PEN_TAP_MAX_MS;
+  }
+
   private click(e: Ev): void {
     if (this.suspended) return;
     if (this.consumedPress) {
       this.consumedPress = false;
       return;
     }
-    if (e.quick === false) return;
-    if (pen.ignores(e.pointerType) && this.tool.kind !== "select") return; // a finger may still tap to select
+    if (e.quick === false && !this.slowPenTap(e)) return;
+    if (pen.ignores(this.kind(e)) && this.tool.kind !== "select") return; // a finger may still tap to select
     const p = this.toImage(this.at(e));
     if (!p) return;
     if (this.tool.kind === "op") {
@@ -704,7 +726,7 @@ export class AnnotationEditor {
       return;
     }
     if (this.tool.kind === "select") {
-      const hit = hitShape(this.host.shapes(), p, this.tol(e.pointerType));
+      const hit = hitShape(this.host.shapes(), p, this.tol(this.kind(e)));
       const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
       if (hit && (oe?.shiftKey || oe?.ctrlKey || oe?.metaKey)) this.toggle(hit.id);
       else this.select(hit?.id ?? null);
@@ -736,7 +758,7 @@ export class AnnotationEditor {
     const s = this.selected;
     const p = this.toImage(this.at(e));
     if (s && p && isPathType(s.vectorType)) {
-      const h = handleAt(this.editableHandles(s), p, this.tol(e.pointerType));
+      const h = handleAt(this.editableHandles(s), p, this.tol(this.kind(e)));
       if (h?.kind === "vertex") this.removeVertexOf(s, h.index);
     }
   }
