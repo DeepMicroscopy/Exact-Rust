@@ -64,7 +64,8 @@ def test_both_kinds_are_listed_with_the_same_status_words(plugin):
     p = next(j for j in jobs if j["kind"] == "plugin" and j["id"] == pj["id"])
     r = next(j for j in jobs if j["kind"] == "registration" and j["id"] == rj["id"])
     assert p["status"] == "queued" and p["plugin_name"] == plugin["name"] and p["progress"] == 0 and p["image"] == IMAGE
-    assert r["status"] == "queued" and r["image"] == JSRC and r["target_image"] == JTGT and r["progress"] is None
+    assert p["images"] == [IMAGE]  # a job of one image has no rows in processing_pluginjobimage
+    assert r["status"] == "queued" and r["image"] == JSRC and r["images"] == [JSRC, JTGT] and r["progress"] is None
     c.patch(f"/api/v2/plugin-jobs/{pj['id']}", json={"processing_complete": 55, "attached_worker": "w1"})
     p = next(j for j in listed(c, kind="plugin", image=IMAGE, limit=500) if j["id"] == pj["id"])
     assert p["status"] == "running" and p["worker"] == "w1" and abs(p["progress"] - 0.55) < 1e-9
@@ -138,4 +139,14 @@ def test_visibility_and_permissions(plugin):
     m = client("rt_member")  # sees the jobs of the team, but neither created them nor may change jobs
     assert any(j["id"] == pj["id"] for j in listed(m, kind="plugin", limit=500))
     assert m.delete(f"/api/v2/jobs/plugin/{pj['id']}").status_code == 403
+    c.delete(f"/api/v2/plugin-jobs/{pj['id']}")
+
+
+def test_a_job_can_concern_several_images_in_order(plugin):
+    c = client("aubreville")
+    pj = plugin_job(c, plugin)
+    psql(f"insert into processing_pluginjobimage (job_id, image_id, position) values ({pj['id']}, 15, 1), ({pj['id']}, {IMAGE}, 0)")
+    p = next(j for j in listed(c, kind="plugin", limit=500) if j["id"] == pj["id"])
+    assert p["image"] == IMAGE and p["images"] == [IMAGE, 15]
+    assert any(j["id"] == pj["id"] for j in listed(c, kind="plugin", image=15, limit=500))
     c.delete(f"/api/v2/plugin-jobs/{pj['id']}")

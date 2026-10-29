@@ -6,7 +6,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 PGBIN="${PGBIN:-/Applications/Postgres.app/Contents/Versions/16/bin}"
-SHARED_TABLES="${SHARED_TABLES:-images_pyramidregistration processing_plugin processing_pluginjob}"
+SHARED_TABLES="${SHARED_TABLES:-images_pyramidregistration processing_plugin processing_pluginjob processing_pluginjobimage}"
 PY="$ROOT/reference/.venv/bin/python"
 # an EXACT checkout that contains the shared-table migration (default: ~/code/Exact; until the EXACT PR is merged use a worktree
 # of its branch: git -C ~/code/Exact worktree add /tmp/exact-pr fix-slideio-level-registration, then copy the local,

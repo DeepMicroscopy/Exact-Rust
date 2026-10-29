@@ -114,19 +114,19 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
     let sql = format!(
         "SELECT * FROM ( \
            SELECT 'registration'::text AS kind, j.id::bigint AS id, j.status::text AS status, j.source_image_id::bigint AS image, \
-                  j.target_image_id::bigint AS target_image, j.plugin_id::bigint AS plugin, rp.name::text AS plugin_name, NULL::float8 AS progress, \
+                  ARRAY[j.source_image_id, j.target_image_id]::bigint[] AS images, j.plugin_id::bigint AS plugin, rp.name::text AS plugin_name, NULL::float8 AS progress, \
                   j.worker::text AS worker, j.error::text AS error, j.created_by::bigint AS creator, j.created_at AS created, \
                   j.started_at AS started, j.finished_at AS finished, j.registration_id::bigint AS result \
            FROM exact_rust_registration_job j LEFT JOIN processing_plugin rp ON rp.id = j.plugin_id WHERE j.source_image_id {visible} \
            UNION ALL \
-           SELECT 'plugin', q.id::bigint, ({status}), q.image_id::bigint, NULL, q.plugin_id::bigint, pl.name::text, \
+           SELECT 'plugin', q.id::bigint, ({status}), q.image_id::bigint, COALESCE((SELECT array_agg(ji.image_id ORDER BY ji.position) FROM processing_pluginjobimage ji WHERE ji.job_id = q.id), ARRAY[q.image_id::bigint]), q.plugin_id::bigint, pl.name::text, \
                   (q.processing_complete / 100.0)::float8, q.attached_worker::text, q.error_message::text, q.creator_id::bigint, q.created_time, \
                   NULL, (SELECT r.completed_time FROM processing_pluginresult r WHERE r.job_id = q.id LIMIT 1), \
                   (SELECT r.id::bigint FROM processing_pluginresult r WHERE r.job_id = q.id LIMIT 1) \
            FROM processing_pluginjob q JOIN processing_plugin pl ON pl.id = q.plugin_id WHERE q.image_id {visible} \
          ) u \
          WHERE ($1::text IS NULL OR u.kind = $1) AND ($2::text IS NULL OR u.status = $2) \
-           AND ($3::bigint IS NULL OR u.image = $3 OR u.target_image = $3) \
+           AND ($3::bigint IS NULL OR $3 = ANY(u.images)) \
          ORDER BY u.created DESC NULLS LAST, u.id DESC LIMIT {limit}",
         status = plugin_job_status_sql(),
     );
@@ -148,7 +148,7 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
         .map(|r| {
             json!({
                 "kind": r.get::<String, _>(0), "id": r.get::<i64, _>(1), "status": r.get::<String, _>(2),
-                "image": r.get::<i64, _>(3), "target_image": r.get::<Option<i64>, _>(4),
+                "image": r.get::<i64, _>(3), "images": r.get::<Vec<i64>, _>(4),
                 "plugin": r.get::<Option<i64>, _>(5), "plugin_name": r.get::<Option<String>, _>(6),
                 "progress": r.get::<Option<f64>, _>(7), "worker": r.get::<Option<String>, _>(8),
                 "error": r.get::<Option<String>, _>(9), "creator": r.get::<Option<i64>, _>(10),

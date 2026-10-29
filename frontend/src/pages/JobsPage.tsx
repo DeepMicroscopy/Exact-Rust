@@ -9,7 +9,7 @@ export interface Job {
   id: number;
   status: "queued" | "running" | "done" | "failed";
   image: number;
-  target_image: number | null;
+  images: number[];
   plugin: number | null;
   plugin_name: string | null;
   progress: number | null;
@@ -70,13 +70,23 @@ export function JobsPage() {
     staleTime: 0,
     refetchInterval: (q) => ((q.state.data?.items ?? []).some(isActive) ? 3000 : 15000),
   });
-  const ids = useMemo(() => [...new Set((jobs.data?.items ?? []).flatMap((j) => [j.image, j.target_image ?? 0]).filter(Boolean))], [jobs.data]);
+  const ids = useMemo(() => [...new Set((jobs.data?.items ?? []).flatMap((j) => j.images).filter(Boolean))], [jobs.data]);
   const names = useQuery({
     queryKey: ["job-images", ids.join(",")],
     enabled: ids.length > 0,
     queryFn: async () => new Map((await listAll<{ id: number; name: string }>("/api/v2/images", { id__in: ids.join(","), fields: "id,name" })).map((i) => [i.id, i.name])),
   });
   const name = (id: number | null) => (id == null ? "" : (names.data?.get(id) ?? `image ${id}`));
+  const Images = ({ ids, sep }: { ids: number[]; sep: string }) => (
+    <>
+      {ids.map((id, i) => (
+        <span key={`${id}-${i}`}>
+          {i > 0 && sep}
+          <Link to={`/images/${id}`}>{name(id)}</Link>
+        </span>
+      ))}
+    </>
+  );
   const all = jobs.data?.items ?? [];
   const shown = all.filter((j) => (!kind || j.kind === kind) && (!status || (status === "active" ? isActive(j) : j.status === status)));
   const missing = unattended(all, jobs.data?.workers ?? []);
@@ -129,12 +139,12 @@ export function JobsPage() {
                 <span className="badge">{KIND_LABEL[j.kind]}</span>{" "}
                 {j.kind === "registration" ? (
                   <>
-                    <Link to={`/images/${j.image}`}>{name(j.image)}</Link> → <Link to={`/images/${j.target_image}`}>{name(j.target_image)}</Link>
+                    <Images ids={j.images} sep=" → " />
                     {j.plugin_name && <span className="muted small"> · {j.plugin_name}</span>}
                   </>
                 ) : (
                   <>
-                    {j.plugin_name} on <Link to={`/images/${j.image}`}>{name(j.image)}</Link>
+                    {j.plugin_name} on <Images ids={j.images} sep=", " />
                   </>
                 )}
                 {j.error && (

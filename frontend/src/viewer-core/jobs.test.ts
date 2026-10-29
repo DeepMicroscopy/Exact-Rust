@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ago, unattended, type Job } from "../pages/JobsPage";
 
-const job = (o: Partial<Job>): Job => ({ kind: "registration", id: 1, status: "queued", image: 1, target_image: 2, plugin: null, plugin_name: null, progress: null, worker: null, error: null, creator: 1, created_at: "2026-01-01T00:00:00Z", started_at: null, finished_at: null, result: null, ...o });
+const job = (o: Partial<Job>): Job => ({ kind: "registration", id: 1, status: "queued", image: 1, images: [1, 2], plugin: null, plugin_name: null, progress: null, worker: null, error: null, creator: 1, created_at: "2026-01-01T00:00:00Z", started_at: null, finished_at: null, result: null, ...o });
 const now = new Date("2026-01-01T00:01:00Z").getTime();
 
 describe("jobs", () => {

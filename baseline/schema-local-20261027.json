@@ -1260,12 +1260,26 @@
       "data_type": "double precision",
       "nullable": false
     },
-    "target_image_id": {
-      "data_type": "bigint",
-      "nullable": true
-    },
     "updated_time": {
       "data_type": "timestamp with time zone",
+      "nullable": false
+    }
+  },
+  "processing_pluginjobimage": {
+    "id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "image_id": {
+      "data_type": "bigint",
+      "nullable": false
+    },
+    "job_id": {
+      "data_type": "integer",
+      "nullable": false
+    },
+    "position": {
+      "data_type": "smallint",
       "nullable": false
     }
   },
