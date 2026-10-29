@@ -7,6 +7,8 @@
 #   dc up -d
 # The database lives in the volume `pgdata` (`dc down -v` throws it away) and is reachable by the other services as host `db`
 # (SQL_HOST in exact.env is ignored here). For psql / scripts/audit-backup.sh on the host it is published on 127.0.0.1:5433.
+# IMAGE_MODE=ro (default) mounts the image store read-only into the server: view-only, so the real files cannot be touched (uploads, move,
+# delete, crop and repair then fail); set IMAGE_MODE=rw on a copy. CONTAINER_USER=0:0 for rootless Docker (container root is your host user).
 # Inside the containers the folders are /data/images, /data/media and /data/cache.
 services:
   db:
@@ -26,6 +28,7 @@ services:
   server:
     build: { context: .., dockerfile: deploy/Dockerfile }
     image: exact-rust
+    user: "${CONTAINER_USER:-exact}"
     env_file: exact.env
     environment:
       SQL_HOST: db
@@ -39,12 +42,13 @@ services:
       db: { condition: service_healthy }
     ports: ["127.0.0.1:8002:8002"]   # the reverse proxy runs on the host
     volumes:
-      - ${IMAGE_PATH:?set IMAGE_PATH in exact.env and export it for compose}:/data/images
+      - ${IMAGE_PATH:?set IMAGE_PATH in exact.env and export it for compose}:/data/images:${IMAGE_MODE:-ro}
       - ${MEDIA_ROOT:?set MEDIA_ROOT}:/data/media
       - ${EXACT_CACHE_DIR:?set EXACT_CACHE_DIR}:/data/cache
     restart: unless-stopped
   worker:
     image: exact-rust
+    user: "${CONTAINER_USER:-exact}"
     depends_on: [server]
     env_file: exact.env
     environment:

@@ -18,11 +18,14 @@ additive tables/columns the beta adds exist only in the copy.
 | Accounts | the PostgreSQL role the server uses; an EXACT account with the permissions `images.change_imageregistration` and `processing.change_pluginjob` for the registration worker (an existing ML/worker account or a superuser) |
 | Name | passkeys only work on the host name they were enrolled for: **`FIDO_SERVER_ID=exact.hs-flensburg.de`** works on that host and below it. On any other host everyone enrolls a new passkey (passwords keep working) |
 
-## 1. Files: always a copy
-The server **writes** to the image store (uploads, moving and deleting images, pyramid repair, crops). Never point the beta at the
-production folders. Use a copy that costs no extra disk where the file system can: `cp -cR` (macOS/APFS), `cp -a --reflink=auto`
-(btrfs/XFS), or `rsync -a`. Keep the beta's `EXACT_CACHE_DIR` (thumbnails, can be deleted) and `EXACT_NIFTI_CACHE` (inflated
-`.nii.gz` volumes, grows) on their own folders.
+## 1. Files: a copy, or the real store mounted read-only
+The server **writes** to the image store (uploads, moving and deleting images, pyramid repair, crops) and only then. Two safe ways:
+* **A copy** that costs no extra disk where the file system can: `cp -cR` (macOS/APFS), `cp -a --reflink=auto` (btrfs/XFS), or `rsync -a`. Compose with `IMAGE_MODE=rw`.
+* **The real store, read-only** (when it is too big to copy): compose mounts it `:ro` into the server (the default, `IMAGE_MODE=ro`) and the worker.
+  Viewing, annotating (annotations are database rows), registration and exports work; uploads, moving, deleting, crops and repair fail with an error and
+  leave the files untouched. Deleting an image or set in the beta removes only its row in the beta's database copy.
+`MEDIA_ROOT` (aux files, registration files, exports) is written to: use a copy of it, it is small. Keep `EXACT_CACHE_DIR` (thumbnails, can be deleted)
+and `EXACT_NIFTI_CACHE` (inflated `.nii.gz` volumes, grows) on their own folders.
 
 ## 2. Database
 **With Docker** (`deploy/docker-compose.yml`): `dc up -d db` creates the empty database in the volume `pgdata` (name, user, password from `exact.env`), then
