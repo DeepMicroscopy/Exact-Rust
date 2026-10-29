@@ -12,7 +12,7 @@ import type { Shape, TypeStyle } from "../viewer-core/types";
 import { loadTileSource } from "../viewer-core/tileSource";
 import { ZBlender } from "../viewer-core/zBlend";
 import { CrosshairLayer } from "../viewer-core/crosshair";
-import { installGestures } from "../viewer-core/gestures";
+import { installGestures, POINTER_GESTURES } from "../viewer-core/gestures";
 import { classifyWheel } from "../viewer-core/wheel";
 import { CROSS_PLANES, PLANE_COLORS, PLANE_NAMES, centreOf, frameOf, pixelOf, shapeOf, stepped, voxelAt, type Plane, type Voxel, type VolumeShape } from "../viewer-core/mpr";
 
@@ -180,7 +180,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
 
   useEffect(() => {
     if (!host.current) return;
-    const v = OpenSeadragon({ element: host.current, prefixUrl: "", showNavigationControl: false, showNavigator: false, gestureSettingsMouse: { clickToZoom: false }, maxZoomPixelRatio: 6, animationTime: 0.2, blendTime: 0.1, immediateRender: false, preserveViewport: true });
+    const v = OpenSeadragon({ element: host.current, prefixUrl: "", showNavigationControl: false, showNavigator: false, gestureSettingsMouse: POINTER_GESTURES, gestureSettingsPen: POINTER_GESTURES, maxZoomPixelRatio: 6, animationTime: 0.2, blendTime: 0.1, immediateRender: false, preserveViewport: true });
     viewerRef.current = v;
     (window as unknown as Record<string, unknown>)[`__mpr_${plane}`] = v; // used by the e2e tests
     v.addHandler("canvas-key", (e) => {

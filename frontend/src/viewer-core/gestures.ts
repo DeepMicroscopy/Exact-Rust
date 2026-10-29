@@ -8,6 +8,14 @@ import OpenSeadragon from "openseadragon";
 import { classifyWheel, pinchFactor } from "./wheel";
 
 /**
+ * Gesture settings for mouse and pen. OpenSeadragon moves the image with the pointer at once only where flicking is on (touch), and lets it
+ * glide after the pointer (a spring of `animationTime`) for mouse and pen, which feels late and inexact with a pen. Flicking is switched on
+ * for the direct movement and made unreachable (a speed no hand reaches), so that the image does not fly on after the pointer is lifted.
+ * A quick pen tap must not zoom either (OpenSeadragon's default for a pen).
+ */
+export const POINTER_GESTURES = { clickToZoom: false, flickEnabled: true, flickMinSpeed: 1e9 };
+
+/**
  * Installs the gestures on the viewer. `keepWheel(e)` tells events the tools use themselves (the brush size on Alt +
  * wheel); returns the function that removes them again.
  */

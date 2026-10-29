@@ -86,7 +86,8 @@ type Session =
   | { kind: "drag"; typeId: number; start: Pt; cur: Pt }
   | { kind: "brush"; shape: Shape; erase: boolean; last: Pt; swept: Ring[]; moved: boolean }
   | { kind: "groupmove"; shapes: Shape[]; start: Pt; moved: boolean }
-  | { kind: "marquee"; start: Pt; cur: Pt; additive: boolean };
+  | { kind: "marquee"; start: Pt; cur: Pt; additive: boolean }
+  | { kind: "hold" }; // a press while clicking points or boxes: nothing is dragged, and the image is not moved either
 
 const TOUCH_SLOP = 18;
 const MOUSE_SLOP = 7;
@@ -514,7 +515,11 @@ export class AnnotationEditor {
         this.session = { kind: "drag", typeId: info.id, start: clampPoint(p, this.host.image()), cur: p };
         e.preventDefaultAction = true;
         this.consumedPress = true;
-      }
+      } else this.holdPress(e);
+      return;
+    }
+    if (this.tool.kind === "op") {
+      this.holdPress(e);
       return;
     }
     if (this.tool.kind !== "select") return;
@@ -567,6 +572,18 @@ export class AnnotationEditor {
   }
 
   /**
+   * Drawing by clicks (polygon corners, one-click boxes, points): a drag is not part of it, and must not move the image either (a pen
+   * set down on a point always wanders a little). The image moves with Shift + drag, Space + drag, the middle button, a track pad
+   * swipe, and with a finger on a touch screen.
+   */
+  private holdPress(e: Ev): void {
+    const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
+    if (this.isTouch(e) || oe?.shiftKey || this.spaceDown || oe?.button === 1) return;
+    this.session = { kind: "hold" };
+    e.preventDefaultAction = true;
+  }
+
+  /**
    * A press on nothing that can be edited starts the selection frame (a plain click inside it selects what is under
    * the pointer). The image is moved with Space + drag, the middle button, a track pad swipe or on a touch screen, where
    * a finger always moves the image.
@@ -583,6 +600,7 @@ export class AnnotationEditor {
     const s = this.session;
     if (!s) return;
     e.preventDefaultAction = true;
+    if (s.kind === "hold") return;
     const p = this.toImage(this.at(e));
     if (!p) return;
     const bounds = this.host.image();

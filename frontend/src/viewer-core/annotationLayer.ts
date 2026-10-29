@@ -52,7 +52,12 @@ export class AnnotationLayer {
     viewer.addHandler("animation", redraw);
     viewer.addHandler("open", redraw);
     viewer.addHandler("resize", redraw);
-    viewer.addHandler("update-viewport", redraw);
+    // the viewport moved and OpenSeadragon draws the image in this very frame: draw now, not in the next one (the shapes trailed the image
+    // by one step while it moved and caught up when it stopped)
+    viewer.addHandler("update-viewport", () => {
+      cancelAnimationFrame(this.raf);
+      this.draw();
+    });
   }
 
   setData(shapes: Shape[], styles: Map<number, TypeStyle>): void {

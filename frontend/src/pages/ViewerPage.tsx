@@ -8,7 +8,7 @@ import { ANNOTATION_FIELDS, createAnnotation } from "../api/annotations";
 import type { Annotation, AnnotationType, ImageSummary, Registration } from "../api/types";
 import { useAnnotationActions } from "../hooks/useAnnotationActions";
 import { AnnotationLayer } from "../viewer-core/annotationLayer";
-import { installGestures } from "../viewer-core/gestures";
+import { installGestures, POINTER_GESTURES } from "../viewer-core/gestures";
 import { installPointerDebug } from "../viewer-core/pointerDebug";
 import { AnnotationEditor, vectorOfShape, type EditorHost, type PolyOp, type Tool, type TypeInfo } from "../viewer-core/editor";
 import { buildPalette, canConvert, isDrawable, oneClickCapable, type PaletteEntry } from "../viewer-core/palette";
@@ -335,7 +335,7 @@ export function ViewerPage() {
       animationTime: 0.25,
       blendTime: 0.1,
       maxZoomPixelRatio: 4,
-      gestureSettingsMouse: { clickToZoom: false },
+      gestureSettingsMouse: POINTER_GESTURES, gestureSettingsPen: POINTER_GESTURES,
       immediateRender: false,
       // moving along a stack must keep the zoom and position; the view is reset explicitly when an image is opened
       preserveViewport: true,

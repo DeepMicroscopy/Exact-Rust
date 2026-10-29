@@ -3,7 +3,7 @@ import { Dropdown, type DropdownItem } from "./Dropdown";
 import type { BrushMode, PolyOp } from "../viewer-core/editor";
 import { formatArea, formatLength, measureShape } from "../viewer-core/measure";
 import type { PaletteEntry } from "../viewer-core/palette";
-import { canConvert, hintFor, oneClickCapable } from "../viewer-core/palette";
+import { canConvert, drawnByClicks, hintFor, oneClickCapable } from "../viewer-core/palette";
 import type { Shape } from "../viewer-core/types";
 import type { ToolState, SegTool, BrushShape } from "../viewer-core/segmentation";
 import { VectorType } from "../viewer-core/types";
@@ -217,7 +217,7 @@ export function Toolbox(p: ToolboxProps) {
 
       {draw && (
         <div className="tool-group context">
-          <span className="hint">{hintFor(draw, p.oneClick)}</span>
+          <span className="hint">{hintFor(draw, p.oneClick)}{drawnByClicks(draw.vectorType, p.oneClick) && window.matchMedia?.("(pointer: fine)").matches ? " · Shift + drag moves the image" : ""}</span>
           {oneClickCapable(draw.vectorType) && (
             <label className="toggle" title="Every click places an annotation of the type's size (A)">
               <input type="checkbox" checked={p.oneClick} onChange={(e) => p.on.oneClick(e.target.checked)} />

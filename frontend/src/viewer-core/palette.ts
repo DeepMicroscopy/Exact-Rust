@@ -63,5 +63,8 @@ export function hintFor(e: PaletteEntry, oneClick: boolean): string {
   return "";
 }
 
+/** Whether the type is drawn by clicks, so that a plain drag is free for nothing but Shift + drag to move the image. */
+export const drawnByClicks = (vt: number, oneClick: boolean) => !(vt === VectorType.Line || (vt === VectorType.BoundingBox && !oneClick));
+
 /** Whether one click can place an annotation of the type (one-click mode). */
 export const oneClickCapable = (vt: number) => vt === VectorType.BoundingBox || vt === VectorType.FixedSizeBoundingBox || vt === VectorType.Point;

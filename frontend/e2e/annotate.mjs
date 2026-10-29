@@ -155,15 +155,38 @@ try {
   await pickType(admin, "e2e polygon");
   const penPoly = [await screenOf(admin, 800, 900), await screenOf(admin, 1400, 950), await screenOf(admin, 1350, 1500), await screenOf(admin, 850, 1450)];
   const penCdp = await admin.context().newCDPSession(admin);
+  const centreBefore = await admin.evaluate(() => window.__viewer.viewport.centerSpringX.target.value);
   for (const q of penPoly) {
     const e = { x: q.x, y: q.y, pointerType: "pen", button: "left" };
     await penCdp.send("Input.dispatchMouseEvent", { ...e, type: "mouseMoved", buttons: 0 });
     await penCdp.send("Input.dispatchMouseEvent", { ...e, type: "mousePressed", buttons: 1, clickCount: 1, force: 0.5 });
-    await admin.waitForTimeout(600);
-    await penCdp.send("Input.dispatchMouseEvent", { ...e, type: "mouseReleased", buttons: 0, clickCount: 1 });
+    await admin.waitForTimeout(300);
+    await penCdp.send("Input.dispatchMouseEvent", { ...e, x: e.x + 4, y: e.y + 3, type: "mouseMoved", buttons: 1, force: 0.5 }); // the pen wanders a little
+    await admin.waitForTimeout(300);
+    await penCdp.send("Input.dispatchMouseEvent", { ...e, x: e.x + 4, y: e.y + 3, type: "mouseReleased", buttons: 0, clickCount: 1 });
     await admin.waitForTimeout(200);
   }
+  check(Math.abs((await admin.evaluate(() => window.__viewer.viewport.centerSpringX.target.value)) - centreBefore) < 1e-9, "...without the image moving a bit under the wandering pen");
+  const centre = () => admin.evaluate(() => { const c = window.__viewer.viewport.centerSpringX; return [c.target.value, window.__viewer.viewport.centerSpringY.target.value]; });
   check((await admin.evaluate(() => window.__editor.draftPoints)) === 4, "slow pen taps (600 ms) place the four polygon points");
+  // drawing by clicks: a plain drag does not move the image (a pen wanders on its point), Shift + drag does
+  const c0 = await centre();
+  const free = await screenOf(admin, 3200, 2400);
+  await admin.mouse.move(free.x, free.y);
+  await admin.mouse.down();
+  await admin.mouse.move(free.x - 120, free.y - 60, { steps: 6 });
+  await admin.mouse.up();
+  const c1 = await centre();
+  check(Math.abs(c1[0] - c0[0]) < 1e-9 && Math.abs(c1[1] - c0[1]) < 1e-9, "dragging while drawing a polygon does not move the image");
+  await admin.keyboard.down("Shift");
+  await admin.mouse.move(free.x, free.y);
+  await admin.mouse.down();
+  await admin.mouse.move(free.x - 120, free.y - 60, { steps: 6 });
+  await admin.mouse.up();
+  await admin.keyboard.up("Shift");
+  const c2 = await centre();
+  check(Math.abs(c2[0] - c1[0]) > 1e-4, "...but Shift + drag does");
+  check((await admin.evaluate(() => window.__editor.draftPoints)) === 4, "...and neither added a polygon point");
   await admin.locator(".toolbox .btn", { hasText: "Finish" }).first().click();
   await waitFor(async () => (await annotations(admin)).length === penBefore + 1, "...and Finish saves the polygon");
   await admin.keyboard.press("Control+z");
