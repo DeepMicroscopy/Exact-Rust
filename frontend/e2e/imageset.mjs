@@ -170,6 +170,17 @@ try {
   await page.goto(base);
   await page.waitForSelector(".cards");
   check((await page.locator(".side-item", { hasText: "All image sets" }).count()) === 0, "there is no 'All image sets' entry among the teams");
+  check((await page.locator(".side-item[aria-pressed=true]").count()) === 1, "exactly one team is selected on opening: the home page never lists the image sets of all teams");
+  const sideItems = page.locator(".side-item");
+  if ((await sideItems.count()) > 1) {
+    const other = sideItems.nth((await page.locator(".side-item[aria-pressed=true]").evaluate((e) => [...e.parentElement.children].indexOf(e) - 1) + 1) % (await sideItems.count()));
+    const otherName = (await other.innerText()).trim();
+    await other.click();
+    await page.reload();
+    await page.waitForSelector(".cards");
+    check((await page.locator(".side-item[aria-pressed=true]").innerText()).trim() === otherName, "the team chosen last is selected again after a reload");
+    await page.locator(".side-item", { hasText: "My Team 1" }).first().click();
+  }
   await page.fill("input[aria-label=Search]", "IMG-2");
   await page.waitForSelector('[data-testid="image-hits"] .card');
   check((await page.locator('[data-testid="image-hits"] .card', { hasText: "img-2" }).count()) >= 1, "the search finds images (case-insensitive) as well as image sets");

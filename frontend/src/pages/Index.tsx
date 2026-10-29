@@ -9,6 +9,10 @@ import type { ImageSet, Team } from "../api/types";
 import { StatisticsDialog } from "../components/StatisticsDialog";
 import { Thumb } from "../components/Thumb";
 
+const LAST_TEAM = "exact.team";
+const MAX_FOUND = 60; // sets shown for a search
+
+/** A team is always selected (the last one used, else the first): only its image sets are loaded and drawn. The search covers all teams. */
 export function Index() {
   const [teamId, setTeamId] = useState<number | null>(null);
   const [stats, setStats] = useState(false);
@@ -16,9 +20,28 @@ export function Index() {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
   const teams = useQuery({ queryKey: ["teams"], queryFn: () => listAll<Team>("/api/v2/teams", { fields: "id,name" }) });
-  const sets = useQuery({
-    queryKey: ["image-sets"],
-    queryFn: () => listAll<ImageSet>("/api/v2/image-sets", { fields: "id,name,description,team,images" }),
+  useEffect(() => {
+    if (!teams.data?.length || (teamId !== null && teams.data.some((t) => t.id === teamId))) return;
+    let last = NaN;
+    try {
+      last = Number(localStorage.getItem(LAST_TEAM));
+    } catch {
+      /* no storage: the first team */
+    }
+    setTeamId((teams.data.find((t) => t.id === last) ?? teams.data[0]).id);
+  }, [teams.data, teamId]);
+  const pickTeam = (id: number) => {
+    setTeamId(id);
+    try {
+      localStorage.setItem(LAST_TEAM, String(id));
+    } catch {
+      /* remembering is a convenience */
+    }
+  };
+  // names only, for all teams: enough for the search and for naming the sets of image hits
+  const index = useQuery({
+    queryKey: ["image-sets", "index"],
+    queryFn: () => listAll<Pick<ImageSet, "id" | "name" | "description" | "team">>("/api/v2/image-sets", { fields: "id,name,description,team" }),
   });
 
   const q = search.trim();
@@ -33,12 +56,25 @@ export function Index() {
     enabled: debounced.length >= 2,
     queryFn: () => api<Page<{ id: number; name: string; image_set: number }>>(`/api/v2/images?name__icontains=${encodeURIComponent(debounced)}&fields=id,name,image_set&limit=60`),
   });
-  const visible = useMemo(() => {
+  const matches = useMemo(() => {
     const lq = q.toLowerCase();
-    return (sets.data ?? []).filter((s) => (teamId === null || s.team === teamId) && (!lq || s.name.toLowerCase().includes(lq) || (s.description ?? "").toLowerCase().includes(lq)));
-  }, [sets.data, teamId, q]);
-  const setName = (id: number) => sets.data?.find((s) => s.id === id)?.name ?? `set ${id}`;
-  const hits = q.length >= 2 ? (found.data?.items ?? []).filter((i) => teamId === null || sets.data?.find((s) => s.id === i.image_set)?.team === teamId) : [];
+    return lq ? (index.data ?? []).filter((s) => s.name.toLowerCase().includes(lq) || (s.description ?? "").toLowerCase().includes(lq)) : [];
+  }, [index.data, q]);
+  const shownIds = matches.slice(0, MAX_FOUND).map((s) => s.id);
+  // the cards (with the image lists for the thumbnails): the selected team's sets, or what the search found
+  const cardsKey = q ? ["image-sets", "found", shownIds.join(",")] : ["image-sets", "team", teamId];
+  const cards = useQuery({
+    queryKey: cardsKey,
+    enabled: q ? index.data !== undefined : teamId !== null,
+    queryFn: () =>
+      listAll<ImageSet>("/api/v2/image-sets", {
+        fields: "id,name,description,team,images",
+        ...(q ? { id__in: shownIds } : { team: teamId! }),
+      }),
+  });
+  const visible = q && shownIds.length === 0 ? [] : (cards.data ?? []);
+  const setName = (id: number) => index.data?.find((s) => s.id === id)?.name ?? `set ${id}`;
+  const hits = q.length >= 2 ? (found.data?.items ?? []) : [];
   const teamName = (id: number) => teams.data?.find((t) => t.id === id)?.name ?? "";
 
   return (
@@ -46,7 +82,7 @@ export function Index() {
       <aside className="sidebar">
         <div className="sidebar-title">Teams</div>
         {teams.data?.map((t) => (
-          <button key={t.id} className={`side-item ${teamId === t.id ? "active" : ""}`} onClick={() => setTeamId(teamId === t.id ? null : t.id)} aria-pressed={teamId === t.id} title={teamId === t.id ? "Show the image sets of all teams" : undefined}>
+          <button key={t.id} className={`side-item ${teamId === t.id ? "active" : ""}`} onClick={() => pickTeam(t.id)} aria-pressed={teamId === t.id}>
             {t.name}
           </button>
         ))}
@@ -54,7 +90,7 @@ export function Index() {
       <section className="main">
         <div className="toolbar">
           <span className="spacer" />
-          <input className="search" placeholder="Search…" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="search" placeholder="Search all teams…" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
           {teamId !== null && (
             <button className="btn" onClick={() => setStats(true)}>
               Statistics
@@ -64,8 +100,9 @@ export function Index() {
             New image set
           </button>
         </div>
-        {sets.isLoading && <p className="muted">Loading…</p>}
-        {sets.error && <p className="error">Could not load image sets.</p>}
+        {(cards.isLoading || index.isLoading) && <p className="muted">Loading…</p>}
+        {(cards.error || index.error) && <p className="error">Could not load image sets.</p>}
+        {q && matches.length > MAX_FOUND && <p className="muted">Showing {MAX_FOUND} of {matches.length} image sets: narrow the search.</p>}
         <div className="cards">
           {visible.map((s) => (
             <Link key={s.id} to={`/sets/${s.id}`} className="card glass">
@@ -79,7 +116,7 @@ export function Index() {
             </Link>
           ))}
         </div>
-        {sets.data && visible.length === 0 && hits.length === 0 && !found.isFetching && <p className="muted">Nothing found.</p>}
+        {cards.data && !cards.isFetching && visible.length === 0 && hits.length === 0 && !found.isFetching && <p className="muted">{q ? "Nothing found." : "This team has no image sets yet."}</p>}
         {q.length >= 2 && hits.length > 0 && (
           <>
             <h3>Images</h3>

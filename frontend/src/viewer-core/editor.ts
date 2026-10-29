@@ -884,6 +884,7 @@ export class AnnotationEditor {
   }
 
   private abortSession(): void {
+    (window as unknown as { __ptrlog?: (s: string) => void }).__ptrlog?.(`editor: session aborted (${this.session ? this.session.kind : "none"})`);
     this.session = null;
     this.preview = null;
     this.previews = [];

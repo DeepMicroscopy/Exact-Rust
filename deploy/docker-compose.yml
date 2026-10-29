@@ -50,6 +50,7 @@ services:
     image: exact-rust
     user: "${CONTAINER_USER:-exact}"
     depends_on: [server]
+    healthcheck: { disable: true }   # the image's check asks the server port; the worker listens on none
     env_file: exact.env
     environment:
       IMAGE_PATH: /data/images
