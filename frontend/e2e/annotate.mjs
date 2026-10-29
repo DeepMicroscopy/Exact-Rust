@@ -130,6 +130,29 @@ try {
   check((await admin.locator(".type-dd .dd-pop").count()) === 0, "Escape closes the drop-down");
   check((await admin.locator(".toolbox").boundingBox()).height < 80, "the tool bar is a single row");
 
+  // an Apple Pencil is tracked twice by OpenSeadragon (hovering and touching have different ids): the stroke must still follow the pen
+  await admin.keyboard.press("1");
+  const [pa, pb] = [await screenOf(admin, 800, 900), await screenOf(admin, 1800, 1700)];
+  const penBefore = (await annotations(admin)).length;
+  await admin.evaluate(({ a, b }) => {
+    const el = document.querySelector(".openseadragon-canvas");
+    const fire = (type, id, x, y, buttons, pressure) =>
+      el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType: "pen", isPrimary: true, clientX: x, clientY: y, buttons, pressure, button: type === "pointerdown" || type === "pointerup" ? 0 : -1 }));
+    fire("pointerover", 5, a.x, a.y, 0, 0);
+    fire("pointerenter", 5, a.x, a.y, 0, 0);
+    for (let i = 0; i < 3; i++) fire("pointermove", 5, a.x + i, a.y + i, 0, 0);
+    fire("pointerdown", 7, a.x, a.y, 1, 0.5);
+    for (let i = 1; i <= 10; i++) fire("pointermove", 7, a.x + ((b.x - a.x) * i) / 10, a.y + ((b.y - a.y) * i) / 10, 1, 0.5);
+    fire("pointerup", 7, b.x, b.y, 0, 0);
+  }, { a: pa, b: pb });
+  await waitFor(async () => (await annotations(admin)).length === penBefore + 1, "a pen stroke creates a box...");
+  const penBox = (await annotations(admin)).sort((x, y) => y.id - x.id)[0].vector;
+  check(penBox.x2 - penBox.x1 > 700 && penBox.y2 - penBox.y1 > 500, `...as large as the stroke, not stuck at its start (${penBox.x2 - penBox.x1} x ${penBox.y2 - penBox.y1} px)`);
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await annotations(admin)).length === penBefore, "...and undo removes it again");
+  await admin.keyboard.press("Escape");
+  await openImage(admin); // forget that a pen was seen: the checks below start without one
+
   // draw a bounding box with key 1 and a drag
   await admin.keyboard.press("1");
   check((await admin.locator(".toolbox .seg button.active, .toolbox .annotate-btn.active .annotate-label").getAttribute("aria-label")) === "Annotate with", "digit 1 enters the draw tool");

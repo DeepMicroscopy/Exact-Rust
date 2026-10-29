@@ -449,6 +449,18 @@ export class AnnotationEditor {
     return this.viewer.world.getItemCount() ? this.viewer.world.getItemAt(0) : null;
   }
 
+  /**
+   * Where the pointer of this event is, in canvas pixels. From the browser's own event rather than OpenSeadragon's `position`: for a
+   * drag OpenSeadragon reports the first pointer it tracks of that device type, and an iPad's Apple Pencil is tracked twice (hovering
+   * and touching have different ids), so the position of the hovering one, stale, was reported for the whole stroke.
+   */
+  private at(e: Ev): OpenSeadragon.Point {
+    const oe = (e as unknown as { originalEvent?: { clientX?: number; clientY?: number } }).originalEvent;
+    if (typeof oe?.clientX !== "number" || typeof oe.clientY !== "number") return e.position;
+    const r = (this.viewer.canvas as HTMLElement).getBoundingClientRect();
+    return new OpenSeadragon.Point(oe.clientX - r.left, oe.clientY - r.top);
+  }
+
   private toImage(pos: OpenSeadragon.Point): Pt | null {
     const item = this.item();
     if (!item) return null;
@@ -482,7 +494,7 @@ export class AnnotationEditor {
     if (this.suspended || pen.ignores(e.pointerType)) return; // fingers move the image once a pen is in use
     this.touch = this.isTouch(e);
     this.consumedPress = false;
-    const p = this.toImage(e.position);
+    const p = this.toImage(this.at(e));
     if (!p) return;
     const t = this.tol(e.pointerType);
     if (this.tool.kind === "draw") {
@@ -560,7 +572,7 @@ export class AnnotationEditor {
     const s = this.session;
     if (!s) return;
     e.preventDefaultAction = true;
-    const p = this.toImage(e.position);
+    const p = this.toImage(this.at(e));
     if (!p) return;
     const bounds = this.host.image();
     if (s.kind === "brush") {
@@ -680,7 +692,7 @@ export class AnnotationEditor {
     }
     if (e.quick === false) return;
     if (pen.ignores(e.pointerType) && this.tool.kind !== "select") return; // a finger may still tap to select
-    const p = this.toImage(e.position);
+    const p = this.toImage(this.at(e));
     if (!p) return;
     if (this.tool.kind === "op") {
       const sel = this.selected;
@@ -708,7 +720,7 @@ export class AnnotationEditor {
       return;
     }
     if (this.dragDrawn(info) && !this.tool.oneClick) return; // boxes and lines are drawn by dragging
-    if (this.debounced(e.position)) return;
+    if (this.debounced(this.at(e))) return;
     this.placeByClick(info, at);
     e.preventDefaultAction = true;
   }
@@ -722,7 +734,7 @@ export class AnnotationEditor {
     }
     if (this.tool.kind !== "select") return;
     const s = this.selected;
-    const p = this.toImage(e.position);
+    const p = this.toImage(this.at(e));
     if (s && p && isPathType(s.vectorType)) {
       const h = handleAt(this.editableHandles(s), p, this.tol(e.pointerType));
       if (h?.kind === "vertex") this.removeVertexOf(s, h.index);
