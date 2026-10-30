@@ -110,3 +110,6 @@ scripts/warm-thumbnails.py --url https://<host> --user <name> --jobs 3          
 scripts/warm-thumbnails.py --url https://<host> --user <name> --jobs 3 --all-images # every image (long)
 ```
 If the storage is fast (local NVMe) raise `EXACT_THUMBNAIL_JOBS`; on slow network storage keep it low. Each helper process uses about 0.5 GB.
+
+Finding what is slow on the real data: set `EXACT_SLOW_SQL_MS=100` in `exact.env` and restart the server; every database statement slower than that is then logged as a
+warning (`slow statement: …`, with the statement and how long it took) in `dc logs server`. Unset it again afterwards.

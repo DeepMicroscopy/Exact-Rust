@@ -21,3 +21,6 @@ tests/conformance/goldens/django/resource_cases.json
 # credentials of the speed test against the real servers: never commit
 .exact-perf.env
 deploy/exact.env
+tests/perf/reports/local/
+*.swp
+*.swo
