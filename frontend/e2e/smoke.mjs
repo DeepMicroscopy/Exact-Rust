@@ -88,6 +88,50 @@ try {
   await waitPainted("first image of the set renders tiles");
   await shot("4-viewer");
 
+  // image adjustments: a movable window behind an icon at the right of the top bar
+  const tileFilter = () => page.evaluate(() => window.__viewer.drawer.canvas.style.filter);
+  const overlayFilters = () => page.evaluate(() => [...document.querySelectorAll(".openseadragon-canvas canvas")].filter((c) => c !== window.__viewer.drawer.canvas).map((c) => c.style.filter).join(""));
+  check((await page.locator(".float-panel").count()) === 0, "the adjustments window is hidden at first");
+  await page.locator(".adjust-btn").click();
+  await page.waitForSelector(".float-panel");
+  check((await page.locator(".float-panel input[type=range]").count()) === 5, "it offers brightness, contrast, gamma, saturation and hue");
+  const bar = await page.locator(".viewer-bar").boundingBox();
+  const btn = await page.locator(".adjust-btn").boundingBox();
+  check(btn.x > bar.x + bar.width / 2, "the icon sits in the right half of the top bar");
+  await page.locator(".adjust-row", { hasText: "Brightness" }).locator("input").fill("150");
+  await page.locator(".adjust-row", { hasText: "Contrast" }).locator("input").fill("120");
+  check((await tileFilter()) === "brightness(1.5) contrast(1.2)", `the drawn tiles get the filter (${await tileFilter()})`);
+  check((await overlayFilters()) === "", "...the annotation layer on top does not");
+  check((await page.locator(".adjust-dot").count()) === 1, "the icon shows that something is changed");
+  await page.locator(".adjust-row", { hasText: "Gamma" }).locator("input").fill("1.5");
+  check(/^url\(["']?#exact-gamma/.test(await tileFilter()) && (await page.locator("filter#exact-gamma feFuncG").getAttribute("exponent")).startsWith("0.66"), "gamma goes through the SVG filter");
+  await page.locator(".float-panel .check", { hasText: "Invert" }).locator("input").check();
+  check((await tileFilter()).endsWith("invert(1)"), "invert is applied");
+  const before = await page.locator(".float-panel").boundingBox();
+  const head = await page.locator(".float-head").boundingBox();
+  await page.mouse.move(head.x + 90, head.y + head.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(head.x - 150, head.y + head.height / 2 + 40, { steps: 6 });
+  await page.mouse.up();
+  const after = await page.locator(".float-panel").boundingBox();
+  check(Math.abs(after.x - (before.x - 240)) < 3 && Math.abs(after.y - (before.y + 40)) < 3, `the window moves by its title (${Math.round(after.x - before.x)}, ${Math.round(after.y - before.y)})`);
+  check((await tileFilter()).length > 0, "...and the adjustments stay while it moves");
+  await page.reload();
+  await page.waitForSelector(".openseadragon-canvas canvas", { state: "attached" });
+  await waitPainted("the image paints again after a reload");
+  check((await tileFilter()).includes("brightness(1.5)"), "the adjustments are remembered");
+  check((await page.locator(".float-panel").count()) === 0, "...the window starts closed");
+  await page.locator(".adjust-btn").click();
+  await page.waitForSelector(".float-panel");
+  const back = await page.locator(".float-panel").boundingBox();
+  check(Math.abs(back.x - after.x) < 3 && Math.abs(back.y - after.y) < 3, "...and where it was put");
+  await page.locator(".float-panel .btn", { hasText: "Reset" }).click();
+  check((await tileFilter()) === "" && (await page.locator(".adjust-dot").count()) === 0, "Reset takes everything back");
+  await page.locator(".float-panel input[type=range]").first().focus();
+  await page.keyboard.press("Escape");
+  check((await page.locator(".float-panel").count()) === 0, "Escape closes the window");
+  await page.evaluate(() => localStorage.removeItem("exact.adjust.pos"));
+
   // volume (NIfTI): the three MPR planes and the frame slider
   await openImage(82);
   await waitPainted("NIfTI axial renders");

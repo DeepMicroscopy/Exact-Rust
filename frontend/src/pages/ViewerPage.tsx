@@ -12,6 +12,8 @@ import { installGestures, POINTER_GESTURES } from "../viewer-core/gestures";
 import { installPointerDebug } from "../viewer-core/pointerDebug";
 import { AnnotationEditor, vectorOfShape, type EditorHost, type PolyOp, type Tool, type TypeInfo } from "../viewer-core/editor";
 import { buildPalette, canConvert, isDrawable, oneClickCapable, type PaletteEntry } from "../viewer-core/palette";
+import { AdjustButton, GammaFilter, ImageAdjustPanel } from "../components/ImageAdjust";
+import { cssFilter, isNeutral, loadAdjust, saveAdjust, type Adjust } from "../viewer-core/adjust";
 import { isTypingTarget, matchShortcut } from "../viewer-core/shortcuts";
 import { toShape } from "../viewer-core/shapes";
 import { MaskSet, type ToolState } from "../viewer-core/segmentation";
@@ -471,6 +473,15 @@ export function ViewerPage() {
       editorRef.current = null;
     };
   }, []);
+
+  // display adjustments (brightness, contrast, ...) are applied to the drawn tiles only, not to the annotations on top
+  const [adjust, setAdjust] = useState<Adjust>(loadAdjust);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  useEffect(() => {
+    saveAdjust(adjust);
+    const canvas = (viewerRef.current as unknown as { drawer?: { canvas?: HTMLElement } } | null)?.drawer?.canvas;
+    if (canvas) canvas.style.filter = cssFilter(adjust);
+  }, [adjust]);
 
   // nothing of the previous image may stay on the canvas while another one loads or when it cannot be opened
   useEffect(() => {
@@ -973,10 +984,13 @@ export function ViewerPage() {
             Three planes
           </button>
         )}
+        <AdjustButton open={adjustOpen} active={!isNeutral(adjust)} onClick={() => setAdjustOpen((o) => !o)} />
         <button className="btn ghost" onClick={() => navigate("/")}>
           Image sets
         </button>
       </header>
+      <GammaFilter gamma={adjust.gamma} />
+      {adjustOpen && <ImageAdjustPanel value={adjust} onChange={setAdjust} onClose={() => setAdjustOpen(false)} />}
       <div className={`viewer-body ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
         {opening && !failed && <OpeningSpinner name={image.data?.name} />}

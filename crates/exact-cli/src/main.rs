@@ -210,7 +210,9 @@ fn collect_tiffs(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
 }
 
 /// Extensions of the files whose readers may need registration (everything else is read by OpenSlide or is a plain image).
-const OFFSET_EXTENSIONS: [&str; 8] = ["czi", "vsi", "dcm", "tif", "tiff", "btf", "ome.tif", "ome.tiff"];
+const OFFSET_EXTENSIONS: [&str; 8] = [
+    "czi", "vsi", "dcm", "tif", "tiff", "btf", "ome.tif", "ome.tiff",
+];
 
 async fn precompute_offsets(
     cfg: &Config,
@@ -233,10 +235,15 @@ async fn precompute_offsets(
         .into_iter()
         .filter(|(_, _, f)| {
             let l = f.to_ascii_lowercase();
-            OFFSET_EXTENSIONS.iter().any(|e| l.ends_with(&format!(".{e}")))
+            OFFSET_EXTENSIONS
+                .iter()
+                .any(|e| l.ends_with(&format!(".{e}")))
         })
         .collect();
-    println!("{} images with a format that may need offsets", candidates.len());
+    println!(
+        "{} images with a format that may need offsets",
+        candidates.len()
+    );
     let sem = Arc::new(tokio::sync::Semaphore::new(jobs));
     let mut tasks = tokio::task::JoinSet::new();
     let (mut done, mut skipped, mut failed, mut started) = (0usize, 0usize, 0usize, 0usize);
@@ -247,7 +254,11 @@ async fn precompute_offsets(
         }
         let path = cfg.image_path.join(&set_path).join(&filename);
         let Ok(meta) = std::fs::metadata(&path) else {
-            println!("[{}/{total}] image {id}: file missing ({})", n + 1, path.display());
+            println!(
+                "[{}/{total}] image {id}: file missing ({})",
+                n + 1,
+                path.display()
+            );
             failed += 1;
             continue;
         };
@@ -283,7 +294,9 @@ async fn precompute_offsets(
                 if !slide.needs_registration() {
                     return Ok(None);
                 }
-                Ok::<_, String>(Some(exact_wsi::registration::estimate_level_offsets(slide.as_ref())))
+                Ok::<_, String>(Some(exact_wsi::registration::estimate_level_offsets(
+                    slide.as_ref(),
+                )))
             })
             .await
             .map_err(|e| e.to_string())
@@ -329,7 +342,10 @@ fn report(
     match out {
         Ok(what) => {
             *done += 1;
-            println!("[{k}/{total}] image {id}: {what} ({:.1} s)", el.as_secs_f64());
+            println!(
+                "[{k}/{total}] image {id}: {what} ({:.1} s)",
+                el.as_secs_f64()
+            );
         }
         Err(e) => {
             *failed += 1;

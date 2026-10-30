@@ -84,6 +84,10 @@ impl SlideState {
     }
 
     /// The image folder (`IMAGE_PATH`).
+    pub fn cache_dir(&self) -> &std::path::Path {
+        &self.cache_dir
+    }
+
     pub fn root(&self) -> &std::path::Path {
         &self.root
     }
@@ -877,15 +881,35 @@ async fn download(
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let zipped =
-            tokio::task::spawn_blocking(move || crate::slides::zip_companions(&file, &ext))
+        // written to a temporary file (slide folders are gigabytes) and streamed from there; the name goes at once
+        let tmp_dir = s.slides.cache_dir.join("downloads");
+        std::fs::create_dir_all(&tmp_dir)
+            .map_err(|e| ApiError::from(exact_core::Error::Internal(e.to_string())))?;
+        let tmp = tmp_dir.join(format!("{id}-{}.zip", uuid::Uuid::new_v4()));
+        let t = tmp.clone();
+        let made =
+            tokio::task::spawn_blocking(move || crate::slides::zip_companions(&file, &ext, &t))
                 .await
-                .map_err(blocking_err)?
-                .map_err(|e| ApiError::from(exact_core::Error::Internal(e.to_string())))?;
-        let mut r = (StatusCode::OK, Bytes::from(zipped)).into_response();
+                .map_err(blocking_err)?;
+        let opened = match made {
+            Ok(()) => tokio::fs::File::open(&tmp).await,
+            Err(e) => Err(e),
+        };
+        let _ = std::fs::remove_file(&tmp);
+        let f = opened.map_err(|e| ApiError::from(exact_core::Error::Internal(e.to_string())))?;
+        let len = f.metadata().await.map(|m| m.len()).unwrap_or(0);
+        let mut r = Response::new(axum::body::Body::from_stream(
+            tokio_util::io::ReaderStream::new(f),
+        ));
         r.headers_mut().insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/zip"),
+        );
+        r.headers_mut()
+            .insert(header::CONTENT_LENGTH, HeaderValue::from(len));
+        r.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-transform"),
         );
         r.headers_mut().insert(
             header::CONTENT_DISPOSITION,
@@ -927,8 +951,11 @@ async fn download(
 }
 
 /// MRXS / VSI slides consist of the index file plus a companion directory; they are downloaded as one zip.
-pub fn zip_companions(file: &std::path::Path, ext: &str) -> std::io::Result<Vec<u8>> {
-    use std::io::Write;
+pub fn zip_companions(
+    file: &std::path::Path,
+    ext: &str,
+    out: &std::path::Path,
+) -> std::io::Result<()> {
     let stem_dir = file.with_extension("");
     let dir = if ext == "VSI" {
         let stem = stem_dir
@@ -943,11 +970,13 @@ pub fn zip_companions(file: &std::path::Path, ext: &str) -> std::io::Result<Vec<
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let mut out = std::io::Cursor::new(Vec::new());
-    let mut zip = zip::ZipWriter::new(&mut out);
-    let opts = zip::write::SimpleFileOptions::default();
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(out)?);
+    // slide data is compressed already: stored, not deflated; streamed, not read into memory
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .large_file(true);
     fn walk(
-        zip: &mut zip::ZipWriter<&mut std::io::Cursor<Vec<u8>>>,
+        zip: &mut zip::ZipWriter<std::fs::File>,
         dir: &std::path::Path,
         prefix: &str,
         o: zip::write::SimpleFileOptions,
@@ -961,7 +990,7 @@ pub fn zip_companions(file: &std::path::Path, ext: &str) -> std::io::Result<Vec<
                 walk(zip, &e.path(), &name, o)?;
             } else {
                 zip.start_file(name, o)?;
-                zip.write_all(&std::fs::read(e.path())?)?;
+                std::io::copy(&mut std::fs::File::open(e.path())?, zip)?;
             }
         }
         Ok(())
@@ -979,7 +1008,7 @@ pub fn zip_companions(file: &std::path::Path, ext: &str) -> std::io::Result<Vec<
             .into_owned()
     };
     zip.start_file(main, opts)?;
-    zip.write_all(&std::fs::read(file)?)?;
+    std::io::copy(&mut std::fs::File::open(file)?, &mut zip)?;
     zip.finish()?;
-    Ok(out.into_inner())
+    Ok(())
 }

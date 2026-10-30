@@ -498,3 +498,28 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .wp-dot-btn.on { background: var(--purple); transform: scale(1.25); }
 .wp-nav { display: flex; gap: 8px; }
 @media (max-width: 640px) { .wp-page { min-height: 300px; } .wp-art-row { gap: 16px; } .wp-art-row .wp-icon { width: 58px; height: 58px; } .wp-title { font-size: 1.3rem; } }
+
+/* image menu (image-set overview) */
+.ctx > .ctx-link { display: flex; justify-content: space-between; align-items: center; color: var(--text); border-radius: 7px; padding: 9px 11px; cursor: pointer; text-decoration: none; min-height: 38px; }
+.ctx > .ctx-link:hover { background: var(--glass-h); }
+.ctx-title { padding: 4px 11px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-sub .ctx-related { display: flex; flex-direction: column; align-items: flex-start; gap: 0; width: 100%; background: transparent; border: 0; color: var(--text); border-radius: 7px; padding: 6px 8px; cursor: pointer; font: inherit; text-align: left; }
+.ctx-sub .ctx-related:hover { background: var(--glass-h); }
+.ctx-related-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-link { -webkit-touch-callout: none; }
+
+/* movable window (image adjustments) */
+.float-panel { position: fixed; z-index: 25; width: 300px; max-width: calc(100vw - 16px); background: rgba(18, 18, 24, 0.96); box-shadow: 0 10px 32px rgba(0, 0, 0, 0.55); }
+.float-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; cursor: grab; touch-action: none; user-select: none; border-bottom: 1px solid var(--border); }
+.float-head:active { cursor: grabbing; }
+.float-head h2 { flex: 1; margin: 0; font-size: 0.95rem; }
+.float-grip { color: var(--muted); letter-spacing: -2px; }
+.float-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.adjust-row { display: grid; grid-template-columns: 84px 1fr 52px; align-items: center; gap: 8px; }
+.adjust-label { cursor: default; }
+.adjust-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; }
+.adjust-row input[type="range"] { width: 100%; min-height: 28px; }
+.adjust-checks { display: flex; align-items: center; gap: 14px; padding-top: 4px; }
+.icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 38px; min-height: 38px; padding: 0 8px; }
+.icon-btn.on { background: var(--glass-h); }
+.adjust-dot { position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--purple); }

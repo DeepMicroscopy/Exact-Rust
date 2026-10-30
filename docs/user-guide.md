@@ -27,6 +27,10 @@ Inside an image set you can:
 * **Upload images** by dragging files onto the page. Each upload becomes a card with progress. When a name already exists
   you are asked whether to keep both, replace, or skip.
 * **Filter and sort** the thumbnails, or select several to move, delete or register them.
+* **Right-click an image** (on a tablet or phone: press and hold) for its menu: **Open**, **Download** (the original file; slides
+  that consist of a folder, such as MRXS and VSI, come as a ZIP that is packed first, so the download starts after a moment),
+  **Move…** (no selection needed; on a selected image it moves the whole selection) and **Related images**: the images it was
+  registered with and the crops made from it, or the image it was cropped from. Click one to open it.
 * **Export** the annotations in one of the export formats of the set, **view statistics**, and open **Files** (auxiliary
   files such as reports).
 * Open **Settings** to rename the set, change its team, tags and products.
@@ -36,6 +40,11 @@ Inside an image set you can:
 ## The viewer
 Click a thumbnail to open an image. Drag to pan, scroll to zoom. The left panel lists the annotation types with their counts;
 untick a type to hide it. **Hide** (or `Y`) hides all annotations.
+
+The round icon at the right of the top bar opens **Image adjustments**: brightness, contrast, gamma, saturation, hue, grayscale
+and invert. The window can be moved by its title (and stays where you put it), double-clicking a slider's name resets it, and a dot
+on the icon shows that something is changed. Only the display changes: not the file, not the annotations, and a crop or
+download is unaffected. Your settings are remembered for the next image.
 
 ### Frames, volumes and movies
 * **Z-stacks and movies** get a frame slider; `Shift+E` / `Shift+Q` or `Page Up` / `Page Down` step through frames, `Space`

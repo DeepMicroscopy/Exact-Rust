@@ -10,12 +10,36 @@ import { AuxFilesDialog } from "../components/AuxFilesDialog";
 import { ExportDialog } from "../components/ExportDialog";
 import { ManualRegistration } from "../components/ManualRegistration";
 import { NewRegistrationDialog, RegistrationPanel } from "../components/Registrations";
+import { ImageMenu, useMenuTrigger, type ImageMenuModel } from "../components/ImageMenu";
 import { DeleteImagesDialog, DeleteSetDialog, MoveImagesDialog, SetSettingsDialog } from "../components/SetDialogs";
 import { Thumb } from "../components/Thumb";
 import { useUploads } from "../hooks/useUploads";
 
 type Sort = "name" | "newest" | "size";
 type Dialog = "export" | "files" | "settings" | "delete-set" | "move" | "delete-images" | "register" | null;
+
+/** One image of the overview: select it, open it, or get its menu (right click, long press). */
+function ImageTile({ image: i, selected, onToggle, onMenu }: { image: SetImage; selected: boolean; onToggle(): void; onMenu(x: number, y: number): void }) {
+  const trigger = useMenuTrigger(onMenu);
+  return (
+    <div className={`tile glass ${selected ? "selected" : ""}`} {...trigger}>
+      <label className="tile-check" onClick={(e) => e.stopPropagation()}>
+        <input type="checkbox" checked={selected} onChange={onToggle} aria-label={`Select ${i.name}`} />
+      </label>
+      <Link to={`/images/${i.id}`} className="tile-link" draggable={false}>
+        <Thumb imageId={i.id} alt={i.name} />
+        <div className="tile-name" title={i.name}>
+          {i.name}
+        </div>
+        <div className="muted small">
+          {i.width.toLocaleString("en-US")}×{i.height.toLocaleString("en-US")}
+          {i.frames > 1 ? ` · ${i.frames} frames` : ""}
+          {i.crop_source != null ? " · crop" : ""}
+        </div>
+      </Link>
+    </div>
+  );
+}
 
 export function ImageSetPage() {
   const id = Number(useParams().setId);
@@ -73,6 +97,13 @@ export function ImageSetPage() {
     return [...list].sort(by[sort]);
   }, [images.data, search, sort]);
   const chosen = useMemo(() => (images.data ?? []).filter((i) => selected.has(i.id)), [images.data, selected]);
+  // the menu of an image; Move acts on the whole selection when the image is part of it, otherwise on this one image
+  const [menu, setMenu] = useState<(ImageMenuModel & { image: SetImage }) | null>(null);
+  const [moveList, setMoveList] = useState<SetImage[] | null>(null);
+  const openMenu = (image: SetImage, x: number, y: number) => {
+    const group = selected.has(image.id) && chosen.length > 1 ? chosen : [image];
+    setMenu({ x, y, id: image.id, name: image.name, image, moveCount: group.length, canMove: !!can?.delete_images && !locked, moveWhy: locked ? "The image set is locked." : "You may not move images out of this image set." });
+  };
 
   const toggle = (imageId: number) =>
     setSelected((s) => {
@@ -227,7 +258,13 @@ export function ImageSetPage() {
               <>
                 <strong>{chosen.length} selected</strong>
                 {can?.delete_images && !locked && (
-                  <button className="btn" onClick={() => setDialog("move")}>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setMoveList(null);
+                      setDialog("move");
+                    }}
+                  >
                     Move…
                   </button>
                 )}
@@ -275,22 +312,7 @@ export function ImageSetPage() {
               <UploadTile key={`u${u.key}`} item={u} onDismiss={() => uploads.dismiss(u.key)} />
             ))}
             {visible.map((i) => (
-              <div key={i.id} className={`tile glass ${selected.has(i.id) ? "selected" : ""}`}>
-                <label className="tile-check" onClick={(e) => e.stopPropagation()}>
-                  <input type="checkbox" checked={selected.has(i.id)} onChange={() => toggle(i.id)} aria-label={`Select ${i.name}`} />
-                </label>
-                <Link to={`/images/${i.id}`} className="tile-link">
-                  <Thumb imageId={i.id} alt={i.name} />
-                  <div className="tile-name" title={i.name}>
-                    {i.name}
-                  </div>
-                  <div className="muted small">
-                    {i.width.toLocaleString("en-US")}×{i.height.toLocaleString("en-US")}
-                    {i.frames > 1 ? ` · ${i.frames} frames` : ""}
-                    {i.crop_source != null ? " · crop" : ""}
-                  </div>
-                </Link>
-              </div>
+              <ImageTile key={i.id} image={i} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} onMenu={(x, y) => openMenu(i, x, y)} />
             ))}
           </div>
         </>
@@ -313,7 +335,18 @@ export function ImageSetPage() {
       {dialog === "files" && <AuxFilesDialog setId={id} onChanged={refresh} onClose={() => setDialog(null)} />}
       {dialog === "export" && <ExportDialog setId={id} canCreate={!!can?.create_export} canDelete={!!can?.edit_set} onClose={() => setDialog(null)} />}
       {dialog === "delete-set" && s && <DeleteSetDialog settings={s} onClose={() => setDialog(null)} onDeleted={() => navigate("/", { replace: true })} />}
-      {dialog === "move" && <MoveImagesDialog images={chosen} from={id} onClose={() => setDialog(null)} onDone={refresh} />}
+      {menu && (
+        <ImageMenu
+          model={menu}
+          onClose={() => setMenu(null)}
+          onMove={() => {
+            setMoveList(menu.moveCount > 1 ? chosen : [menu.image]);
+            setMenu(null);
+            setDialog("move");
+          }}
+        />
+      )}
+      {dialog === "move" && <MoveImagesDialog images={moveList ?? chosen} from={id} onClose={() => setDialog(null)} onDone={refresh} />}
       {dialog === "delete-images" && <DeleteImagesDialog images={chosen} onClose={() => setDialog(null)} onDone={refresh} />}
       {dialog === "register" && images.data && (
         <NewRegistrationDialog

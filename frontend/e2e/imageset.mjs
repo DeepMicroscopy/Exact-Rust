@@ -402,6 +402,36 @@ try {
   await waitFor(async () => (await page.locator(".grid .tile").count()) === 2, "...and left this set");
   check((await apiCall(root, "GET", `/api/v2/images?image_set=${otherSet}`)).body.items.length >= 1, "the image is in the other set");
 
+  // ---------------------------------------------------------------------------------------- the menu of an image
+  const menuTile = page.locator(".tile", { hasText: "img-1" });
+  await menuTile.click({ button: "right" });
+  await page.waitForSelector(".ctx[aria-label^='Menu of']");
+  check((await page.locator(".ctx[role=menu] [role=menuitem]").allInnerTexts()).map((t) => t.split("\n")[0].trim()).join("|").startsWith("Open|Download|Move…|Related images"), "right click on an image opens its menu: open, download, move, related images");
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.locator(".ctx a", { hasText: "Download" }).click()]);
+  check(/img-1.*\.png$/.test(dl.suggestedFilename()), `Download sends the file (${dl.suggestedFilename()})`);
+  await waitFor(async () => (await page.locator(".ctx").count()) === 0, "the menu closes after the download");
+  await menuTile.click({ button: "right" });
+  await page.locator(".ctx [role=menuitem]", { hasText: "Related images" }).click();
+  await waitFor(async () => (await page.locator(".ctx-sub .ctx-related").count()) >= 1, "Related images lists the registered image");
+  check((await page.locator(".ctx-sub .ctx-related").first().innerText()).includes("Registered"), "...as a registration");
+  await page.locator(".ctx-sub .ctx-related").first().click();
+  await page.waitForURL(/\/images\/\d+$/);
+  await page.goBack();
+  await page.waitForSelector(".grid .tile");
+  await menuTile.click({ button: "right" });
+  await page.locator(".ctx [role=menuitem]", { hasText: "Move" }).click();
+  await page.waitForSelector(".modal");
+  check((await page.locator(".modal h2").innerText()) === "Move 1 image", "Move in the menu needs no selection: it moves that image");
+  await page.keyboard.press("Escape");
+  await waitFor(async () => (await page.locator(".modal").count()) === 0, "the move dialog closes");
+  await page.locator(".tile", { hasText: "img-1" }).locator("input[type=checkbox]").check({ force: true });
+  await page.locator(".tile", { hasText: "img-2" }).locator("input[type=checkbox]").check({ force: true });
+  await menuTile.click({ button: "right" });
+  check((await page.locator(".ctx [role=menuitem]", { hasText: "Move 2 selected" }).count()) === 1, "on a selected image Move acts on the whole selection");
+  await page.keyboard.press("Escape");
+  await page.locator(".toolbar .btn", { hasText: "Clear" }).click();
+  await page.locator(".tile", { hasText: "img-1" }).hover();
+
   // ---------------------------------------------------------------------------------------- delete images
   await page.locator(".tile", { hasText: "img-2" }).locator("input[type=checkbox]").check({ force: true });
   await page.locator(".toolbar .btn.danger", { hasText: "Delete" }).click();
