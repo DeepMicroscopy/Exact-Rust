@@ -186,6 +186,17 @@ try {
   check((await page.locator('[data-testid="image-hits"] .card', { hasText: "img-2" }).count()) >= 1, "the search finds images (case-insensitive) as well as image sets");
   await page.fill("input[aria-label=Search]", name.slice(0, 12));
   await waitFor(async () => (await page.locator(".cards .card", { hasText: name }).count()) >= 1, "...and still finds image sets");
+  // a word in the names of many images: a note says that only the first are shown
+  await page.fill("input[aria-label=Search]", "img");
+  await page.waitForSelector('[data-testid="image-hits"] .card');
+  const imgCount = await page.evaluate(async () => (await (await fetch("/api/v2/images?name__icontains=img&fields=id&limit=1&count=true")).json()).count);
+  check((await page.locator('[data-testid="image-hits-more"]').count()) === (imgCount > 60 ? 1 : 0), `image hits beyond the first 60 are announced (${imgCount} images match "img")`);
+  // a word that several image sets contain: all of them are shown, not only one (the cards of the image sets, not the image hits below them)
+  const expected = await page.evaluate(async () => (await (await fetch("/api/v2/image-sets?fields=id,name&limit=1000")).json()).items.map((x) => x.name).filter((n) => n.toLowerCase().includes("image")).sort());
+  check(expected.length >= 2, `the test needs a word that several image sets contain (${expected.join(", ")})`);
+  await page.fill("input[aria-label=Search]", "image");
+  const setCards = async () => (await page.locator('.cards:not([data-testid="image-hits"]) .card .card-title').allInnerTexts()).sort();
+  await waitFor(async () => JSON.stringify(await setCards()) === JSON.stringify(expected), `a search that matches ${expected.length} image sets shows all of them (${expected.join(", ")})`);
   await page.goto(`${base}/sets/${setId}`);
   await page.waitForSelector(".tabs");
   // ---------------------------------------------------------------------------------------- filter, sort, select
@@ -334,7 +345,10 @@ try {
     const b = base.viewportToImageCoordinates(o); // where the overlay's corner lies in the pixels of the current image
     return [b.x, b.y, top.getOpacity()];
   });
+  const regsNow = (await apiCall(root, "GET", `/api/v2/registrations?source_image=${i1.id}&target_image=${i2.id}`)).body.items;
   const mm = regs[0].transformation_matrix;
+  const mmNow = regsNow[0]?.transformation_matrix;
+  if (JSON.stringify(mm) !== JSON.stringify(mmNow)) console.log("DEBUG the stored matrix changed between the check and the overlay:", JSON.stringify(mm), "->", JSON.stringify(mmNow), "registrations:", regsNow.length);
   const want = [(0 - mm.t_02) / mm.t_00, (0 - mm.t_12) / mm.t_11];
   check(Math.abs(placed[0] - want[0]) < 2 && Math.abs(placed[1] - want[1]) < 2, `the overlay is placed by the inverse registration (${placed.map((v) => v.toFixed(1))} vs ${want.map((v) => v.toFixed(1))})`);
   await page.locator('[data-testid="overlay-control"] input[type=range]').fill("0.8");

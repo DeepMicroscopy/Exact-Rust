@@ -59,7 +59,7 @@ export function Index() {
   const found = useQuery({
     queryKey: ["search-images", debounced],
     enabled: debounced.length >= 2,
-    queryFn: () => api<Page<{ id: number; name: string; image_set: number }>>(`/api/v2/images?name__icontains=${encodeURIComponent(debounced)}&fields=id,name,image_set&limit=60`),
+    queryFn: () => api<Page<{ id: number; name: string; image_set: number }>>(`/api/v2/images?name__icontains=${encodeURIComponent(debounced)}&fields=id,name,image_set&limit=60&count=true`),
   });
   const matches = useMemo(() => {
     const lq = q.toLowerCase();
@@ -74,7 +74,8 @@ export function Index() {
     queryFn: () =>
       listAll<ImageSet>("/api/v2/image-sets", {
         fields: "id,name,description,team,images",
-        ...(q ? { id__in: shownIds } : { team: teamId! }),
+        // `__in` takes one comma-separated value (a repeated parameter would keep only the last id: one card for any number of matches)
+        ...(q ? { id__in: shownIds.join(",") } : { team: teamId! }),
       }),
   });
   const visible = q && shownIds.length === 0 ? [] : (cards.data ?? []);
@@ -139,6 +140,11 @@ export function Index() {
         {q.length >= 2 && hits.length > 0 && (
           <>
             <h3>Images</h3>
+            {(found.data?.count ?? 0) > hits.length && (
+              <p className="muted small" data-testid="image-hits-more">
+                Showing the first {hits.length} of {found.data?.count?.toLocaleString("en-US")} images: a longer part of the name narrows it down.
+              </p>
+            )}
             <div className="cards" data-testid="image-hits">
               {hits.map((i) => (
                 <Link key={i.id} to={`/images/${i.id}`} className="card glass">
