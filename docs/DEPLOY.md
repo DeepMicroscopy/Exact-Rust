@@ -109,6 +109,14 @@ Render the covers ahead of the users, a few at a time (nights are best; Ctrl+C s
 scripts/warm-thumbnails.py --url https://<host> --user <name> --jobs 3              # the cover of every image set
 scripts/warm-thumbnails.py --url https://<host> --user <name> --jobs 3 --all-images # every image (long)
 ```
+CZI, VSI, DICOM and OME / generic TIFF slides need their pyramid level offsets measured once (5–8 s per file); the server stores them in
+`images_pyramidregistration`, but the first person to open a slide would wait. Measure them all ahead of time (reads the files, writes only that table; what is
+stored is skipped, so it can be repeated and interrupted; `--dry-run` lists, `--limit N` tries a few):
+```
+dc exec server exact-cli precompute-offsets --jobs 2
+```
+A file that is replaced later (size or date changed) is measured again by the server on its first opening.
+
 If the storage is fast (local NVMe) raise `EXACT_THUMBNAIL_JOBS`; on slow network storage keep it low. Each helper process uses about 0.5 GB.
 
 Finding what is slow on the real data: set `EXACT_SLOW_SQL_MS=100` in `exact.env` and restart the server; every database statement slower than that is then logged as a

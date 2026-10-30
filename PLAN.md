@@ -778,3 +778,7 @@ needs the column), closed in any way counts as seen; "What's new" in the top bar
 self-service: read-only accounts may dismiss; an administrator impersonating a user neither sees nor dismisses it). `EXACT_WELCOME_NOTICE` puts a line at the top (the beta says it is a copy of production).
 The scratch users are marked as greeted by `reference/mark-welcomed.sh` (make restore), otherwise the dialog would stand in the way of every browser test; the admin e2e's login closes it for users it creates.
 Tests: `test_v2_welcome.py`, `e2e/admin.mjs`. Not done: versioned "what's new" (a second greeting for a later release), a changelog feed.
+
+### 5av. Level offsets ahead of time (2026-10-30)
+First opening of a CZI took 5–8 s: not slideio's open (0.05–0.23 s) nor the tiles (20–110 ms) but `estimate_level_offsets`, measured once per file and stored.
+`exact-cli precompute-offsets [--jobs N] [--limit N] [--force] [--dry-run]` does that for every single-file image with a candidate extension (czi, vsi, dcm, tif/tiff/btf, ome.tif[f]) whose reader `needs_registration`, skipping what is stored with the same algorithm, size and mtime. Scratch DB: 40 files in 17 s with 2 jobs; the CZI DZI descriptor then answers in 0.2 s instead of 5–8 s. Not done: parallel levels inside one estimate; multi-file z-stacks (never stored).
