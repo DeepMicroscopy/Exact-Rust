@@ -193,11 +193,22 @@ try {
   const readOnlyBox = root.locator(`input[aria-label="${readerName} is read only"]`);
   check(await readOnlyBox.isChecked(), "...marked read only");
   const reader = await login(readerName, readerPw, { keepWelcome: true });
-  // the first login greets: what is different, the notice of the administrator; closing it counts as seen
+  // the first login greets with a few short pages on what is better; the notice of the administrator is on the first one; closing counts as seen
   await reader.waitForSelector('[data-testid="welcome"]');
-  const hello = await reader.locator('[data-testid="welcome"]').innerText();
-  check(hello.includes("Same account, same data") && hello.includes("Annotating") && hello.includes("Tablet and pen"), "a new user is greeted with what is different");
+  const page = async () => reader.locator('[data-testid="welcome"]').getAttribute("data-page");
+  check((await page()) === "speed" && (await reader.locator('[data-testid="welcome"]').innerText()).includes("Much faster"), "a new user is greeted, first with how much faster it is");
   check((await reader.locator('[data-testid="welcome-notice"]').innerText()).includes("beta on a copy"), "...with the notice of the administrator at the top");
+  await reader.locator('[data-testid="welcome-next"]').click();
+  check((await page()) === "devices" && (await reader.locator('[data-testid="welcome"]').innerText()).includes("On every device"), "...then that it works on every device");
+  check((await reader.locator('[data-testid="welcome-notice"]').count()) === 0, "...(the notice stays on the first page)");
+  await reader.locator('[data-testid="welcome-next"]').click();
+  check((await page()) === "pencil" && (await reader.locator('[data-testid="welcome"]').innerText()).includes("Apple Pencil"), "...then the Apple Pencil");
+  await reader.locator('[data-testid="welcome-dot-3"]').click();
+  check((await page()) === "annotate" && (await reader.locator('[data-testid="welcome-next"]').count()) === 0 && (await reader.locator('[data-testid="welcome-close"]').innerText()).includes("Got it"), "...and on the last page the dots jump, there is no Next and the button says Got it");
+  await reader.locator('[data-testid="welcome-back"]').click();
+  check((await page()) === "pencil", "...Back goes one page back");
+  await reader.keyboard.press("ArrowRight");
+  check((await page()) === "annotate", "...and the arrow keys turn the pages");
   await reader.locator('[data-testid="welcome-close"]').click();
   await reader.waitForSelector('[data-testid="welcome"]', { state: "detached" });
   await reader.reload();

@@ -6,7 +6,7 @@ nav_order: 2
 # User guide
 
 ## Welcome
-The first time you sign in, a short **What's new** dialog tells you what is different from the EXACT you know. You can read it again any time under **What's new** in the top bar.
+The first time you sign in, a short tour of four pages shows what is better than the EXACT you know: how much faster it is, that it works on every device, the Apple Pencil on the iPad, and the annotation tools. Skip it or step through with Next, Back or the arrow keys; you can see it again any time under **What's new** in the top bar.
 
 ## Signing in
 Sign in with your user name and password. (The server also supports passkeys; enrolling and using them in the interface is
