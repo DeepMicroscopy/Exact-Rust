@@ -26,6 +26,7 @@ import { RepairBanner } from "../components/RepairBanner";
 import { TimeSlider, ZSlider } from "../components/FrameControls";
 import { Toolbox } from "../components/Toolbox";
 import { PenTools } from "../components/PenTools";
+import { OpeningSpinner } from "../components/OpeningSpinner";
 import { AnnotationInfo } from "../components/AnnotationInfo";
 import { ConfirmDelete } from "../components/ConfirmDelete";
 import { ConfirmResize } from "../components/ConfirmResize";
@@ -129,6 +130,9 @@ export function ViewerPage() {
   const appliedView = useRef<SharedView | null>(null);
   /** the plane to show is still loading */
   const [planeBusy, setPlaneBusy] = useState(false);
+  // true from asking for an image until its first tiles are on the canvas (a large slide on slow storage takes a while to open)
+  const [opening, setOpening] = useState(true);
+  const openingRef = useRef(true);
   const viewFor = useRef<number | null>(null);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -377,6 +381,11 @@ export function ViewerPage() {
     };
     viewer.addHandler("viewport-change", scheduleUrl);
     viewer.addHandler("open", scheduleUrl);
+    viewer.addHandler("tile-drawn", () => {
+      if (!openingRef.current) return;
+      openingRef.current = false;
+      setOpening(false);
+    });
     urlWriter.current = scheduleUrl;
     (window as unknown as { __viewer?: OpenSeadragon.Viewer; __osd?: typeof OpenSeadragon }).__viewer = viewer; // used by the e2e tests
     (window as unknown as { __osd?: typeof OpenSeadragon }).__osd = OpenSeadragon;
@@ -460,6 +469,8 @@ export function ViewerPage() {
     viewer.world.removeAll();
     viewer.forceRedraw();
     setError(null);
+    openingRef.current = true;
+    setOpening(true);
   }, [id, image.isError]);
 
   // the stack of planes: one tiled image per plane, cross-faded for focus planes
@@ -957,6 +968,7 @@ export function ViewerPage() {
       </header>
       <div className={`viewer-body ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
+        {opening && !failed && <OpeningSpinner name={image.data?.name} />}
         {planeBusy && !failed && (
           <div className="plane-busy glass" role="status" aria-label="Loading the plane" data-testid="plane-busy">
             <span className="spinner" /> Loading {kind === "volume" ? "slice" : "plane"} {Math.round(pos) + 1}…

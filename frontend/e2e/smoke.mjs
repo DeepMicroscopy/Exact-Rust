@@ -325,7 +325,22 @@ try {
   await page.waitForSelector('[data-testid="viewer-error"]');
   check((await page.locator(".osd.osd-hidden").count()) === 1 && (await page.evaluate(() => window.__viewer.world.getItemCount())) === 0, "an unknown image shows an error, not the image seen before");
   check((await page.locator('[data-testid="viewer-error"]').innerText()).includes("99999999"), "...which names the image");
+  check((await page.locator('[data-testid="opening"]').count()) === 0, "...and no spinner that says it is opening");
   errors.length = known; // the 404 is expected
+
+  // an image that is slow to open (a big slide on slow storage): a spinner over the empty canvas until the first tiles are drawn
+  await page.route("**/api/v2/images/82/1/*/tile", async (route) => {
+    await new Promise((r) => setTimeout(r, 2500));
+    await route.continue();
+  });
+  await page.goto(`${base}/images/82`);
+  await page.waitForSelector('[data-testid="opening"]', { timeout: 5000 });
+  check((await page.locator('[data-testid="opening"]').innerText()).includes("Opening"), "a slow image shows a spinner while it opens");
+  await page.waitForSelector('[data-testid="opening"]', { state: "detached", timeout: 30000 });
+  await waitFor(async () => (await sample()) > 20, "...which goes away when the image is on the canvas");
+  await page.unroute("**/api/v2/images/82/1/*/tile");
+  await openImage(82);
+  await waitFor(async () => (await page.locator('[data-testid="opening"]').count()) === 0, "an image that opens quickly leaves no spinner behind");
 
   // a phone: no page is wider than the screen, the top bar folds into a menu, teams are a drop-down, jobs are cards
   await page.setViewportSize({ width: 390, height: 844 });
