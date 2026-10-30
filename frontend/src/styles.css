@@ -458,3 +458,5 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .opening { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none; }
 .opening-box { display: flex; align-items: center; gap: 14px; padding: 16px 22px; max-width: min(460px, 86%); background: rgba(15, 15, 20, 0.88); }
 .spinner.big { width: 34px; height: 34px; border-width: 3px; }
+
+.readonly-note { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 5; padding: 8px 16px; font-size: 0.9rem; background: rgba(15, 15, 20, 0.85); pointer-events: none; }

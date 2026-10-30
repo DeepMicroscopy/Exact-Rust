@@ -8,6 +8,7 @@ import { NewSetDialog } from "../components/SetDialogs";
 import type { ImageSet, Team } from "../api/types";
 import { StatisticsDialog } from "../components/StatisticsDialog";
 import { Thumb } from "../components/Thumb";
+import { useAuth } from "../auth/AuthContext";
 
 const LAST_TEAM = "exact.team";
 const MAX_FOUND = 60; // sets shown for a search
@@ -21,6 +22,7 @@ export function Index() {
   const [creating, setCreating] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const navigate = useNavigate();
+  const { user } = useAuth();
   const teams = useQuery({ queryKey: ["teams"], queryFn: () => listAll<Team>("/api/v2/teams", { fields: "id,name" }) });
   useEffect(() => {
     if (!teams.data?.length || (teamId !== null && teams.data.some((t) => t.id === teamId))) return;
@@ -106,7 +108,7 @@ export function Index() {
               Statistics
             </button>
           )}
-          <button className="btn primary" onClick={() => setCreating(true)} disabled={!teams.data?.length}>
+          <button className="btn primary" onClick={() => setCreating(true)} disabled={!teams.data?.length || !!user?.read_only} title={user?.read_only ? "This account is read only" : undefined}>
             New image set
           </button>
         </div>

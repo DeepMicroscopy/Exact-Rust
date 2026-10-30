@@ -762,3 +762,12 @@ admin or SQL. Now (superusers): `GET /api/v2/admin/permissions` (catalog of the 
 read-only; not for one's own account), `POST /api/v2/admin/users` (service account: random password shown once, preset / permissions, team memberships). UI: Users tab, "New
 worker account…" and "Permissions" per user (`components/UserPermissions.tsx`). Tests: `test_v2_admin_permissions.py`, `e2e/admin.mjs`.
 Not done: group management, permission editing for non-superusers (site admins), an audit trail beyond the server log.
+
+### 5at. New users and read-only accounts (2026-10-30)
+Users tab: "New user…" (names, e-mail, teams, read only; random password shown once, or a link to choose one; superusers also get worker kinds) for administrators.
+**Read only** is a per-user flag in `exact_rust_user_flags` (migration 0009; Django's `users_user` is untouched, so EXACT itself ignores it): `authenticate()` refuses every
+non-safe method for such an account whatever the login (session, Basic, token), `authenticate_account()` is for self-service (sign out, stop impersonating, passkeys);
+the legacy GET that creates an image (crop) is refused explicitly; `perms()` (the Django `get_perms` port) leaves only `read`, so the UI hides upload, settings etc.;
+viewer: no tools, the context menu informs only, a note; top bar badge; `PATCH /api/v2/users/{id} {"read_only"}` and `POST /api/v2/admin/users` (site admins; permissions and presets
+stay superuser-only), `GET /api/v2/admin/roles` lists `read_only_ids`. `exact-server` now refuses to start on a database without the tables every request needs.
+Tests: `test_v2_read_only.py`, `e2e/admin.mjs`. Not done: a read-only badge in the user lists of teams, per-team read-only memberships.

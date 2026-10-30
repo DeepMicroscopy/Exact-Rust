@@ -89,7 +89,7 @@ until login rate limiting exists. Mail is not configured: users get in through i
 
 ## 7. Operating notes
 * Logs: stdout of the units (`journalctl -u exact-server`). Slow requests and the helper processes (slideio, registration) log there.
-* Update: stop, replace binary (and `frontend/dist`), `exact-cli migrate`, start.
+* Update: stop, replace binary (and `frontend/dist`), `exact-cli migrate`, start. (With the Docker setup: `dc build`, `dc run --rm server sh -c 'exact-cli migrate --confirm-db "$SQL_DATABASE"'`, `dc up -d`.) The server refuses to start on a database that was not migrated for its version and says so in the log.
 * Throw away: stop both units, `dropdb exact_beta`, delete the file copy. Production is untouched.
 * Known gaps: no window/level in the three-plane view, no editor for export formats, global annotations have no frame, no per-user rate limiting (hence the access restriction).
 

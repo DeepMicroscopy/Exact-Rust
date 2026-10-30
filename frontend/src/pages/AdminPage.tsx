@@ -6,7 +6,7 @@ import { PluginsTab } from "../components/PluginsAdmin";
 import { ProductsTab, type ProductPerms } from "../components/ProductsAdmin";
 import { Modal } from "../components/Modal";
 import { SecretDialog } from "../components/SecretDialog";
-import { NewWorkerDialog, PermissionsDialog } from "../components/UserPermissions";
+import { NewUserDialog, PermissionsDialog } from "../components/UserPermissions";
 
 export interface AdminMe {
   is_site_admin: boolean;
@@ -453,11 +453,12 @@ function UsersTab({ me }: { me: AdminMe }) {
   const [secret, setSecret] = useState<{ title: string; intro: string; value: string } | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [permsOf, setPermsOf] = useState<{ id: number; username: string } | null>(null);
-  const [newWorker, setNewWorker] = useState(false);
+  const [newUser, setNewUser] = useState(false);
   const users = useQuery({ queryKey: ["admin-users"], queryFn: () => listAll<UserRow>("/api/v2/users", { fields: "id,username,is_active,is_staff,is_superuser,last_login,team_set" }), staleTime: 0 });
   const teams = useQuery({ queryKey: ["admin-teams"], queryFn: () => listAll<TeamRow>("/api/v2/teams", { fields: "id,name" }), staleTime: 0 });
-  const roles = useQuery({ queryKey: ["admin-roles"], queryFn: () => api<{ site_admin_ids: number[] }>("/api/v2/admin/roles"), staleTime: 0 });
+  const roles = useQuery({ queryKey: ["admin-roles"], queryFn: () => api<{ site_admin_ids: number[]; read_only_ids: number[] }>("/api/v2/admin/roles"), staleTime: 0 });
   const administrators = useMemo(() => new Set(roles.data?.site_admin_ids ?? []), [roles.data]);
+  const readOnlyIds = useMemo(() => new Set(roles.data?.read_only_ids ?? []), [roles.data]);
   const names = useMemo(() => new Map((teams.data ?? []).map((t) => [t.id, t.name])), [teams.data]);
   const shown = (users.data ?? []).filter((u) => u.username.toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => a.username.localeCompare(b.username));
   const run = (fn: () => Promise<unknown>) =>
@@ -475,19 +476,15 @@ function UsersTab({ me }: { me: AdminMe }) {
       <div className="toolbar">
         <input className="search" placeholder="Filter users…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter users" />
         <span className="muted small">{shown.length} of {users.data?.length ?? 0}</span>
-        {me.is_superuser && (
-          <>
-            <span className="spacer" />
-            <button className="btn" onClick={() => setNewWorker(true)} title="An account for a worker or script: permissions, teams and a password in one go">
-              New worker account…
-            </button>
-          </>
-        )}
+        <span className="spacer" />
+        <button className="btn primary" onClick={() => setNewUser(true)} title="An account for a person or a worker: names, teams, read only or not, and a password in one go">
+          New user…
+        </button>
       </div>
       {error && <p className="error">{error}</p>}
       <p className="muted small roles-legend" data-testid="roles-legend">
         <strong>Administrator</strong> manages users: activate and deactivate, reset passwords, delete, invite into any team, see the Users tab. <strong>Edits profiles</strong> (Django: staff) may change other
-        users' names and email. <strong>Full rights</strong> (superuser) holds every permission and is the only role that can hand out roles and permissions. What a user sees is decided by their teams, not by these roles.
+        users' names and email. <strong>Read only</strong> may look at everything its teams give but change nothing, however it signs in. <strong>Full rights</strong> (superuser) holds every permission and is the only role that can hand out roles and permissions. What a user sees is decided by their teams, not by these roles.
       </p>
       <table className="admin-table" data-testid="users">
         <thead>
@@ -497,6 +494,7 @@ function UsersTab({ me }: { me: AdminMe }) {
             <th>Active</th>
             <th title="Manages users: activate, deactivate, reset passwords, delete, invite into any team">Administrator</th>
             <th title="May change other users' names and email (Django: staff)">Edits profiles</th>
+            <th title="May look at everything its teams give but change nothing, however it signs in">Read only</th>
             <th>Last login</th>
             <th />
           </tr>
@@ -534,6 +532,16 @@ function UsersTab({ me }: { me: AdminMe }) {
                     onChange={(e) => patch(u.id, { is_staff: e.target.checked })}
                     aria-label={`${u.username} edits profiles`}
                     title={me.is_superuser ? "May change other users' names and email (Django: staff)" : "Only superusers change this"}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={readOnlyIds.has(u.id)}
+                    disabled={self}
+                    onChange={(e) => patch(u.id, { read_only: e.target.checked })}
+                    aria-label={`${u.username} is read only`}
+                    title="May look at everything its teams give but change nothing, however it signs in"
                   />
                 </td>
                 <td className="muted small">{u.last_login ? new Date(u.last_login).toLocaleDateString() : "never"}</td>
@@ -584,7 +592,10 @@ function UsersTab({ me }: { me: AdminMe }) {
       </table>
       {secret && <SecretDialog {...secret} onClose={() => setSecret(null)} />}
       {permsOf && <PermissionsDialog userId={permsOf.id} username={permsOf.username} onSaved={() => void qc.invalidateQueries({ queryKey: ["admin-users"] })} onClose={() => setPermsOf(null)} />}
-      {newWorker && <NewWorkerDialog teams={teams.data ?? []} onCreated={() => void qc.invalidateQueries({ queryKey: ["admin-users"] })} onClose={() => setNewWorker(false)} />}
+      {newUser && <NewUserDialog teams={teams.data ?? []} superuser={me.is_superuser} onCreated={() => {
+          void qc.invalidateQueries({ queryKey: ["admin-users"] });
+          void qc.invalidateQueries({ queryKey: ["admin-roles"] });
+        }} onClose={() => setNewUser(false)} />}
       {editing !== null && <EditUserDialog userId={editing} onSaved={() => void qc.invalidateQueries({ queryKey: ["admin-users"] })} onClose={() => setEditing(null)} />}
     </div>
   );

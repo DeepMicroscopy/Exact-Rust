@@ -11,6 +11,8 @@ export interface MenuModel {
   cropWhy: string;
   /** several annotations selected together: the menu acts on all of them */
   count?: number;
+  /** a read-only account: nothing but Info */
+  readOnly?: boolean;
 }
 
 interface Props {
@@ -66,10 +68,11 @@ export function ContextMenu({ model, onClose, onInfo, onClass, onCrop, onDelete,
           Info…
         </button>
       )}
-      <button role="menuitem" aria-expanded={classes} onClick={() => setClasses((c) => !c)} disabled={model.classes.length < 2}>
+      {model.readOnly && <div className="ctx-title muted small">Read only</div>}
+      {!model.readOnly && <button role="menuitem" aria-expanded={classes} onClick={() => setClasses((c) => !c)} disabled={model.classes.length < 2}>
         Change class <span className="caret">{classes ? "▾" : "▸"}</span>
-      </button>
-      {classes && (
+      </button>}
+      {classes && !model.readOnly && (
         <div className="ctx-sub">
           {model.classes.length > 7 && <input className="dd-filter" autoFocus placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />}
           <div className="dd-list">
@@ -84,18 +87,22 @@ export function ContextMenu({ model, onClose, onInfo, onClass, onCrop, onDelete,
           </div>
         </div>
       )}
-      {many && (
+      {many && !model.readOnly && (
         <button role="menuitem" onClick={onCopy}>
           Copy
         </button>
       )}
-      {!many && <button role="menuitem" onClick={onCrop} disabled={!model.canCrop} title={model.canCrop ? "Save the region of this annotation as a new image" : model.cropWhy}>
+      {!many && !model.readOnly && <button role="menuitem" onClick={onCrop} disabled={!model.canCrop} title={model.canCrop ? "Save the region of this annotation as a new image" : model.cropWhy}>
         Crop to new image…
       </button>}
-      <hr />
-      <button role="menuitem" className="danger" onClick={onDelete}>
-        {many ? `Delete ${model.count} annotations…` : "Delete annotation…"}
-      </button>
+      {!model.readOnly && (
+        <>
+          <hr />
+          <button role="menuitem" className="danger" onClick={onDelete}>
+            {many ? `Delete ${model.count} annotations…` : "Delete annotation…"}
+          </button>
+        </>
+      )}
     </div>
   );
 }

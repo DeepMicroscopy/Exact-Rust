@@ -302,6 +302,12 @@ async fn legacy_crop(
     Path((id, x, y, z, w, h, set)): Path<(i64, i64, i64, i64, i64, i64, i64)>,
 ) -> ApiResult<Response> {
     let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    if p.user.read_only {
+        // a GET that creates an image (exact-sync's old interface): the generic rule for writes does not see it
+        return Err(ApiError::permission_denied_msg(
+            "This account is read only.",
+        ));
+    }
     if let crate::auth::AuthKind::Token(t) = &p.kind {
         if t.read_only {
             return Err(ApiError::detail(

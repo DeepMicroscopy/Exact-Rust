@@ -102,6 +102,13 @@ pub async fn perms(s: &AppState, p: &Principal, set: &SetRow) -> ApiResult<Perms
             out.edit_annotation = true;
         }
     }
+    if p.user.read_only {
+        // an account that may look only: what the interface offers follows (writes are refused by `authenticate` anyway)
+        out = Perms {
+            read: out.read,
+            ..Perms::default()
+        };
+    }
     Ok(out)
 }
 

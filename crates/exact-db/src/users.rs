@@ -16,9 +16,12 @@ pub struct DbUser {
     pub username: String,
     pub is_staff: bool,
     pub is_active: bool,
+    /// May look, not change (`exact_rust_user_flags`): every write is refused for the account.
+    pub read_only: bool,
 }
 
-const USER_COLS: &str = "id, password, last_login, is_superuser, username, is_staff, is_active";
+const USER_COLS: &str = "id, password, last_login, is_superuser, username, is_staff, is_active, \
+     COALESCE((SELECT f.read_only FROM exact_rust_user_flags f WHERE f.user_id = users_user.id), false) AS read_only";
 
 pub async fn user_by_username(pool: &PgPool, username: &str) -> Result<Option<DbUser>> {
     sqlx::query_as(&format!(
@@ -36,6 +39,20 @@ pub async fn user_by_id(pool: &PgPool, id: i64) -> Result<Option<DbUser>> {
         .fetch_optional(pool)
         .await
         .map_err(internal)
+}
+
+/// Sets or clears the read-only flag of a user.
+pub async fn set_read_only(pool: &PgPool, id: i64, read_only: bool) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO exact_rust_user_flags (user_id, read_only) VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET read_only = $2",
+    )
+    .bind(id)
+    .bind(read_only)
+    .execute(pool)
+    .await
+    .map_err(internal)?;
+    Ok(())
 }
 
 pub async fn touch_last_login(pool: &PgPool, id: i64) -> Result<()> {

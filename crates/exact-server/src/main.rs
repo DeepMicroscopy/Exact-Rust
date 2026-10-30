@@ -12,6 +12,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let cfg = Config::from_env()?;
     let pool = exact_db::connect(&cfg).await?;
+    if !exact_db::sessions::schema_ready(&pool).await? {
+        anyhow::bail!(
+            "the database {} has not been migrated for this version: run `exact-cli migrate --confirm-db {}` (after every update of the binary) and start again",
+            cfg.db_name,
+            cfg.db_name
+        );
+    }
     exact_api::repair::startup(&pool).await.ok(); // table may not exist before `exact-cli migrate`
     let listener = tokio::net::TcpListener::bind(&cfg.listen)
         .await

@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use exact_core::Result;
 use sqlx::PgPool;
 
-pub const MIGRATIONS: [&str; 8] = [
+pub const MIGRATIONS: [&str; 9] = [
     include_str!("../migrations/0001_sessions.sql"),
     include_str!("../migrations/0002_session_impersonation.sql"),
     include_str!("../migrations/0003_challenges_invitations.sql"),
@@ -15,7 +15,19 @@ pub const MIGRATIONS: [&str; 8] = [
     include_str!("../migrations/0006_registration_jobs.sql"),
     include_str!("../migrations/0007_registration_plugins.sql"),
     include_str!("../migrations/0008_registration_jobs_in_pluginjob.sql"),
+    include_str!("../migrations/0009_user_read_only.sql"),
 ];
+
+/// Whether the tables that every request needs exist: the account flags (`exact_rust_user_flags`, read by each authentication) and the
+/// sessions. When not, `exact-cli migrate` has not been run for this version.
+pub async fn schema_ready(pool: &PgPool) -> Result<bool> {
+    sqlx::query_scalar(
+        "SELECT to_regclass('exact_rust_user_flags') IS NOT NULL AND to_regclass('exact_rust_session') IS NOT NULL",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(internal)
+}
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {
     for m in MIGRATIONS {

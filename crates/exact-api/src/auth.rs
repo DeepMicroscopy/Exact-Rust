@@ -124,7 +124,27 @@ fn cookie<'a>(h: &'a HeaderMap, name: &str) -> Option<&'a str> {
         })
 }
 
+/// Who is asking, for a request that may change something: an account that is read only is refused every write (anything but GET, HEAD,
+/// OPTIONS, TRACE) here, whichever way it logged in. Account self-service (sign out, stop impersonating, passkeys) uses
+/// [`authenticate_account`].
 pub async fn authenticate(
+    state: &AppState,
+    headers: &HeaderMap,
+    method: &Method,
+) -> Result<Option<Principal>, ApiError> {
+    let p = authenticate_account(state, headers, method).await?;
+    if let Some(p) = &p {
+        if p.user.read_only && !safe(method) {
+            return Err(ApiError::permission_denied_msg(
+                "This account is read only.",
+            ));
+        }
+    }
+    Ok(p)
+}
+
+/// [`authenticate`] without the read-only rule: for what an account does to itself (sign out, stop impersonating, its passkeys).
+pub async fn authenticate_account(
     state: &AppState,
     headers: &HeaderMap,
     method: &Method,

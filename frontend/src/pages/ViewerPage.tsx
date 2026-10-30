@@ -27,6 +27,7 @@ import { TimeSlider, ZSlider } from "../components/FrameControls";
 import { Toolbox } from "../components/Toolbox";
 import { PenTools } from "../components/PenTools";
 import { OpeningSpinner } from "../components/OpeningSpinner";
+import { useAuth } from "../auth/AuthContext";
 import { AnnotationInfo } from "../components/AnnotationInfo";
 import { ConfirmDelete } from "../components/ConfirmDelete";
 import { ConfirmResize } from "../components/ConfirmResize";
@@ -38,6 +39,8 @@ import { CropDialog } from "../components/CropDialog";
 import { VectorType, type Shape, type TypeStyle } from "../viewer-core/types";
 
 const PLANES = ["Axial", "Coronal", "Sagittal"];
+/** shortcuts that change annotations or start drawing: not for a read-only account */
+const EDIT_ACTIONS = new Set(["finish", "delete", "digit", "toggleDrawing", "toggleOneClick", "polyOp", "paste", "undo", "redo"]);
 
 type FrameKind = "none" | "zstack" | "volume" | "timeseries";
 
@@ -79,6 +82,7 @@ function hostProxy(ref: { current: EditorHost }): EditorHost {
     notify: (m) => ref.current.notify(m),
     onState: () => ref.current.onState(),
     penType: () => ref.current.penType(),
+    readOnly: () => ref.current.readOnly(),
   };
 }
 
@@ -261,6 +265,11 @@ export function ViewerPage() {
   // the editor reads the current data through this object, so it does not have to be rebuilt when the data changes
   const currentTypeRef = useRef(currentTypeId);
   currentTypeRef.current = currentTypeId;
+  // an account that may look and not change: no tools, nothing is drawn or edited, the context menu only informs
+  const { user: me } = useAuth();
+  const readOnly = !!me?.read_only;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
   hostState.current = { shapes, info, hiddenAll, image: image.data, actions };
   const editorHost: EditorHost = useMemo(
@@ -279,6 +288,7 @@ export function ViewerPage() {
       notify: (m) => notify(m),
       onState: () => setTick((n) => n + 1),
       penType: () => currentTypeRef.current,
+      readOnly: () => readOnlyRef.current,
     }),
     [notify],
   );
@@ -782,6 +792,7 @@ export function ViewerPage() {
       }
       const a = matchShortcut(ev);
       if (!a) return;
+      if (readOnly && EDIT_ACTIONS.has(a.type)) return;
       const ed = editorRef.current;
       const viewer = viewerRef.current;
       switch (a.type) {
@@ -882,7 +893,7 @@ export function ViewerPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard, segTypeId]);
+  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard, segTypeId, readOnly]);
 
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
@@ -1029,9 +1040,17 @@ export function ViewerPage() {
           {annotations.data && shapes.length === 0 && <p className="muted small">No annotations.</p>}
           </>}
         </aside>
-        <button className="tools-toggle btn glass" onClick={() => setToolsOpen((o) => !o)} aria-expanded={toolsOpen} title="Annotation tools">
-          {toolsOpen ? "✕" : "✎"}
-        </button>
+        {!readOnly && (
+          <button className="tools-toggle btn glass" onClick={() => setToolsOpen((o) => !o)} aria-expanded={toolsOpen} title="Annotation tools">
+            {toolsOpen ? "✕" : "✎"}
+          </button>
+        )}
+        {readOnly && (
+          <div className="readonly-note glass" role="status" data-testid="readonly-note">
+            Read only: this account can look at the annotations, not change them.
+          </div>
+        )}
+        {!readOnly && (
         <PenTools
           show={editorRef.current?.penBrush ?? false}
           mode={editorRef.current?.penMode ?? "add"}
@@ -1044,7 +1063,8 @@ export function ViewerPage() {
             },
           }}
         />
-        {toolsOpen && (
+        )}
+        {toolsOpen && !readOnly && (
         <Toolbox
           palette={drawable}
           locked={annotationsHere ? null : "Annotations are drawn in the axial plane."}
@@ -1132,6 +1152,7 @@ export function ViewerPage() {
               classes: palette.filter((e) => canConvert(menu.shape.vectorType, e.vectorType) && e.vectorType !== VectorType.Global),
               canCrop: [VectorType.BoundingBox, VectorType.FixedSizeBoundingBox, VectorType.Polygon].includes(menu.shape.vectorType as 1),
               cropWhy: "Only boxes and polygons can be cropped.",
+              readOnly,
             }}
             onClose={() => setMenu(null)}
             onInfo={() => {

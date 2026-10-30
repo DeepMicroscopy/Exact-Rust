@@ -44,6 +44,11 @@ export function Layout() {
             </Link>
           )}
           <span className="muted">{user?.username}</span>
+          {user?.read_only && (
+            <span className="badge" title="This account can look at everything its teams give it, but cannot change anything" data-testid="read-only-badge">
+              read only
+            </span>
+          )}
           <button className="btn ghost" onClick={() => void logout()}>
             Sign out
           </button>

@@ -6,14 +6,15 @@
 //! admin; the last member leaving deletes the team).
 //!
 //! Users (rules of `administration/views.py`): `PATCH /api/v2/users/{id}` (staff: names, email, username, frontend; site
-//! admin: `is_active`; superuser: `is_staff` and `is_site_admin`), `DELETE` (site admin), `POST /api/v2/users/{id}/random-password` (site admin,
+//! admin: `is_active` and `read_only`; superuser: `is_staff` and `is_site_admin`), `DELETE` (site admin), `POST /api/v2/users/{id}/random-password` (site admin,
 //! answers the new password once). Nobody can change or delete their own account here, and only superusers touch
 //! superusers.
 //!
 //! Model permissions (superusers only): `GET /api/v2/admin/permissions` (the permissions that matter here, grouped by model, and the
 //! presets for service accounts), `GET` / `PUT /api/v2/admin/users/{id}/permissions` (`{"permissions": ["app.codename", ...]}` replaces
 //! the user's own permissions; the ones that come from groups are shown, not changed), `POST /api/v2/admin/users` (a service account
-//! with a random password, answered once, optional preset / permissions and teams).
+//! with a random password, answered once, optional preset / permissions and teams); a site admin may create ordinary and read-only users there
+//! (names, e-mail, teams, `read_only`), permissions and presets are for superusers.
 
 use crate::{
     auth::{authenticate, require_user, AuthKind, Principal},
@@ -489,6 +490,18 @@ pub async fn user_patch(
     let active = flag(d.get("is_active"));
     let staff = flag(d.get("is_staff"));
     let site_admin_flag = flag(d.get("is_site_admin"));
+    let read_only_flag = flag(d.get("read_only"));
+    if read_only_flag.is_some() {
+        if id == p.user.id {
+            return Err(ApiError::detail(
+                StatusCode::BAD_REQUEST,
+                "You cannot change your own read-only status.",
+            ));
+        }
+        if !users::is_site_admin(&s.pool, p.user.id).await? {
+            return Err(forbidden("Site admin permission required."));
+        }
+    }
     if site_admin_flag.is_some() {
         if id == p.user.id {
             return Err(ApiError::detail(
@@ -552,6 +565,17 @@ pub async fn user_patch(
             .await
             .map_err(db_err)?;
     }
+    if let Some(r) = read_only_flag {
+        sqlx::query(
+            "INSERT INTO exact_rust_user_flags (user_id, read_only) VALUES ($1, $2)
+             ON CONFLICT (user_id) DO UPDATE SET read_only = $2",
+        )
+        .bind(id)
+        .bind(r)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    }
     if let Some(a) = site_admin_flag {
         sqlx::query(
             "INSERT INTO users_userpreferences (user_id, frontend, is_site_admin) VALUES ($1, 2, $2)
@@ -567,7 +591,8 @@ pub async fn user_patch(
     Ok(Json(serialized(&s, &p, &headers, "User", id).await?).into_response())
 }
 
-/// `GET /api/v2/admin/roles` (site admins): the ids of the users who are site admins (the flag is not part of the user resource).
+/// `GET /api/v2/admin/roles` (site admins): the ids of the users who are site admins and of those who are read only (neither flag is part of
+/// the user resource).
 async fn roles(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
     let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
     site_admin(&s, &p).await?;
@@ -577,7 +602,13 @@ async fn roles(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Respo
     .fetch_all(&s.pool)
     .await
     .map_err(db_err)?;
-    Ok(Json(json!({"site_admin_ids": ids})).into_response())
+    let read_only: Vec<i64> = sqlx::query_scalar(
+        "SELECT user_id FROM exact_rust_user_flags WHERE read_only ORDER BY user_id",
+    )
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(json!({"site_admin_ids": ids, "read_only_ids": read_only})).into_response())
 }
 
 async fn site_admin(s: &AppState, p: &Principal) -> ApiResult<()> {
@@ -892,15 +923,19 @@ async fn user_permissions_put(
     Ok(Json(permission_state(&s, id).await?).into_response())
 }
 
-/// A service account (a worker): active, no staff rights, a random password that is answered once, optional permissions (a preset, or a
-/// list) and team memberships.
+/// A new account, for a person or for a service (a worker): active, no staff rights, a random password that is answered once, names and
+/// e-mail, team memberships, the read-only flag. Site admins create accounts; permissions and presets are for superusers.
 async fn user_create(
     State(s): State<AppState>,
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
-    let p = superuser(&s, &headers, &Method::POST).await?;
+    let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    site_admin(&s, &p).await?;
     let d = object(&body)?;
+    if (d.contains_key("preset") || d.contains_key("permissions")) && !p.user.is_superuser {
+        return Err(forbidden("Only superusers may give permissions."));
+    }
     let username = d
         .get("username")
         .and_then(Value::as_str)
@@ -918,14 +953,21 @@ async fn user_create(
     {
         return Err(field_err("username", "Letters, digits and @ . + - _ only."));
     }
-    let email = d
-        .get("email")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or("");
-    if email.chars().count() > 254 {
-        return Err(field_err("email", "At most 254 characters."));
-    }
+    let text = |k: &str, max: usize| -> ApiResult<String> {
+        let v = d
+            .get(k)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("");
+        if v.chars().count() > max {
+            return Err(field_err(k, &format!("At most {max} characters.")));
+        }
+        Ok(v.to_string())
+    };
+    let email = text("email", 254)?;
+    let first_name = text("first_name", 150)?;
+    let last_name = text("last_name", 150)?;
+    let read_only = flag(d.get("read_only")).unwrap_or(false);
     let mut keys = requested_permissions(&s, &d).await?;
     if let Some(id) = d.get("preset").and_then(Value::as_str) {
         let Some(preset) = PRESETS.iter().find(|p| p.id == id) else {
@@ -946,11 +988,13 @@ async fn user_create(
     let mut tx = s.pool.begin().await.map_err(db_err)?;
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO users_user (password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined, points)
-         VALUES ($1, NULL, false, $2, '', '', $3, false, true, now(), 0) RETURNING id",
+         VALUES ($1, NULL, false, $2, $4, $5, $3, false, true, now(), 0) RETURNING id",
     )
     .bind(make_password(&password))
     .bind(username)
     .bind(email)
+    .bind(first_name)
+    .bind(last_name)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| match e {
@@ -972,11 +1016,18 @@ async fn user_create(
         .map_err(db_err)?
         .rows_affected();
     set_permissions(&mut tx, id, &keys).await?;
+    if read_only {
+        sqlx::query("INSERT INTO exact_rust_user_flags (user_id, read_only) VALUES ($1, true) ON CONFLICT (user_id) DO UPDATE SET read_only = true")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+    }
     tx.commit().await.map_err(db_err)?;
-    tracing::info!(by = %p.user.username, user = %username, permissions = ?keys, teams = joined, "account created");
+    tracing::info!(by = %p.user.username, user = %username, permissions = ?keys, teams = joined, read_only, "account created");
     Ok((
         StatusCode::CREATED,
-        Json(json!({"id": id, "username": username, "password": password, "permissions": keys, "teams": joined})),
+        Json(json!({"id": id, "username": username, "password": password, "permissions": keys, "teams": joined, "read_only": read_only})),
     )
         .into_response())
 }

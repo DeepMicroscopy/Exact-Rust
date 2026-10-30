@@ -67,6 +67,8 @@ export interface EditorHost {
   onContextMany(shapes: Shape[], clientX: number, clientY: number): void;
   /** right click or long press on an annotation (client coordinates) */
   onContext(shape: Shape, clientX: number, clientY: number): void;
+  /** a read-only account: the editor only selects (the server refuses every write anyway) */
+  readOnly(): boolean;
   /** the type the pen annotates with when no tool is chosen (the toolbox's "Annotate with"), null when there is none */
   penType(): number | null;
   /** something the user should know ("select a polygon first", ...) */
@@ -513,6 +515,7 @@ export class AnnotationEditor {
 
   private press(e: Ev): void {
     if (this.suspended || pen.ignores(this.kind(e))) return; // fingers move the image once a pen is in use
+    if (this.host.readOnly()) return; // nothing to draw, move or paint: a click still selects
     this.touch = this.isTouch(e);
     this.consumedPress = false;
     const at = this.at(e);

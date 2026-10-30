@@ -123,7 +123,8 @@ try {
   // ---- a worker account: created with a preset and teams, its permissions changed in a dialog
   const workerName = `e2e-worker-${String(Date.now()).slice(-6)}`;
   await root.fill('input[aria-label="Filter users"]', "");
-  await root.locator(".btn", { hasText: "New worker account" }).click();
+  await root.locator(".btn", { hasText: "New user" }).click();
+  await root.selectOption('.modal select[aria-label="Kind of account"]', "registration_worker");
   await root.fill('.modal input[aria-label="User name"]', workerName);
   check((await root.locator('[data-testid="preset-info"]').innerText()).includes("processing.add_plugin"), "the new-worker dialog says what the preset grants");
   await root.fill('.modal input[aria-label="Filter teams"]', teamName);
@@ -161,6 +162,50 @@ try {
   check((await again.locator('[data-testid="users"]').count()) === 0, "a team admin has no permission dialogs");
   await root.locator(".btn", { hasText: "Delete" }).click();
   await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 0, "the worker account can be deleted");
+  await root.fill('input[aria-label="Filter users"]', "");
+  // ---- a person who may only look: created with names, a team, read only; the password or a link; what the account sees and cannot do
+  const readerName = `e2e-reader-${String(Date.now()).slice(-6)}`;
+  await root.locator(".btn", { hasText: "New user" }).click();
+  await root.fill('.modal input[aria-label="User name"]', readerName);
+  await root.fill('.modal input[aria-label="First name"]', "Rita");
+  await root.fill('.modal input[aria-label="Last name"]', "Reader");
+  await root.fill('.modal input[aria-label="Email"]', "rita@example.org");
+  await root.locator('.modal input[aria-label="Read only"]').check();
+  await root.fill('.modal input[aria-label="Filter teams"]', "My Team 1");
+  await root.locator('[data-testid="team-pick"] label', { hasText: "My Team 1" }).locator("input").check();
+  await root.locator(".modal .btn.primary", { hasText: "Create account" }).click();
+  await root.waitForSelector('[data-testid="new-password"]');
+  const readerPw = await root.inputValue('[data-testid="new-password"]');
+  check(readerPw.length >= 20, "a new person gets a password that is shown once");
+  await root.locator('[data-testid="make-link"]').click();
+  await root.waitForSelector('[data-testid="new-link"]');
+  check(/\/invite\/rst_/.test(await root.inputValue('[data-testid="new-link"]')), "...or a link with which they choose their own");
+  await root.locator(".modal .btn.primary", { hasText: "Done" }).click();
+  await root.fill('input[aria-label="Filter users"]', readerName);
+  await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 1, "the new person is in the users list");
+  const readOnlyBox = root.locator(`input[aria-label="${readerName} is read only"]`);
+  check(await readOnlyBox.isChecked(), "...marked read only");
+  const reader = await login(readerName, readerPw);
+  check((await reader.locator('[data-testid="read-only-badge"]').count()) === 1, "the read-only account says so in the top bar");
+  check(await reader.locator("button", { hasText: "New image set" }).isDisabled(), "...and cannot create an image set");
+  await reader.goto(`${base}/images/34`);
+  await reader.waitForSelector('[data-testid="readonly-note"]');
+  check((await reader.locator(".toolbox").count()) === 0 && (await reader.locator('[data-testid="pen-tools"]').count()) === 0, "in the viewer it has no tools, only a note that it is read only");
+  const refused = await reader.evaluate(async () => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const r = await fetch("/api/v2/image-sets", { method: "POST", headers: { "x-csrf-token": csrf, "content-type": "application/json" }, body: JSON.stringify({ name: "no", team: 1 }) });
+    return [r.status, (await r.json()).detail];
+  });
+  check(refused[0] === 403 && /read only/.test(refused[1]), `the server refuses its writes (${refused[1]})`);
+  await readOnlyBox.click({ force: true });
+  await waitFor(async () => !(await readOnlyBox.isChecked()), "an administrator can lift the read-only flag in the overview...");
+  await reader.goto(base);
+  await reader.waitForSelector(".topbar");
+  check((await reader.locator('[data-testid="read-only-badge"]').count()) === 0, "...and the account is a normal one after its next page load");
+  await readOnlyBox.click({ force: true });
+  await waitFor(() => readOnlyBox.isChecked(), "...or set it again");
+  await root.locator(".btn", { hasText: "Delete" }).click();
+  await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 0, "the reader account can be deleted");
   await root.fill('input[aria-label="Filter users"]', "");
   // ---- products and annotation types
   await root.locator(".tabs button", { hasText: "Products" }).click();

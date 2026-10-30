@@ -20,7 +20,9 @@ pub mod segmentation;
 pub mod statistics;
 
 use crate::{
-    auth::{authenticate, require_user, AuthKind, CSRF_HEADER, SESSION_COOKIE},
+    auth::{
+        authenticate, authenticate_account, require_user, AuthKind, CSRF_HEADER, SESSION_COOKIE,
+    },
     error::{ApiError, ApiResult},
     AppState,
 };
@@ -76,7 +78,7 @@ fn cookie_header(s: &AppState, value: &str, max_age: i64) -> HeaderValue {
 }
 
 pub(crate) fn user_json(u: &users::DbUser) -> Value {
-    json!({"id": u.id, "username": u.username, "is_staff": u.is_staff, "is_superuser": u.is_superuser})
+    json!({"id": u.id, "username": u.username, "is_staff": u.is_staff, "is_superuser": u.is_superuser, "read_only": u.read_only})
 }
 
 async fn login(State(s): State<AppState>, Json(body): Json<Login>) -> ApiResult<Response> {
@@ -114,7 +116,7 @@ async fn login(State(s): State<AppState>, Json(body): Json<Login>) -> ApiResult<
 }
 
 async fn logout(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    require_user(authenticate_account(&s, &headers, &Method::POST).await?)?;
     if let Some(key) = headers
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
@@ -227,7 +229,7 @@ async fn impersonate(
 }
 
 async fn stop_impersonating(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    let p = require_user(authenticate_account(&s, &headers, &Method::POST).await?)?;
     let AuthKind::Session {
         impersonator: Some(real),
         ..

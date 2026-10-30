@@ -20,17 +20,29 @@ Lists the analysis and registration plugins that workers have announced, with th
 themselves when a worker starts.
 
 ## Users
-The Users tab (for administrators) lists everybody. Create users through invitations (Teams) or, for services, **New worker account…**
-(see below). Edit a user's name and e-mail, give them a **reset link** or a **random password** (shown once), deactivate or delete them.
+The Users tab (for administrators) lists everybody. **New user…** creates an account in one step:
+* a **person**: user name, first and last name, e-mail (optional), the **teams** they belong to (they see the image sets of their teams) and whether they are
+  **read only**. The password is shown once; instead you can create a **link** with which the person chooses their own password. Without any team the
+  account sees no image sets;
+* for superusers also a **worker** (a service account, see below) with its permissions.
+
+Edit a user's name and e-mail, give them a **reset link** or a **random password** (shown once), deactivate, make read only or delete them.
 The server can also let a superuser impersonate a user (`/api/v2/admin/users/{id}/impersonate`); there is no button for it yet.
 
-Four roles are in play, and the table shows them in plain words:
+**Read only** accounts (reviewers, guests, a test account) see everything their teams give them and can change nothing: the server refuses every create, change
+and delete, whichever way the account signs in (the web interface, exact-sync, a token, an impersonation). In the interface they have no annotation tools, no
+upload and no buttons that would fail, and the top bar says "read only". Signing out and managing their own passkeys still work. The flag is kept in a table of
+this server's own (`exact_rust_user_flags`), so EXACT (Django) itself does not know it: while a database is also used by the old EXACT, a read-only account is
+only read-only on this server.
+
+These roles are in play, and the table shows them in plain words:
 
 | Role | Meaning |
 |---|---|
 | **Administrator** (the "site admin" flag) | Manages users: activate and deactivate, reset passwords, delete, invite into any team, sees the Users tab and the plugin overview. Superusers can switch it on and off. |
 | **Edits profiles** (Django: "staff") | May change other users' names and e-mail addresses. |
 | **Full rights** (Django: "superuser") | Holds every permission without being granted it, can hand out roles and permissions, create worker accounts, delete annotation types, and touch other superusers. Set by the database or by another superuser. |
+| **Read only** | Not a role of rights but a restriction: the account can look, not change (see above). Administrators set it. |
 | **Team admin** (Teams tab) | Manages one team: members, invitations, name. |
 
 What a user can see is decided by their teams, not by these roles: a superuser sees only the images of their own teams.

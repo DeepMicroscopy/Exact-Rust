@@ -17,7 +17,7 @@ interface PermState {
   groups: { name: string; permissions: string[] }[];
 }
 
-const useCatalog = () => useQuery({ queryKey: ["admin-permission-catalog"], queryFn: () => api<Catalog>("/api/v2/admin/permissions"), staleTime: 300_000 });
+const useCatalog = (enabled = true) => useQuery({ queryKey: ["admin-permission-catalog"], queryFn: () => api<Catalog>("/api/v2/admin/permissions"), staleTime: 300_000, enabled });
 
 /** The permissions of a user, by model, with the presets for service accounts on top. Superusers only (the server checks). */
 export function PermissionsDialog({ userId, username, onClose, onSaved }: { userId: number; username: string; onClose(): void; onSaved(): void }) {
@@ -118,25 +118,41 @@ export function PermissionsDialog({ userId, username, onClose, onSaved }: { user
   );
 }
 
-/** Creates a service account (a worker): name, what it is for, the teams whose images it serves; the password is shown once. */
-export function NewWorkerDialog({ teams, onClose, onCreated }: { teams: { id: number; name: string }[]; onClose(): void; onCreated(): void }) {
-  const catalog = useCatalog();
-  const [username, setUsername] = useState("registration-worker");
-  const [preset, setPreset] = useState<string>("registration_worker");
+/**
+ * Creates an account: a person (name, e-mail) or a worker (what it does), the teams it belongs to, and whether it may only look. The
+ * password is shown once; for a person a link to choose one is offered instead. Everybody who sees the Users tab creates accounts;
+ * the kinds of worker (permissions) are for superusers.
+ */
+export function NewUserDialog({ teams, superuser, onClose, onCreated }: { teams: { id: number; name: string }[]; superuser: boolean; onClose(): void; onCreated(): void }) {
+  const catalog = useCatalog(superuser);
+  const [kind, setKind] = useState<string>("person");
+  const [username, setUsername] = useState("");
+  const [first, setFirst] = useState("");
+  const [last, setLast] = useState("");
+  const [email, setEmail] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [made, setMade] = useState<{ username: string; password: string; teams: number } | null>(null);
+  const [made, setMade] = useState<{ id: number; username: string; password: string; teams: number; read_only: boolean; person: boolean } | null>(null);
+  const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const shown = teams.filter((t) => t.name.toLowerCase().includes(filter.trim().toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
-  const chosen = catalog.data?.presets.find((p) => p.id === preset);
+  const person = kind === "person";
+  const chosen = catalog.data?.presets.find((p) => p.id === kind);
+  const pickKind = (k: string) => {
+    setKind(k);
+    if (k !== "person" && !username.trim()) setUsername(k === "registration_worker" ? "registration-worker" : "analysis-worker");
+  };
   const create = () => {
     setBusy(true);
     setError(null);
-    api<{ username: string; password: string; teams: number }>("/api/v2/admin/users", { method: "POST", json: { username, preset: preset || undefined, teams: [...picked] } }).then(
+    const json: Record<string, unknown> = { username, first_name: first, last_name: last, email, read_only: readOnly, teams: [...picked] };
+    if (!person) json.preset = kind;
+    api<{ id: number; username: string; password: string; teams: number; read_only: boolean }>("/api/v2/admin/users", { method: "POST", json }).then(
       (r) => {
-        setMade(r);
+        setMade({ ...r, person });
         onCreated();
         setBusy(false);
       },
@@ -146,25 +162,44 @@ export function NewWorkerDialog({ teams, onClose, onCreated }: { teams: { id: nu
       },
     );
   };
+  const makeLink = () =>
+    api<{ path: string }>(`/api/v2/admin/users/${made!.id}/reset-link`, { method: "POST" }).then(
+      (r) => setLink(`${window.location.origin}${r.path}`),
+      (e) => setError(msg(e)),
+    );
   if (made) {
     const env = `WORKER_USER=${made.username}\nWORKER_PASSWORD=${made.password}`;
+    const text = made.person ? made.password : env;
     return (
-      <Modal title="Worker account created" onClose={onClose} className="perm-modal">
+      <Modal title="Account created" onClose={onClose} className="perm-modal">
         <p>
-          The account <strong>{made.username}</strong> exists{made.teams ? ` and is a member of ${made.teams} team${made.teams === 1 ? "" : "s"}` : ", but is in no team yet: it will not be offered any jobs until it is"}.
+          The account <strong>{made.username}</strong> exists{made.read_only ? " and is read only (it can look at everything its teams give, and change nothing)" : ""}
+          {made.teams ? `; it is a member of ${made.teams} team${made.teams === 1 ? "" : "s"}` : "; it is in no team yet, so it sees no image sets until it is"}.
         </p>
-        <textarea className="mono secret" readOnly rows={2} value={env} onFocus={(e) => e.currentTarget.select()} aria-label="Account" data-testid="worker-env" />
+        {made.person ? (
+          <input className="mono secret" readOnly value={made.password} onFocus={(e) => e.currentTarget.select()} aria-label="Password" data-testid="new-password" />
+        ) : (
+          <textarea className="mono secret" readOnly rows={2} value={env} onFocus={(e) => e.currentTarget.select()} aria-label="Account" data-testid="worker-env" />
+        )}
         <p className="muted small">
-          The password is shown only now and cannot be shown again. For the worker of the deployment put both lines into <code>deploy/exact.env</code> and restart it (<code>docker compose … up -d worker</code>); other workers log in with this name and password.
+          The password is shown only now and cannot be shown again.
+          {made.person ? " Or give the person a link with which they choose their own password:" : " For the worker of the deployment put both lines into deploy/exact.env and restart it; other workers log in with this name and password."}
         </p>
+        {made.person && !link && (
+          <button className="btn" onClick={() => void makeLink()} data-testid="make-link">
+            Create a link to choose a password instead
+          </button>
+        )}
+        {link && <input className="mono secret" readOnly value={link} onFocus={(e) => e.currentTarget.select()} aria-label="Link" data-testid="new-link" />}
+        {error && <p className="error">{error}</p>}
         <div className="modal-actions">
           <button
             className="btn"
             onClick={() => {
-              void navigator.clipboard?.writeText(env).then(() => setCopied(true));
+              void navigator.clipboard?.writeText(link ?? text).then(() => setCopied(true));
             }}
           >
-            {copied ? "Copied" : "Copy"}
+            {copied ? "Copied" : link ? "Copy link" : "Copy"}
           </button>
           <button className="btn primary" onClick={onClose}>
             Done
@@ -174,36 +209,64 @@ export function NewWorkerDialog({ teams, onClose, onCreated }: { teams: { id: nu
     );
   }
   return (
-    <Modal title="New worker account" onClose={onClose} className="perm-modal">
+    <Modal title="New user" onClose={onClose} className="perm-modal">
       <form
         onSubmit={(e) => {
           e.preventDefault();
           create();
         }}
       >
-        <label className="field">
-          <span>User name</span>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} aria-label="User name" maxLength={150} />
-        </label>
-        <label className="field">
-          <span>What the worker does</span>
-          <select value={preset} onChange={(e) => setPreset(e.target.value)} aria-label="Kind of worker">
-            {catalog.data?.presets.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-            <option value="">Nothing yet (set the permissions afterwards)</option>
-          </select>
-        </label>
+        {superuser && (
+          <label className="field">
+            <span>Account for</span>
+            <select value={kind} onChange={(e) => pickKind(e.target.value)} aria-label="Kind of account">
+              <option value="person">A person</option>
+              {catalog.data?.presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {chosen && (
           <p className="muted small" data-testid="preset-info">
             {chosen.description} <br />
             Permissions: {chosen.permissions.join(", ")}.
           </p>
         )}
+        <label className="field">
+          <span>User name</span>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} aria-label="User name" maxLength={150} />
+        </label>
+        {person && (
+          <>
+            <div className="params">
+              <label className="field">
+                <span>First name</span>
+                <input value={first} onChange={(e) => setFirst(e.target.value)} aria-label="First name" maxLength={150} />
+              </label>
+              <label className="field">
+                <span>Last name</span>
+                <input value={last} onChange={(e) => setLast(e.target.value)} aria-label="Last name" maxLength={150} />
+              </label>
+            </div>
+            <label className="field">
+              <span>Email (optional)</span>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" maxLength={254} />
+            </label>
+          </>
+        )}
+        <label className="perm-row" title="A read-only account sees what its teams give it and cannot create, change or delete anything, whichever way it signs in">
+          <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} aria-label="Read only" />
+          <span>
+            <strong>Read only</strong>: may look at everything its teams give it, but change nothing (a reviewer, a guest)
+          </span>
+        </label>
         <div className="field">
-          <span>Teams whose images it serves ({picked.size} chosen). A worker is offered jobs for images of its own teams only.</span>
+          <span>
+            Teams ({picked.size} chosen){!person ? ". A worker is offered jobs for images of its own teams only." : ". The account sees the image sets of its teams."}
+          </span>
           <div className="row-inline">
             <input placeholder="Filter teams…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter teams" />
             <button type="button" className="btn ghost small" onClick={() => setPicked(new Set([...picked, ...shown.map((t) => t.id)]))}>

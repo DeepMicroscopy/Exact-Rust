@@ -3,7 +3,7 @@
 
 use super::switch_session;
 use crate::{
-    auth::{authenticate, require_user, AuthKind, Principal},
+    auth::{authenticate, authenticate_account, require_user, AuthKind, Principal},
     error::{ApiError, ApiResult},
     AppState,
 };
@@ -151,7 +151,7 @@ async fn login_finish(State(s): State<AppState>, Json(b): Json<FinishBody>) -> A
 
 /// Registration needs an interactive session (password login or an earlier passkey login).
 async fn session_user(s: &AppState, headers: &HeaderMap, method: &Method) -> ApiResult<Principal> {
-    let p = require_user(authenticate(s, headers, method).await?)?;
+    let p = require_user(authenticate_account(s, headers, method).await?)?;
     if !matches!(p.kind, AuthKind::Session { .. }) {
         return Err(ApiError::auth_failed(
             "Managing passkeys requires an interactive session.",

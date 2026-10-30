@@ -3,6 +3,8 @@ export interface User {
   username: string;
   is_staff: boolean;
   is_superuser: boolean;
+  /** may look, not change: the server refuses every write */
+  read_only?: boolean;
 }
 
 export interface Team {
