@@ -40,7 +40,7 @@ dc run --rm server sh -c 'exact-cli migrate --confirm-db "$SQL_DATABASE"'
 createdb -O exact exact_beta
 pg_restore --no-owner --role=exact -d exact_beta production.dump        # scripts/restore-backup.sh does the same for a scratch DB
 ```
-The beta must not be called `exact` (the tools refuse it). Then add the beta's own additive tables and columns (idempotent,
+The beta must not be called `exact` (the tools refuse it). **Run `ANALYZE` after the restore** (`dc exec -T db psql -U "$SQL_USER" -d "$SQL_DATABASE" -c 'ANALYZE'`, a minute for a database of this size): a restored database has no statistics for PostgreSQL's planner until its background job has caught up, and lists over the big tables (images, annotations) can be several times slower until then (measured: 110-175 ms instead of 30 ms for a page of 100 images on a synthetic copy of the size of production). Then add the beta's own additive tables and columns (idempotent,
 safe to repeat; Django's data stays as it is):
 ```
 SQL_DATABASE=exact_beta ... exact-cli migrate --confirm-db exact_beta
