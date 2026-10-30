@@ -165,6 +165,11 @@ impl Flex {
         self.expand.contains(field) && self.fields.as_ref().is_none_or(|f| f.contains(field))
     }
 
+    /// Whether the field is part of the answer (`fields` names it or is absent, and `omit` does not): what is not wanted is not looked up.
+    pub fn wants(&self, field: &str) -> bool {
+        self.fields.as_ref().is_none_or(|f| f.contains(field)) && !self.omit.contains(field)
+    }
+
     pub fn apply(&self, obj: &mut Map<String, Value>) {
         if let Some(f) = &self.fields {
             obj.retain(|k, _| f.contains(k));
@@ -192,6 +197,18 @@ pub fn drf_datetime(dt: Option<DateTime<Utc>>, tz: Tz) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fields_and_omit_decide_which_fields_are_looked_up() {
+        let all = Flex::from_query(&Query::parse(Some("limit=5")));
+        assert!(all.wants("annotations") && all.wants("id"));
+        let omit = Flex::from_query(&Query::parse(Some("omit=annotations%2Cname")));
+        assert!(!omit.wants("annotations") && !omit.wants("name") && omit.wants("id"));
+        let only = Flex::from_query(&Query::parse(Some("fields=id%2Cname")));
+        assert!(only.wants("id") && only.wants("name") && !only.wants("annotations"));
+        let both = Flex::from_query(&Query::parse(Some("fields=id%2Cname&omit=name")));
+        assert!(both.wants("id") && !both.wants("name"));
+    }
 
     #[test]
     fn limit_offset_defaults_like_drf() {

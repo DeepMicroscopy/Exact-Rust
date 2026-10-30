@@ -677,6 +677,10 @@ pub async fn serialize(
     let mut related: HashMap<&'static str, HashMap<i64, Value>> = HashMap::new();
     let mut computed: HashMap<&'static str, HashMap<i64, Value>> = HashMap::new();
     for fld in spec.fields {
+        // a field that `fields` / `omit` leave out costs nothing: no lookup of the (possibly huge) lists of related ids
+        if flex.is_some_and(|f| !f.wants(fld.name)) {
+            continue;
+        }
         match fld.kind {
             K::M2m {
                 target,
@@ -761,6 +765,9 @@ pub async fn serialize(
         let id = row_id(r);
         let mut o = Map::new();
         for fld in spec.fields {
+            if flex.is_some_and(|f| !f.wants(fld.name)) {
+                continue;
+            }
             let col = r.get(fld.col).cloned().unwrap_or(Value::Null);
             let v = match fld.kind {
                 K::Id | K::Int | K::Bool | K::Json | K::Str | K::Uuid | K::Inet => col,
