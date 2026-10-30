@@ -17,3 +17,7 @@ __pycache__/
 !crates/exact-db/migrations/*.sql
 tests/conformance/goldens/django/resource_cases.json
 /images/
+
+# credentials of the speed test against the real servers: never commit
+.exact-perf.env
+deploy/exact.env
