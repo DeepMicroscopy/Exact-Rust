@@ -6,6 +6,7 @@ import type { Job } from "../pages/JobsPage";
 import { useAuth } from "../auth/AuthContext";
 import { Logo } from "./Logo";
 import { useAdminMe } from "../pages/AdminPage";
+import { OPEN_WELCOME } from "./WelcomeDialog";
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -43,6 +44,9 @@ export function Layout() {
               Administration
             </Link>
           )}
+          <button className="btn ghost" onClick={() => window.dispatchEvent(new Event(OPEN_WELCOME))} data-testid="whats-new">
+            What's new
+          </button>
           <span className="muted">{user?.username}</span>
           {user?.read_only && (
             <span className="badge" title="This account can look at everything its teams give it, but cannot change anything" data-testid="read-only-badge">

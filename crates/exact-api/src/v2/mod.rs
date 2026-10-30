@@ -18,6 +18,7 @@ pub mod registration;
 pub mod resources;
 pub mod segmentation;
 pub mod statistics;
+pub mod welcome;
 
 use crate::{
     auth::{
@@ -41,6 +42,7 @@ use serde_json::{json, Value};
 pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(passkeys::routes())
+        .merge(welcome::routes())
         .merge(invitations::routes())
         .merge(resources::routes())
         .merge(annotation_writes::routes())

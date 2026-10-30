@@ -22,7 +22,8 @@ const waitFor = async (fn, msg, ms = 15000) => {
     await new Promise((r) => setTimeout(r, 150));
   }
 };
-async function login(user, pw = "rust-test-pw") {
+/** Signs in. A new user is greeted: the greeting is closed here unless the test wants to look at it (`keepWelcome`). */
+async function login(user, pw = "rust-test-pw", { keepWelcome = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1300, height: 900 } });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -31,8 +32,14 @@ async function login(user, pw = "rust-test-pw") {
   await page.goto(base);
   await page.fill('input[autocomplete="username"]', user);
   await page.fill('input[type="password"]', pw);
+  const greeting = page.waitForResponse((r) => r.url().endsWith("/api/v2/welcome") && r.request().method() === "GET");
   await page.click("button.primary");
   await page.waitForSelector(".sidebar");
+  if (!keepWelcome && (await (await greeting).json()).show) {
+    await page.waitForSelector('[data-testid="welcome-close"]');
+    await page.click('[data-testid="welcome-close"]');
+    await page.waitForSelector('[data-testid="welcome"]', { state: "detached" });
+  }
   return page;
 }
 const teamName = `e2e-team-${Date.now()}`;
@@ -185,7 +192,23 @@ try {
   await waitFor(async () => (await root.locator('[data-testid="users"] tbody tr').count()) === 1, "the new person is in the users list");
   const readOnlyBox = root.locator(`input[aria-label="${readerName} is read only"]`);
   check(await readOnlyBox.isChecked(), "...marked read only");
-  const reader = await login(readerName, readerPw);
+  const reader = await login(readerName, readerPw, { keepWelcome: true });
+  // the first login greets: what is different, the notice of the administrator; closing it counts as seen
+  await reader.waitForSelector('[data-testid="welcome"]');
+  const hello = await reader.locator('[data-testid="welcome"]').innerText();
+  check(hello.includes("Same account, same data") && hello.includes("Annotating") && hello.includes("Tablet and pen"), "a new user is greeted with what is different");
+  check((await reader.locator('[data-testid="welcome-notice"]').innerText()).includes("beta on a copy"), "...with the notice of the administrator at the top");
+  await reader.locator('[data-testid="welcome-close"]').click();
+  await reader.waitForSelector('[data-testid="welcome"]', { state: "detached" });
+  await reader.reload();
+  await reader.waitForSelector(".topbar");
+  await reader.waitForTimeout(800);
+  check((await reader.locator('[data-testid="welcome"]').count()) === 0, "...once: it does not come back after a reload");
+  await reader.locator('[data-testid="whats-new"]').click();
+  await reader.waitForSelector('[data-testid="welcome"]');
+  check(true, "...and What's new in the top bar shows it again");
+  await reader.keyboard.press("Escape");
+  await reader.waitForSelector('[data-testid="welcome"]', { state: "detached" });
   check((await reader.locator('[data-testid="read-only-badge"]').count()) === 1, "the read-only account says so in the top bar");
   check(await reader.locator("button", { hasText: "New image set" }).isDisabled(), "...and cannot create an image set");
   await reader.goto(`${base}/images/34`);

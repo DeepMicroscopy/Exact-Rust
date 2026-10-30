@@ -5,6 +5,9 @@ nav_order: 2
 
 # User guide
 
+## Welcome
+The first time you sign in, a short **What's new** dialog tells you what is different from the EXACT you know. You can read it again any time under **What's new** in the top bar.
+
 ## Signing in
 Sign in with your user name and password. (The server also supports passkeys; enrolling and using them in the interface is
 not built yet.) New users receive an

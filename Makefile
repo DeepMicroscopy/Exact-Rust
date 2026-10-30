@@ -2,8 +2,8 @@
 PY := reference/.venv/bin/python
 
 .PHONY: screenshots rust-release mutation-parity enroll-passkey migrate restore seed django rust test conformance sync-tests record-goldens sweep
-restore:         ## recreate exact_rust_test from the newest dump, seed test users, create Rust tables
-	scripts/restore-backup.sh && reference/seed-users.sh && $(MAKE) migrate
+restore:         ## recreate exact_rust_test from the newest dump, seed test users, create Rust tables, mark the users as greeted
+	scripts/restore-backup.sh && reference/seed-users.sh && $(MAKE) migrate && reference/mark-welcomed.sh
 migrate:         ## additive Rust tables in the scratch DB only
 	SQL_DATABASE=exact_rust_test cargo run -q -p exact-cli -- migrate --confirm-db exact_rust_test
 django:          ## reference Django on :8001 (foreground)

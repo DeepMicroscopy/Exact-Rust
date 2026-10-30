@@ -113,3 +113,9 @@ If the storage is fast (local NVMe) raise `EXACT_THUMBNAIL_JOBS`; on slow networ
 
 Finding what is slow on the real data: set `EXACT_SLOW_SQL_MS=100` in `exact.env` and restart the server; every database statement slower than that is then logged as a
 warning (`slow statement: …`, with the statement and how long it took) in `dc logs server`. Unset it again afterwards.
+
+## 9. The greeting for new users
+Everybody who has not been on this server before sees a short "what's new" dialog once after their first login (what is different from the EXACT they know; the server remembers per
+user that it was shown, in `exact_rust_user_flags.welcomed_at`). "What's new" in the top bar opens it again. For a beta on a copy of production, say so at the top of it:
+`EXACT_WELCOME_NOTICE="This is a beta on a copy of the production data: what you change here does not reach the production EXACT."` in `exact.env`. Everybody in a freshly restored database counts as new;
+`exact-cli migrate` adds the column (migration 0010), and the server refuses to start without it. To show the greeting to somebody again: `UPDATE exact_rust_user_flags SET welcomed_at = NULL WHERE user_id = ...`.

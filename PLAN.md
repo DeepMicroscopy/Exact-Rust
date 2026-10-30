@@ -771,3 +771,10 @@ the legacy GET that creates an image (crop) is refused explicitly; `perms()` (th
 viewer: no tools, the context menu informs only, a note; top bar badge; `PATCH /api/v2/users/{id} {"read_only"}` and `POST /api/v2/admin/users` (site admins; permissions and presets
 stay superuser-only), `GET /api/v2/admin/roles` lists `read_only_ids`. `exact-server` now refuses to start on a database without the tables every request needs.
 Tests: `test_v2_read_only.py`, `e2e/admin.mjs`. Not done: a read-only badge in the user lists of teams, per-team read-only memberships.
+
+### 5au. Greeting for new users (2026-10-30)
+A "what's new" dialog for people who have not been on this server: shown once after the first login, remembered per user (`exact_rust_user_flags.welcomed_at`, migration 0010; the startup check now
+needs the column), closed in any way counts as seen; "What's new" in the top bar (menu on phones) opens it again. `GET /api/v2/welcome` (`show`, `notice`), `POST /api/v2/welcome/seen` (account
+self-service: read-only accounts may dismiss; an administrator impersonating a user neither sees nor dismisses it). `EXACT_WELCOME_NOTICE` puts a line at the top (the beta says it is a copy of production).
+The scratch users are marked as greeted by `reference/mark-welcomed.sh` (make restore), otherwise the dialog would stand in the way of every browser test; the admin e2e's login closes it for users it creates.
+Tests: `test_v2_welcome.py`, `e2e/admin.mjs`. Not done: versioned "what's new" (a second greeting for a later release), a changelog feed.

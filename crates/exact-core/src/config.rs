@@ -25,6 +25,8 @@ pub struct Config {
     pub db_connect_timeout_secs: u64,
     /// `EXACT_SLOW_SQL_MS`: every database statement that takes longer is logged (as a warning, with its text); unset = off.
     pub slow_sql_ms: Option<u64>,
+    /// `EXACT_WELCOME_NOTICE`: a sentence shown at the top of the "what's new" greeting (e.g. that this is a beta on a copy of production); unset = none.
+    pub welcome_notice: Option<String>,
     /// How long a successful Basic-auth password check is remembered in memory (0 = never).
     pub auth_cache_seconds: u64,
     /// Built frontend (`frontend/dist`) served with SPA fallback; unset/missing = API only.
@@ -62,6 +64,7 @@ impl Config {
                 .filter(|p| p.join("index.html").is_file()),
             db_connect_timeout_secs: get("DB_CONNECT_TIMEOUT", "10").parse().unwrap_or(10),
             slow_sql_ms: get("EXACT_SLOW_SQL_MS", "").parse().ok().filter(|&n| n > 0),
+            welcome_notice: Some(get("EXACT_WELCOME_NOTICE", "")).filter(|s| !s.trim().is_empty()),
             session_seconds: get("SESSION_COOKIE_AGE", "1209600")
                 .parse()
                 .unwrap_or(1_209_600),

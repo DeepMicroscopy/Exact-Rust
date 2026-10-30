@@ -9,6 +9,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { InvitePage } from "./pages/InvitePage";
 import { MprPage } from "./pages/MprPage";
 import { ViewerPage } from "./pages/ViewerPage";
+import { WelcomeGate } from "./components/WelcomeDialog";
 
 export function App() {
   const { user, loading } = useAuth();
@@ -22,6 +23,8 @@ export function App() {
     );
   }
   return (
+    <>
+    <WelcomeGate />
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Index />} />
@@ -36,6 +39,7 @@ export function App() {
       <Route path="annotations/:imageId" element={<OldViewerLink />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 

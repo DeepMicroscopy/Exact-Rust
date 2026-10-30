@@ -460,3 +460,14 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .spinner.big { width: 34px; height: 34px; border-width: 3px; }
 
 .readonly-note { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 5; padding: 8px 16px; font-size: 0.9rem; background: rgba(15, 15, 20, 0.85); pointer-events: none; }
+
+/* the greeting for new people */
+.modal.welcome-modal { width: min(640px, 100%); }
+.welcome-notice { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--border-h); border-radius: 10px; background: var(--purple-d); line-height: 1.4; }
+.welcome-list { list-style: none; margin: 8px 0 12px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.welcome-list li { display: grid; grid-template-columns: 150px 1fr; gap: 12px; line-height: 1.45; }
+.welcome-list strong { color: var(--text); }
+.welcome-list span { color: var(--muted); }
+.welcome-list kbd, .welcome-modal kbd { background: var(--glass-h); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; font-size: 0.85em; color: var(--text); }
+@media (max-width: 640px) { .welcome-list li { grid-template-columns: 1fr; gap: 2px; } }
+.welcome-scroll { max-height: calc(88vh - 230px); overflow-y: auto; padding-right: 6px; }

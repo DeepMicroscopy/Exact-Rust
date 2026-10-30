@@ -41,6 +41,8 @@ pub struct AppState {
     pub db_name: String,
     /// `MEDIA_ROOT`: uploaded files of file fields, served at `/media/`.
     pub media_root: std::path::PathBuf,
+    /// A line for the top of the first-login greeting (`EXACT_WELCOME_NOTICE`).
+    pub welcome_notice: Option<String>,
 }
 
 impl AppState {
@@ -61,6 +63,7 @@ impl AppState {
             repairs: Default::default(),
             db_name: cfg.db_name.clone(),
             media_root: cfg.media_root.clone(),
+            welcome_notice: cfg.welcome_notice.clone(),
         })
     }
 }
@@ -163,6 +166,7 @@ mod tests {
             repairs: Default::default(),
             db_name: "exact".into(),
             media_root: "./media".into(),
+            welcome_notice: None,
         })
     }
 
