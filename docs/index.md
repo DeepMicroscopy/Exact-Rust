@@ -33,6 +33,14 @@ started again at any time.
 
 ![Three-plane view of a CT volume](assets/screenshots/planes.png)
 
+## Speed
+
+![exact-rust against EXACT (Django): median response times](assets/performance-dark.svg)
+
+Median response times of the same read-only requests, one at a time, on production-size data (24,169 images, 1.4 million annotations): exact-rust is 1.3 to 16 times faster than
+the Django version, most for the lists that exact-sync and workers ask for (Django checks the password on every Basic-auth request). How it was measured, and the numbers, are in the
+[README](https://github.com/DeepMicroscopy/Exact-Rust#speed).
+
 ## Where to go next
 
 * **Using it:** [User guide](user-guide) and [keyboard shortcuts](shortcuts).

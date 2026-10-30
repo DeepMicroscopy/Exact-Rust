@@ -19,6 +19,39 @@ be rolled back at any time. The plan, decisions, measurements and the status of 
 
 Documentation: `docs/` (published with GitHub Pages: user guide, shortcuts, administration, API, installation).
 
+## Speed
+<p align="center">
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="docs/assets/performance-dark.svg">
+<img src="docs/assets/performance-light.svg" alt="exact-rust against EXACT (Django): median response times in milliseconds for the lists and the slide requests; exact-rust is 1.3 to 16 times faster" width="900">
+</picture>
+</p>
+
+<details><summary>The numbers</summary>
+
+Median response time in milliseconds (lower is better), one request at a time, the first request of each series left out:
+
+| Request | EXACT (Django), production | exact-rust, beta | faster |
+|---|---:|---:|---:|
+| Image sets · Basic auth | 694 | 44 | 16× |
+| Teams · Basic auth | 732 | 48 | 15× |
+| Images, 100 · Basic auth | 649 | 80 | 8.1× |
+| Image sets · session | 162 | 54 | 3.0× |
+| Teams · session | 184 | 33 | 5.5× |
+| Images, 100 · session | 138 | 74 | 1.9× |
+| Slide information (DeepZoom) | 96 | 54 | 1.8× |
+| Full-resolution tile | 109 | 45 | 2.4× |
+| Low-resolution tile | 135 | 52 | 2.6× |
+| Thumbnail | 111 | 84 | 1.3× |
+
+</details>
+
+**How this was measured** (`tests/perf/compare_servers.py`; the picture is drawn by `tests/perf/render_chart.py`): the same read-only requests against the old EXACT on its production server and
+exact-rust on a copy of the same data (24,169 images, 1.4 million annotations), one request at a time, the two servers alternating, with an ordinary member account on each. *Basic auth*
+is what exact-sync and workers use (Django checks the password on every request, which is most of its time there); *session* is what the browser uses after logging in. The slide requests are the DeepZoom descriptor,
+a tile and the thumbnail of 11 images in 6 formats. Caveats: measured over home wifi, so differences below about 50 ms are noise; the two accounts differ by one team; production serves real users meanwhile.
+Not in the picture: loading all 45,000 annotations of one image at once (the call exact-sync uses; Django had not answered after three minutes) and many parallel clients: both are in the script and need a quiet server.
+
 ## Status
 | Area | State |
 |---|---|

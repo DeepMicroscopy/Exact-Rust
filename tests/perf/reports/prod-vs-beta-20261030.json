@@ -1,0 +1,62 @@
+{
+ "a": "EXACT (Django), production",
+ "b": "exact-rust, beta",
+ "lists": [
+  {
+   "label": "Image sets \u00b7 Basic auth",
+   "prod": 693.6500000000001,
+   "beta": 44.15
+  },
+  {
+   "label": "Teams \u00b7 Basic auth",
+   "prod": 732.05,
+   "beta": 47.75
+  },
+  {
+   "label": "Images, 100 \u00b7 Basic auth",
+   "prod": 649.15,
+   "beta": 80.35
+  },
+  {
+   "label": "Image sets \u00b7 session",
+   "prod": 161.64999999999998,
+   "beta": 54.150000000000006
+  },
+  {
+   "label": "Teams \u00b7 session",
+   "prod": 184.5,
+   "beta": 33.45
+  },
+  {
+   "label": "Images, 100 \u00b7 session",
+   "prod": 138.5,
+   "beta": 74.3
+  }
+ ],
+ "slides": [
+  {
+   "label": "Slide information (DeepZoom)",
+   "images": 11,
+   "prod": 96.45,
+   "beta": 54.25
+  },
+  {
+   "label": "Full-resolution tile",
+   "images": 11,
+   "prod": 108.65,
+   "beta": 45.15
+  },
+  {
+   "label": "Low-resolution tile",
+   "images": 11,
+   "prod": 134.89999999999998,
+   "beta": 52.400000000000006
+  },
+  {
+   "label": "Thumbnail",
+   "images": 11,
+   "prod": 111.15,
+   "beta": 83.9
+  }
+ ]
+}
