@@ -264,7 +264,14 @@ try {
   const before = await page.locator('[data-testid="mpr-voxel"]').innerText();
   await page.mouse.click(...at(0.3, 0.3), { modifiers: ["Control"] });
   await waitFor(async () => (await page.locator('[data-testid="mpr-voxel"]').innerText()) !== before, "Ctrl + click moves the crosshair without painting");
-  const vol2 = await volume();
+  let vol2 = await volume();
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 400)); // a late answer of the undo before may still change the readout
+    const now = await volume();
+    if (now === vol2) break;
+    vol2 = now;
+  }
+  await new Promise((r) => setTimeout(r, 300));
   check((await volume()) === vol2, "...and the mask is as it was");
   // the optional 3D render in the fourth panel shows the volume and the mask
   await page.locator('[data-testid="show-render3d"]').click();

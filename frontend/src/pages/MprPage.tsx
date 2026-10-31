@@ -338,6 +338,8 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
   const notes = useRef<AnnotationLayer | null>(null);
   const brush = useRef<BrushLayer | null>(null);
   const overlay = useRef<MaskOverlay | null>(null);
+  /** the frame of the image on display: the mask of another frame waits until it is */
+  const shownFrame = useRef<number | null>(null);
   const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info });
   live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info };
   const pointer = useRef<[number, number] | null>(null);
@@ -483,10 +485,15 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     const c = new CrosshairLayer(v);
     cross.current = c;
     brush.current = new BrushLayer(v);
+    shownFrame.current = null;
     const b = new ZBlender(v, info.frames, (f) => loadTileSource(imageId, plane + 1, f), {
       blend: false,
       onBusy: setBusy,
       onReady: () => v.viewport.goHome(true),
+      onShown: (f) => {
+        shownFrame.current = f;
+        overlay.current?.setDisplayed(f);
+      },
     });
     blender.current = b;
     b.setPosition(frameOf(plane, live.current.voxel));
@@ -520,6 +527,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       brush.current?.setLasso(null);
     });
     overlay.current = o;
+    if (shownFrame.current != null) o.setDisplayed(shownFrame.current);
     return () => {
       o.destroy();
       overlay.current = null;
@@ -529,7 +537,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
   const version = seg?.version;
   useEffect(() => {
     if (annotationId == null || color == null) return;
-    const t = window.setTimeout(() => overlay.current?.load(`/api/v2/segmentation/${annotationId}/slice/${plane}/${frame}?color=${hexDigits(color)}&alpha=255&v=${version}`), 30);
+    const t = window.setTimeout(() => overlay.current?.load(`/api/v2/segmentation/${annotationId}/slice/${plane}/${frame}?color=${hexDigits(color)}&alpha=255&v=${version}`, frame), 30);
     return () => window.clearTimeout(t);
   }, [annotationId, color, plane, frame, version, imageId, info.frames]);
   const opacity = seg?.tool.opacity;

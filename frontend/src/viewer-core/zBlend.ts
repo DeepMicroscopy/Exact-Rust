@@ -9,6 +9,8 @@ export interface BlenderOptions {
   onReady?: () => void;
   /** true while the plane to show is still loading (the previous one stays on display meanwhile) */
   onBusy?: (busy: boolean) => void;
+  /** the plane that is on display now (called whenever the display is settled on a plane: a mask for that plane may be shown with it) */
+  onShown?: (frame: number) => void;
 }
 
 /**
@@ -254,6 +256,8 @@ export class ZBlender {
     const leaving = [...this.shown].filter((x) => this.items.has(x) && (next.get(x) ?? 0) <= PRELOAD_OPACITY);
     for (const [frame, item] of this.items) item.setOpacity(leaving.includes(frame) ? 1 : (next.get(frame) ?? PRELOAD_OPACITY));
     this.shown = new Set([...next].filter(([, o]) => o > PRELOAD_OPACITY).map(([x]) => x));
+    const top = this.items.has(need) ? need : [...next].find(([, o]) => o >= 1)?.[0];
+    if (top != null) this.opts.onShown?.(top);
     this.preloadSoon();
     if (this.settle) clearTimeout(this.settle);
     if (leaving.length) {

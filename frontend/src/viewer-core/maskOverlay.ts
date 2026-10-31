@@ -9,6 +9,9 @@ export class MaskOverlay {
   private img: HTMLImageElement;
   private wanted = "";
   private loading: HTMLImageElement | null = null;
+  /** the mask that has loaded but waits for the image of its frame to be on display */
+  private ready: { url: string; frame: number } | null = null;
+  private displayed: number | null = null;
 
   constructor(
     private viewer: OpenSeadragon.Viewer,
@@ -27,22 +30,41 @@ export class MaskOverlay {
     this.img.style.opacity = String(o);
   }
 
-  /** Shows the mask at `url` as soon as it has loaded (the same url twice does nothing). */
-  load(url: string): void {
+  /**
+   * Shows the mask at `url` (the mask of plane `frame`) once it has loaded and the image of that frame is on display: the mask
+   * comes from a small PNG and is there long before the tiles of the image, and must not run ahead of them. The mask on display
+   * stays until then. The same url twice does nothing.
+   */
+  load(url: string, frame: number): void {
     if (url === this.wanted) return;
     this.wanted = url;
+    this.ready = null;
     const next = new Image();
     this.loading = next;
     next.onload = () => {
       if (this.loading !== next) return; // a newer slice was asked for meanwhile
-      this.img.src = url;
-      this.img.setAttribute("data-url", url);
-      this.onShown();
+      this.ready = { url, frame };
+      this.show();
     };
     next.onerror = () => {
       if (this.loading === next) this.onShown();
     };
     next.src = url;
+  }
+
+  /** The image of `frame` is on display now. */
+  setDisplayed(frame: number): void {
+    this.displayed = frame;
+    this.show();
+  }
+
+  private show(): void {
+    const r = this.ready;
+    if (!r || (this.displayed != null && r.frame !== this.displayed)) return;
+    this.ready = null;
+    this.img.src = r.url;
+    this.img.setAttribute("data-url", r.url);
+    this.onShown();
   }
 
   destroy(): void {
