@@ -140,7 +140,8 @@ try {
   const v1 = await volumeMm3();
 
   // ------------------------------------------------------------------------------------------ eraser, undo, redo
-  await page.locator('[data-testid="seg3d-eraser"]').click();
+  await page.locator('[data-testid="seg3d-mode"]').click();
+  check((await page.locator('[data-testid="seg3d-mode"]').innerText()) === "−", "the mode button shows − when subtracting");
   await page.locator('[data-testid="seg3d-size"]').fill("60");
   await stroke(at(0.35, 0.5), at(0.65, 0.5));
   await waitFor(async () => (await volumeMm3()) === 0, `the eraser removes it (${await volume()})`);
@@ -151,7 +152,8 @@ try {
   await waitFor(async () => (await volumeMm3()) === 0, "Shift+Ctrl+Z redoes the erasing");
   await page.keyboard.press("Control+z");
   await waitFor(async () => Math.abs((await volumeMm3()) - v1) < 1, "Ctrl+Z undoes it");
-  // Alt turns the brush into the eraser, Alt + wheel sizes it
+  // + / − back to adding; Alt + wheel sizes the brush
+  await page.locator('[data-testid="seg3d-mode"]').click();
   await page.locator('[data-testid="seg3d-brush"]').click();
   await page.mouse.move(...at(0.5, 0.5));
   await page.keyboard.down("Alt");
@@ -165,6 +167,24 @@ try {
   check((await clear.innerText()).includes("again"), "Clear asks to be clicked again");
   await clear.click();
   await waitFor(async () => (await volumeMm3()) === 0, "Clear empties the mask");
+  // lasso: an outline drawn in the plane is closed and filled in that slice; − takes an area out again
+  await page.locator('[data-testid="seg3d-lasso"]').click();
+  const outline = async (x0, y0, x1, y1) => {
+    await page.mouse.move(...at(x0, y0));
+    await page.mouse.down();
+    for (const [x, y] of [[x1, y0], [x1, y1], [x0, y1]]) await page.mouse.move(...at(x, y), { steps: 4 });
+    await page.mouse.up();
+  };
+  await outline(0.35, 0.35, 0.65, 0.65);
+  await waitFor(async () => /1 slice painted/.test(await volume()) && (await volumeMm3()) > 0, `the lasso fills what it encircles in one slice (${await volume()})`);
+  const lassoed = await volumeMm3();
+  await page.locator('[data-testid="seg3d-mode"]').click();
+  await outline(0.45, 0.45, 0.55, 0.55);
+  await waitFor(async () => (await volumeMm3()) < lassoed * 0.95 && (await volumeMm3()) > 0, "the lasso in − mode takes an area out");
+  await page.locator('[data-testid="seg3d-mode"]').click();
+  await page.locator('[data-testid="seg3d-clear"]').click();
+  await page.locator('[data-testid="seg3d-clear"]').click();
+  await waitFor(async () => (await volumeMm3()) === 0, "cleared after the lasso");
   await page.locator('[data-testid="seg3d-wand"]').click();
   await page.locator('[data-testid="seg3d-wand3d"]').click();
   await page.locator('[data-testid="seg3d-reach"]').fill("12");
@@ -174,9 +194,16 @@ try {
   const reach = await volumeMm3();
   check(reach < (4 / 3) * Math.PI * 12 ** 3 * 1.2, `...within its reach of 12 mm (${reach.toFixed(0)} mm³ of at most ${Math.round((4 / 3) * Math.PI * 12 ** 3)})`);
   check((await page.locator('[data-testid="seg3d-message"][role="alert"]').count()) === 0, "...without an error");
+  // the wand in − mode takes the same region out again
+  await page.locator('[data-testid="seg3d-mode"]').click();
+  await page.mouse.click(...at(0.5, 0.52));
+  await waitFor(async () => (await volumeMm3()) < reach * 0.2, `the wand in − mode removes the region (${await volume()})`);
+  await page.locator('[data-testid="seg3d-mode"]').click();
   // ------------------------------------------------------------------------------------------ interpolation between painted slices
-  await page.locator('[data-testid="seg3d-clear"]').click();
-  await page.locator('[data-testid="seg3d-clear"]').click();
+  if ((await volumeMm3()) > 0) {
+    await page.locator('[data-testid="seg3d-clear"]').click();
+    await page.locator('[data-testid="seg3d-clear"]').click();
+  }
   await waitFor(async () => (await volumeMm3()) === 0, "cleared again");
   await page.locator('[data-testid="seg3d-brush"]').click();
   await page.locator('[data-testid="seg3d-disc"]').click();

@@ -366,6 +366,66 @@ impl Mode {
     }
 }
 
+/// Lasso: fills the outline `points` (plane pixel positions, closed by the last to the first) in the slice of the plane, one voxel thick.
+pub fn lasso(
+    m: &mut MaskVol,
+    j: &mut Journal,
+    g: &Geometry,
+    plane: u32,
+    frame: usize,
+    points: &[(f64, f64)],
+    mode: Mode,
+) {
+    if points.len() < 3 {
+        return;
+    }
+    let normal = Geometry::normal_axis(plane);
+    let axes: Vec<usize> = (0..3).filter(|a| *a != normal).collect();
+    let (a, b) = (axes[0], axes[1]);
+    let poly: Vec<[f64; 3]> = points
+        .iter()
+        .map(|&(pc, pr)| g.pixel_mm(plane, frame, pc, pr))
+        .collect();
+    let dims = [g.w, g.h, g.n];
+    let cell = |v: f64, ax: usize| {
+        ((v / g.ext[ax] * dims[ax] as f64).floor().max(0.0) as usize).min(dims[ax] - 1)
+    };
+    let range = |ax: usize| {
+        let lo = poly.iter().map(|p| p[ax]).fold(f64::MAX, f64::min);
+        let hi = poly.iter().map(|p| p[ax]).fold(f64::MIN, f64::max);
+        (cell(lo, ax), cell(hi, ax))
+    };
+    let (a0, a1) = range(a);
+    let (b0, b1) = range(b);
+    let fixed = cell(poly[0][normal], normal);
+    let inside = |x: f64, y: f64| {
+        let mut odd = false;
+        let mut k = poly.len() - 1;
+        for i in 0..poly.len() {
+            let (pi, pk) = (poly[i], poly[k]);
+            if (pi[b] > y) != (pk[b] > y)
+                && x < (pk[a] - pi[a]) * (y - pi[b]) / (pk[b] - pi[b]) + pi[a]
+            {
+                odd = !odd;
+            }
+            k = i;
+        }
+        odd
+    };
+    for vb in b0..=b1 {
+        for va in a0..=a1 {
+            let mut c = [0usize; 3];
+            c[a] = va;
+            c[b] = vb;
+            c[normal] = fixed;
+            let q = g.voxel_center(c[0], c[1], c[2]);
+            if inside(q[a], q[b]) {
+                m.set(j, c[0], c[1], c[2], mode.on());
+            }
+        }
+    }
+}
+
 /// Brush strokes. `points` are plane pixel positions; `ball` paints a sphere around every sample, otherwise a disc in the plane
 /// of the stroke, one voxel thick.
 #[allow(clippy::too_many_arguments)]
@@ -1045,6 +1105,22 @@ mod tests {
         let mut j = Journal::default();
         clear(&mut m, &mut j);
         assert_eq!((m.count(), m.bbox()), (0, None));
+    }
+
+    #[test]
+    fn a_lasso_fills_what_it_encircles_in_the_plane() {
+        let g = geom();
+        let mut m = MaskVol::default();
+        let mut j = Journal::default();
+        // axial slice 4: the square from pixel (10, 5) to (20, 15)
+        let sq = [(10.0, 5.0), (20.0, 5.0), (20.0, 15.0), (10.0, 15.0)];
+        lasso(&mut m, &mut j, &g, 0, 4, &sq, Mode::Add);
+        assert_eq!(cnt(&mut m), 100);
+        assert!(m.get(10, 5, 4) && m.get(19, 14, 4) && !m.get(20, 15, 4) && !m.get(15, 10, 3));
+        // subtracting a smaller square leaves a frame
+        let inner = [(12.0, 7.0), (18.0, 7.0), (18.0, 13.0), (12.0, 13.0)];
+        lasso(&mut m, &mut j, &g, 0, 4, &inner, Mode::Remove);
+        assert_eq!(cnt(&mut m), 100 - 36);
     }
 
     #[test]

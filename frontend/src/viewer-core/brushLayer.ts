@@ -9,6 +9,7 @@ export class BrushLayer {
   private canvas: HTMLCanvasElement;
   private ring: { at: [number, number]; rx: number; ry: number; erase: boolean } | null = null;
   private stroke: { points: [number, number][]; rx: number; ry: number; erase: boolean } | null = null;
+  private lasso: { points: [number, number][]; erase: boolean } | null = null;
   private raf = 0;
 
   constructor(private viewer: OpenSeadragon.Viewer) {
@@ -29,8 +30,14 @@ export class BrushLayer {
     this.schedule();
   }
 
+  /** the outline of a lasso being drawn: shown closed and filled, as it will be stored */
+  setLasso(lasso: { points: [number, number][]; erase: boolean } | null): void {
+    this.lasso = lasso;
+    this.schedule();
+  }
+
   get stroking(): boolean {
-    return this.stroke != null;
+    return this.stroke != null || this.lasso != null;
   }
 
   destroy(): void {
@@ -85,6 +92,22 @@ export class BrushLayer {
         ctx.fill();
         last = p;
       }
+    }
+    if (this.lasso && this.lasso.points.length > 1) {
+      const pts = this.lasso.points.map(screen);
+      ctx.beginPath();
+      pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.closePath();
+      ctx.fillStyle = this.lasso.erase ? "rgba(255,255,255,0.22)" : "rgba(255,230,90,0.28)";
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.stroke();
+      ctx.lineWidth = 1.3;
+      ctx.setLineDash(this.lasso.erase ? [5, 4] : []);
+      ctx.strokeStyle = this.lasso.erase ? "#ffffff" : "#ffe65a";
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     if (this.ring) {
       ellipse(this.ring.at, this.ring.rx, this.ring.ry);

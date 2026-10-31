@@ -19,6 +19,7 @@ export interface MaskState {
 
 export type Op =
   | { op: "stroke"; plane: number; frame: number; points: [number, number][]; radius_mm: number; ball: boolean; mode: "add" | "remove" }
+  | { op: "lasso"; plane: number; frame: number; points: [number, number][]; mode: "add" | "remove" }
   | { op: "wand"; plane: number; frame: number; point: [number, number]; tolerance: number; volume: boolean; max_radius_mm?: number; mode: "add" | "remove" }
   | { op: "interpolate" }
   | { op: "copy"; from: number; to: number; through: number; add: boolean }

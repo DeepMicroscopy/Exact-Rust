@@ -83,6 +83,19 @@ def test_a_stroke_on_one_plane_shows_on_the_other_two_where_the_voxel_is(seg):
     assert slice_alpha(c, aid, 2, max(0, xv - 8))[1] == set()
 
 
+def test_a_lasso_fills_its_outline_in_one_slice_and_subtracts(seg):
+    c, aid = seg
+    square = [[40, 50], [80, 50], [80, 90], [40, 90]]
+    s = ops(c, aid, op="lasso", plane=0, frame=60, points=square, mode="add")
+    assert s["count"] == 40 * 40 and s["slices"] == [60]
+    (_, _), ax = slice_alpha(c, aid, 0, 60)
+    assert (50, 60) in ax and (39, 60) not in ax and (80, 60) not in ax
+    s = ops(c, aid, op="lasso", plane=0, frame=60, points=[[50, 60], [70, 60], [70, 80], [50, 80]], mode="remove")
+    assert s["count"] == 40 * 40 - 20 * 20
+    bad = c.post(f"/api/v2/segmentation/{aid}/ops", json={"op": "lasso", "plane": 0, "frame": 60, "points": [[1, 1], [2, 2]]})
+    assert bad.status_code == 400
+
+
 def test_drawing_on_the_coronal_plane_lands_on_the_right_axial_row(seg):
     c, aid = seg
     v = c.get(f"/api/v2/segmentation/{aid}/volume").json()

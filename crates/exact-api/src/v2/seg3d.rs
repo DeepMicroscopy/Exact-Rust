@@ -384,6 +384,13 @@ enum Op {
         #[serde(default)]
         mode: Option<String>,
     },
+    Lasso {
+        plane: u32,
+        frame: usize,
+        points: Vec<[f64; 2]>,
+        #[serde(default)]
+        mode: Option<String>,
+    },
     Wand {
         plane: u32,
         frame: usize,
@@ -481,6 +488,21 @@ fn run(e: &mut Entry, op: &Op) -> Result<(Journal, Option<String>), ApiError> {
                 *ball,
                 mode_of(mode)?,
             );
+        }
+        Op::Lasso {
+            plane,
+            frame,
+            points,
+            mode,
+        } => {
+            if *plane > 2 || *frame >= g.plane_frames(*plane) {
+                return Err(bad("plane or frame is outside the volume."));
+            }
+            if points.len() < 3 || points.len() > 5000 {
+                return Err(bad("A lasso needs 3 to 5000 points."));
+            }
+            let pts: Vec<(f64, f64)> = points.iter().map(|p| (p[0], p[1])).collect();
+            volmask::lasso(&mut e.vol, &mut j, &g, *plane, *frame, &pts, mode_of(mode)?);
         }
         Op::Wand {
             plane,

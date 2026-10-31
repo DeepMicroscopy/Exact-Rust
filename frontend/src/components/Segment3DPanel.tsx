@@ -3,11 +3,13 @@ import { FloatingPanel } from "./FloatingPanel";
 import { copyTargets, formatVolume, sizeRange, type SizeUnit } from "../viewer-core/mpr3d";
 import type { MaskState, Message, Op } from "../hooks/useSegment3D";
 
-export type SegToolName = "brush" | "eraser" | "wand";
+export type SegToolName = "brush" | "lasso" | "wand";
 
 /** What the tools are set to; the plane panes read it when a stroke or a click happens. */
 export interface SegTool {
   tool: SegToolName;
+  /** the mode of the tools: add (+) or subtract (−); Alt turns it around while it is held */
+  erase: boolean;
   /** brush: a sphere through the slices (true) or a disc in the plane (false) */
   ball: boolean;
   /** brush diameter, in pixels of the plane drawn in or in mm */
@@ -22,7 +24,7 @@ export interface SegTool {
   opacity: number;
 }
 
-export const DEFAULT_TOOL: SegTool = { tool: "brush", ball: false, size: 12, unit: "px", wand3d: true, tolerance: 12, maxRadiusMm: 0, opacity: 0.55 };
+export const DEFAULT_TOOL: SegTool = { tool: "brush", erase: false, ball: false, size: 12, unit: "px", wand3d: true, tolerance: 12, maxRadiusMm: 0, opacity: 0.55 };
 
 interface Props {
   type: { name: string; color: string };
@@ -44,7 +46,34 @@ interface Props {
   extra?: ReactNode;
 }
 
-const KEYS: Record<SegToolName, string> = { brush: "B", eraser: "E", wand: "W" };
+const KEYS: Record<SegToolName, string> = { brush: "B", lasso: "L", wand: "W" };
+const NAMES: Record<SegToolName, string> = { brush: "Brush", lasso: "Lasso", wand: "Wand" };
+
+/** The tool icons: a brush, a lasso (a loop with a rope end) and a magic wand with sparkles. */
+function ToolIcon({ tool }: { tool: SegToolName }) {
+  const common = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  if (tool === "brush")
+    return (
+      <svg {...common}>
+        <path d="M18.5 3.5c1.4 1.4 1.4 3.2 0 4.6L11 15.6 8.4 13l7.5-7.5c1.4-1.4 1.6-1.4 2.6-2z" />
+        <path d="M8.4 13C6 13 5 14.6 5 16.5c0 1.2-.6 2.2-1.6 3 3 .6 6.6.4 8-1.6.6-.9.6-2-.2-2.9z" />
+      </svg>
+    );
+  if (tool === "lasso")
+    return (
+      <svg {...common} strokeDasharray="0">
+        <ellipse cx="11" cy="9" rx="8" ry="5.5" strokeDasharray="2.6 2.4" />
+        <path d="M5.5 13.2c-1 1.6-.4 3.6 1.4 3.8 1.5.2 2.2-1 1.6-2.2-.8-1.5-2.8-.8-2.4.8.5 1.8 2.4 3 4.6 3.6" />
+      </svg>
+    );
+  return (
+    <svg {...common}>
+      <path d="M4 20 15 9" />
+      <path d="m13.5 7.5 3 3" />
+      <path d="M17 3v3M15.5 4.5h3M20.5 8v2.4M19.3 9.2h2.4M9 3.5v2M8 4.5h2" />
+    </svg>
+  );
+}
 
 function Slider({ label, value, min, max, step, show, onChange, testid }: { label: string; value: number; min: number; max: number; step: number; show: string; onChange(v: number): void; testid?: string }) {
   return (
@@ -92,14 +121,28 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
       </p>
       {!readOnly && (
         <>
-          <div className="seg" role="group" aria-label="Tool">
-            {(["brush", "eraser", "wand"] as SegToolName[]).map((t) => (
-              <button key={t} className={tool.tool === t ? "active" : ""} aria-pressed={tool.tool === t} onClick={() => onTool({ tool: t })} title={`${t[0].toUpperCase()}${t.slice(1)} (${KEYS[t]})`} data-testid={`seg3d-${t}`}>
-                {t[0].toUpperCase() + t.slice(1)}
-              </button>
-            ))}
+          <div className="seg3d-tools">
+            <div className="seg icons" role="group" aria-label="Tool">
+              {(["brush", "lasso", "wand"] as SegToolName[]).map((t) => (
+                <button key={t} className={tool.tool === t ? "active" : ""} aria-pressed={tool.tool === t} aria-label={NAMES[t]} onClick={() => onTool({ tool: t })} title={`${NAMES[t]} (${KEYS[t]})`} data-testid={`seg3d-${t}`}>
+                  <ToolIcon tool={t} />
+                </button>
+              ))}
+            </div>
+            <button
+              className={`pt-round seg3d-mode ${tool.erase ? "erase" : "add"}`}
+              onClick={() => onTool({ erase: !tool.erase })}
+              aria-pressed={tool.erase}
+              aria-label={tool.erase ? "Subtracting (tap to add)" : "Adding (tap to subtract)"}
+              title={tool.erase ? "Subtracting from the mask: click to add (E, or hold Alt)" : "Adding to the mask: click to subtract (E, or hold Alt)"}
+              data-testid="seg3d-mode"
+            >
+              {tool.erase ? "−" : "+"}
+            </button>
           </div>
-          {tool.tool !== "wand" ? (
+          {tool.tool === "lasso" ? (
+            <p className="muted small">Draw around the area in a plane: when you lift the pointer the outline is closed and filled in that slice. Alt turns + and − around.</p>
+          ) : tool.tool === "brush" ? (
             <>
               <div className="seg" role="group" aria-label="Brush shape">
                 <button className={!tool.ball ? "active" : ""} aria-pressed={!tool.ball} onClick={() => onTool({ ball: false })} title="Paint a disc in the plane you draw in" data-testid="seg3d-disc">
@@ -117,7 +160,7 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
                   </button>
                 ))}
               </div>
-              <p className="muted small">Alt turns the brush into the eraser, Alt + wheel or [ ] changes the size.</p>
+              <p className="muted small">Alt turns + and − around, Alt + wheel or [ ] changes the size.</p>
             </>
           ) : (
             <>
@@ -131,7 +174,7 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
               </div>
               <Slider label="Tolerance" value={tool.tolerance} min={0} max={100} step={1} show={`${tool.tolerance} %`} onChange={(v) => onTool({ tolerance: v })} testid="seg3d-tolerance" />
               <Slider label="Reach" value={tool.maxRadiusMm} min={0} max={100} step={1} show={tool.maxRadiusMm ? `${tool.maxRadiusMm} mm` : "no limit"} onChange={(v) => onTool({ maxRadiusMm: v })} testid="seg3d-reach" />
-              <p className="muted small">Click to add the connected region of similar grey values, Alt + click to remove it.</p>
+              <p className="muted small">Click to add (+) or remove (−) the connected region of similar grey values; Alt turns it around.</p>
             </>
           )}
         </>

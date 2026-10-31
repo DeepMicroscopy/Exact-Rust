@@ -140,6 +140,7 @@ export function MprPage() {
           ext,
           onStroke: (plane, frame, points, erase) =>
             segLive.current.doOp({ op: "stroke", plane, frame, points, radius_mm: (planes ? brushDiameterMm(segLive.current.tool, plane as Plane, planes[plane], segLive.current.ext ?? [1, 1, 1]) : 0) / 2, ball: segLive.current.tool.ball, mode: erase ? "remove" : "add" }),
+          onLasso: (plane, frame, points, erase) => segLive.current.doOp({ op: "lasso", plane, frame, points, mode: erase ? "remove" : "add" }),
           onWand: (plane, frame, point, erase) => {
             const t = segLive.current.tool;
             const o: Op = { op: "wand", plane, frame, point, tolerance: toleranceOf(t.tolerance), volume: t.wand3d, mode: erase ? "remove" : "add", ...(t.maxRadiusMm > 0 ? { max_radius_mm: t.maxRadiusMm } : {}) };
@@ -184,7 +185,8 @@ export function MprPage() {
         if (e.key === "Escape") setSegTypeId(null);
         else if (mod && k === "z") void (e.shiftKey ? segLive.current.redo() : segLive.current.undo());
         else if (mod && k === "y") void segLive.current.redo();
-        else if (!mod && !e.altKey && editableRef.current && (k === "b" || k === "e" || k === "w")) setTool((t) => ({ ...t, tool: k === "b" ? "brush" : k === "e" ? "eraser" : "wand" }));
+        else if (!mod && !e.altKey && editableRef.current && (k === "b" || k === "l" || k === "w")) setTool((t) => ({ ...t, tool: k === "b" ? "brush" : k === "l" ? "lasso" : "wand" }));
+        else if (!mod && !e.altKey && editableRef.current && k === "e") setTool((t) => ({ ...t, erase: !t.erase }));
         else if (!mod && !e.altKey && editableRef.current && (e.key === "[" || e.key === "]")) setTool((t) => ({ ...t, size: resized(t.size, e.key === "]" ? 1 : -1, t.unit) }));
         else if (!(e.key === "PageUp" || e.key === "ArrowUp" || e.key === "PageDown" || e.key === "ArrowDown")) return;
         else {
@@ -323,6 +325,7 @@ interface SegPane {
   editable: boolean;
   ext: Extent | null;
   onStroke(plane: number, frame: number, points: [number, number][], erase: boolean): Promise<unknown>;
+  onLasso(plane: number, frame: number, points: [number, number][], erase: boolean): Promise<unknown>;
   onWand(plane: number, frame: number, point: [number, number], erase: boolean): Promise<unknown>;
   onSize(steps: number): void;
 }
@@ -354,7 +357,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     let rest = 0;
     const wheel = (e: WheelEvent) => {
       const sg = live.current.seg;
-      if (sg?.editable && e.altKey && sg.tool.tool !== "wand") {
+      if (sg?.editable && e.altKey && sg.tool.tool === "brush") {
         // Alt + wheel sizes the brush
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -385,7 +388,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     });
 
     // the mask tools: a drag with the brush or eraser is one stroke (previewed here, stored when the pointer is lifted), a click with the wand grows a region
-    let stroke: { points: [number, number][]; erase: boolean; frame: number } | null = null;
+    let stroke: { points: [number, number][]; erase: boolean; frame: number; lasso: boolean } | null = null;
     let space = false;
     const spaceKey = (e: KeyboardEvent) => {
       if (e.code === "Space" && !isTypingTarget(e.target)) space = e.type === "keydown";
@@ -414,12 +417,16 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       const { shape: s, plane: pl, voxel: vx } = live.current;
       const frame = frameOf(pl, vx);
       live.current.onPick(voxelAt(s, pl, at[0], at[1], frame)); // the other planes follow the point that is worked on
-      const erase = sg.tool.tool === "eraser" || !!oe?.altKey;
+      const erase = sg.tool.erase !== !!oe?.altKey;
       if (sg.tool.tool === "wand") {
         void sg.onWand(pl, frame, at, erase);
         return;
       }
-      stroke = { points: [at], erase, frame };
+      stroke = { points: [at], erase, frame, lasso: sg.tool.tool === "lasso" };
+      if (stroke.lasso) {
+        brush.current?.setLasso({ points: stroke.points, erase });
+        return;
+      }
       const [rx, ry] = radii(sg);
       brush.current?.setStroke({ points: stroke.points, rx, ry, erase });
     });
@@ -430,6 +437,10 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       const at = toPlane(e.position);
       if (!at) return;
       stroke.points.push(at);
+      if (stroke.lasso) {
+        brush.current?.setLasso({ points: stroke.points, erase: stroke.erase });
+        return;
+      }
       const [rx, ry] = radii(sg);
       brush.current?.setStroke({ points: stroke.points, rx, ry, erase: stroke.erase });
     });
@@ -439,6 +450,13 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       const done = stroke;
       stroke = null;
       const points = thin(dropClose(done.points, 0.5), 2000);
+      if (done.lasso) {
+        if (points.length < 3) return brush.current?.setLasso(null);
+        void sg
+          .onLasso(live.current.plane, done.frame, points, done.erase)
+          .finally(() => window.setTimeout(() => brush.current?.setLasso(null), 1200));
+        return;
+      }
       // the preview stays until the stored mask is shown (the overlay clears it); this is for a failed or unseen answer
       void sg
         .onStroke(live.current.plane, done.frame, points, done.erase)
@@ -450,9 +468,9 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       const r = el.getBoundingClientRect();
       const at = toPlane(new OpenSeadragon.Point(ev.clientX - r.left, ev.clientY - r.top));
       pointer.current = at;
-      if (!sg?.editable || sg.tool.tool === "wand" || !at) return brush.current?.setRing(null);
+      if (!sg?.editable || sg.tool.tool !== "brush" || !at) return brush.current?.setRing(null);
       const [rx, ry] = radii(sg);
-      brush.current?.setRing({ at, rx, ry, erase: sg.tool.tool === "eraser" || ev.altKey });
+      brush.current?.setRing({ at, rx, ry, erase: sg.tool.erase !== ev.altKey });
     };
     const leave = () => {
       pointer.current = null;
@@ -497,7 +515,10 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
   useEffect(() => {
     const v = viewerRef.current;
     if (!v || annotationId == null) return;
-    const o = new MaskOverlay(v, info.width, info.height, () => brush.current?.setStroke(null));
+    const o = new MaskOverlay(v, info.width, info.height, () => {
+      brush.current?.setStroke(null);
+      brush.current?.setLasso(null);
+    });
     overlay.current = o;
     return () => {
       o.destroy();
@@ -519,14 +540,15 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
   const sizeMm = seg?.tool.size;
   const sizeUnit = seg?.tool.unit;
   const toolName = seg?.tool.tool;
+  const toolErase = seg?.tool.erase;
   const editable = !!seg?.editable;
   useEffect(() => {
     const sg = live.current.seg;
     const at = pointer.current;
-    if (!sg?.editable || !sg.ext || !at || sg.tool.tool === "wand") return brush.current?.setRing(null);
+    if (!sg?.editable || !sg.ext || !at || sg.tool.tool !== "brush") return brush.current?.setRing(null);
     const [rx, ry] = brushRadii(plane, info, sg.ext, brushDiameterMm(sg.tool, plane, info, sg.ext));
-    brush.current?.setRing({ at, rx, ry, erase: sg.tool.tool === "eraser" });
-  }, [sizeMm, sizeUnit, toolName, editable, plane, info]);
+    brush.current?.setRing({ at, rx, ry, erase: sg.tool.erase });
+  }, [sizeMm, sizeUnit, toolName, toolErase, editable, plane, info]);
 
   useEffect(() => {
     blender.current?.setPosition(frame);

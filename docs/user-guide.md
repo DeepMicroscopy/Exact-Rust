@@ -111,10 +111,12 @@ Everything is measured in millimetres, so a brush of 8 mm is round in the pictur
 the pixels. The window can be moved by its title, and it shows the volume of the mask (mm³, from 1000 mm³ in ml) and the number of axial slices
 that hold some of it.
 
-* **Brush** (`B`) paints, **Eraser** (`E`, or hold Alt with the brush) removes. *2D disc* works in the plane you draw in, one slice thick;
+* The three tools are shown as icons: **Brush** (`B`), **Lasso** (`L`) and **Wand** (`W`). The round **+ / −** button next to them (or `E`) decides whether the tool
+  adds to the mask or subtracts from it; holding Alt turns it around for as long as it is held. The **Brush** paints. *2D disc* works in the plane you draw in, one slice thick;
   *3D sphere* reaches through the slices around every point of the stroke. The size is set in pixels of the plane you draw in (the default) or in mm, switched next to the slider; `[` and `]` or Alt + mouse wheel change it.
   With a mouse, pen or finger a drag is one stroke, stored when you lift the pointer; the ring under the pointer shows the size.
-* **Wand** (`W`) adds the connected region whose grey values are within the *tolerance* of the grey value you click on (Alt + click removes it),
+* **Lasso** works like a pen that fills what it encircles: draw around an area in one plane and lift the pointer; the outline is closed and the area filled (or taken out with −) in that slice.
+* **Wand** adds (or with − removes) the connected region whose grey values are within the *tolerance* of the grey value you click on,
   either in the plane or through the whole volume. *Reach* limits it to a radius (mm) around the click; a region that is too large is refused with a message.
 * **Interpolate slices** fills the empty axial slices between painted ones by blending their shapes. **Copy** repeats the slice of the crosshair
   onto the next or previous slices.

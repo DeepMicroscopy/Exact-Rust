@@ -563,3 +563,11 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .render3d-checks { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .render3d-checks label { display: inline-flex; align-items: center; gap: 6px; }
 .render3d-checks input[type="checkbox"] { width: auto; }
+
+/* tools of the 3D mask as icons, with the + / - mode next to them */
+.seg3d-tools { display: flex; align-items: center; gap: 10px; }
+.seg3d-tools .seg { flex: 1; }
+.seg3d-tools .seg.icons button { display: grid; place-items: center; min-height: 42px; }
+.seg3d-panel .pt-round.seg3d-mode { width: 44px; height: 44px; font-size: 1.7rem; flex: none; box-shadow: none; }
+.seg3d-mode.add { color: #6adf8a; border-color: #6adf8a; }
+.seg3d-mode.erase { color: #ff6a5a; border-color: #ff6a5a; }
