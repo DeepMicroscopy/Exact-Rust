@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { FloatingPanel } from "./FloatingPanel";
-import { copyTargets, formatVolume } from "../viewer-core/mpr3d";
+import { copyTargets, formatVolume, sizeRange, type SizeUnit } from "../viewer-core/mpr3d";
 import type { MaskState, Message, Op } from "../hooks/useSegment3D";
 
 export type SegToolName = "brush" | "eraser" | "wand";
@@ -10,8 +10,9 @@ export interface SegTool {
   tool: SegToolName;
   /** brush: a sphere through the slices (true) or a disc in the plane (false) */
   ball: boolean;
-  /** brush diameter in mm */
-  sizeMm: number;
+  /** brush diameter, in pixels of the plane drawn in or in mm */
+  size: number;
+  unit: SizeUnit;
   /** wand: grow through the volume (true) or in the plane */
   wand3d: boolean;
   /** wand tolerance in percent of the grey range */
@@ -21,7 +22,7 @@ export interface SegTool {
   opacity: number;
 }
 
-export const DEFAULT_TOOL: SegTool = { tool: "brush", ball: false, sizeMm: 8, wand3d: true, tolerance: 12, maxRadiusMm: 0, opacity: 0.55 };
+export const DEFAULT_TOOL: SegTool = { tool: "brush", ball: false, size: 12, unit: "px", wand3d: true, tolerance: 12, maxRadiusMm: 0, opacity: 0.55 };
 
 interface Props {
   type: { name: string; color: string };
@@ -61,6 +62,14 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
   const [copyN, setCopyN] = useState(3);
   const [confirmClear, setConfirmClear] = useState(false);
   const count = state?.slices.length ?? 0;
+  // the size stays about the same when the unit changes (measured with the pixels of the axial plane)
+  const switchUnit = (unit: SizeUnit) => {
+    if (unit === tool.unit) return;
+    const pxMm = state?.voxel_mm?.[0] ?? 1;
+    const r = sizeRange(unit);
+    const v = unit === "mm" ? tool.size * pxMm : tool.size / pxMm;
+    onTool({ unit, size: Math.min(Math.max(Math.round(v / r.step) * r.step, r.min), r.max) });
+  };
   const copy = (dir: 1 | -1) => {
     const t = copyTargets(z, slices, copyN, dir);
     if (t) onOp({ op: "copy", from: z, to: t.to, through: t.through, add: false });
@@ -100,7 +109,14 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
                   3D sphere
                 </button>
               </div>
-              <Slider label="Size" value={tool.sizeMm} min={0.5} max={60} step={0.5} show={`${tool.sizeMm} mm`} onChange={(v) => onTool({ sizeMm: v })} testid="seg3d-size" />
+              <Slider label="Size" value={tool.size} min={sizeRange(tool.unit).min} max={sizeRange(tool.unit).max} step={sizeRange(tool.unit).step} show={`${tool.size} ${tool.unit === "px" ? "px" : "mm"}`} onChange={(v) => onTool({ size: v })} testid="seg3d-size" />
+              <div className="seg" role="group" aria-label="Unit of the brush size">
+                {(["px", "mm"] as const).map((u) => (
+                  <button key={u} className={tool.unit === u ? "active" : ""} aria-pressed={tool.unit === u} onClick={() => switchUnit(u)} title={u === "px" ? "Size in pixels of the plane you draw in" : "Size in millimetres"} data-testid={`seg3d-unit-${u}`}>
+                    {u === "px" ? "pixels" : "mm"}
+                  </button>
+                ))}
+              </div>
               <p className="muted small">Alt turns the brush into the eraser, Alt + wheel or [ ] changes the size.</p>
             </>
           ) : (

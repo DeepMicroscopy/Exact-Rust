@@ -185,7 +185,7 @@ async fn segmenters_h(State(s): State<AppState>, headers: HeaderMap) -> ApiResul
 // ------------------------------------------------------------------------------------------------ the volume
 
 /// The image as a volume: its reader and the geometry of the mask grid.
-async fn open_volume(
+pub(crate) async fn open_volume(
     s: &AppState,
     image: i64,
 ) -> ApiResult<(Arc<dyn exact_wsi::Slide>, crate::v2::volmask::Geometry)> {

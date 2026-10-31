@@ -8,10 +8,11 @@ import { useAuth } from "../auth/AuthContext";
 import { Dropdown, type DropdownItem } from "../components/Dropdown";
 import { DEFAULT_TOOL, Segment3DPanel, type SegTool } from "../components/Segment3DPanel";
 import { AutoSegmentDialog } from "../components/AutoSegmentDialog";
+import { Render3D } from "../components/Render3D";
 import { useSegment3D, type Op } from "../hooks/useSegment3D";
 import { BrushLayer } from "../viewer-core/brushLayer";
 import { MaskOverlay } from "../viewer-core/maskOverlay";
-import { brushRadii, dropClose, hexDigits, resized, thin, toleranceOf, type Extent } from "../viewer-core/mpr3d";
+import { brushDiameterMm, brushRadii, dropClose, hexDigits, resized, thin, toleranceOf, type Extent } from "../viewer-core/mpr3d";
 import { pen } from "../viewer-core/pen";
 import { isTypingTarget } from "../viewer-core/shortcuts";
 import type { Annotation, AnnotationType } from "../api/types";
@@ -85,6 +86,8 @@ export function MprPage() {
     return out;
   }, [annotations.data, types.data, styles, voxel]);
   const [active, setActive] = useState<Plane>(0);
+  const [render3d, setRender3d] = useState(false);
+  useEffect(() => setRender3d(false), [id]);
 
   // ---- 3D segmentation: the mask of one segmentation type, shown on all three planes and edited with the tool window ----
   const qc = useQueryClient();
@@ -123,8 +126,8 @@ export function MprPage() {
   const ext: Extent | null = seg3d.state?.extent_mm ?? null;
   const editable = !readOnly && !!segAnnotation && !!ext;
   const doOp = seg3d.op;
-  const segLive = useRef({ tool, doOp, undo: seg3d.undo, redo: seg3d.redo });
-  segLive.current = { tool, doOp, undo: seg3d.undo, redo: seg3d.redo };
+  const segLive = useRef({ tool, doOp, undo: seg3d.undo, redo: seg3d.redo, ext });
+  segLive.current = { tool, doOp, undo: seg3d.undo, redo: seg3d.redo, ext };
   const patchTool = useCallback((p: Partial<SegTool>) => setTool((t) => ({ ...t, ...p })), []);
   const segPane: SegPane | null =
     segAnnotation && segType
@@ -136,13 +139,13 @@ export function MprPage() {
           editable,
           ext,
           onStroke: (plane, frame, points, erase) =>
-            segLive.current.doOp({ op: "stroke", plane, frame, points, radius_mm: segLive.current.tool.sizeMm / 2, ball: segLive.current.tool.ball, mode: erase ? "remove" : "add" }),
+            segLive.current.doOp({ op: "stroke", plane, frame, points, radius_mm: (planes ? brushDiameterMm(segLive.current.tool, plane as Plane, planes[plane], segLive.current.ext ?? [1, 1, 1]) : 0) / 2, ball: segLive.current.tool.ball, mode: erase ? "remove" : "add" }),
           onWand: (plane, frame, point, erase) => {
             const t = segLive.current.tool;
             const o: Op = { op: "wand", plane, frame, point, tolerance: toleranceOf(t.tolerance), volume: t.wand3d, mode: erase ? "remove" : "add", ...(t.maxRadiusMm > 0 ? { max_radius_mm: t.maxRadiusMm } : {}) };
             return segLive.current.doOp(o);
           },
-          onSize: (steps) => setTool((t) => ({ ...t, sizeMm: resized(t.sizeMm, steps) })),
+          onSize: (steps) => setTool((t) => ({ ...t, size: resized(t.size, steps, t.unit) })),
         }
       : null;
   const segItems: DropdownItem[] = [...segTypes.map((t) => ({ id: t.id, label: `▨ ${t.name}`, color: t.color_code, checked: t.id === segTypeId })), ...(segTypeId != null ? [{ id: "off", label: "Leave segmentation" }] : [])];
@@ -182,7 +185,7 @@ export function MprPage() {
         else if (mod && k === "z") void (e.shiftKey ? segLive.current.redo() : segLive.current.undo());
         else if (mod && k === "y") void segLive.current.redo();
         else if (!mod && !e.altKey && editableRef.current && (k === "b" || k === "e" || k === "w")) setTool((t) => ({ ...t, tool: k === "b" ? "brush" : k === "e" ? "eraser" : "wand" }));
-        else if (!mod && !e.altKey && editableRef.current && (e.key === "[" || e.key === "]")) setTool((t) => ({ ...t, sizeMm: resized(t.sizeMm, e.key === "]" ? 1 : -1) }));
+        else if (!mod && !e.altKey && editableRef.current && (e.key === "[" || e.key === "]")) setTool((t) => ({ ...t, size: resized(t.size, e.key === "]" ? 1 : -1, t.unit) }));
         else if (!(e.key === "PageUp" || e.key === "ArrowUp" || e.key === "PageDown" || e.key === "ArrowDown")) return;
         else {
           step(active, e.key === "PageUp" || e.key === "ArrowUp" ? 1 : -1);
@@ -241,8 +244,14 @@ export function MprPage() {
               <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} />
             ))
           : null}
-        <div className="mpr-info glass" data-testid="mpr-info">
-          {voxel && shape ? <Info voxel={voxel} shape={shape} planes={planes ?? []} segmenting={segTypeId != null && editable} /> : <span className="muted">Loading…</span>}
+        <div className={`mpr-info glass ${render3d ? "has-render" : ""}`} data-testid="mpr-info">
+          {render3d ? (
+            <Render3D imageId={id} mask={segAnnotation && segType ? { annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version } : null} onHide={() => setRender3d(false)} />
+          ) : voxel && shape ? (
+            <Info voxel={voxel} shape={shape} planes={planes ?? []} segmenting={segTypeId != null && editable} onRender3D={() => setRender3d(true)} />
+          ) : (
+            <span className="muted">Loading…</span>
+          )}
           {segError && <p className="error small" role="alert">{segError}</p>}
         </div>
       </div>
@@ -282,7 +291,7 @@ export function MprPage() {
   );
 }
 
-function Info({ voxel, shape, planes, segmenting }: { voxel: Voxel; shape: VolumeShape; planes: PlaneInfo[]; segmenting: boolean }) {
+function Info({ voxel, shape, planes, segmenting, onRender3D }: { voxel: Voxel; shape: VolumeShape; planes: PlaneInfo[]; segmenting: boolean; onRender3D(): void }) {
   const label = (p: Plane) => planes[p]?.frame_descriptors[frameOf(p, voxel)] ?? "";
   return (
     <>
@@ -294,6 +303,11 @@ function Info({ voxel, shape, planes, segmenting }: { voxel: Voxel; shape: Volum
         {label(2)} · {label(1)} · {label(0)}
       </p>
       {segmenting && <p className="muted small">A click or stroke with a tool also moves the crosshair to that point; Ctrl (Cmd) + click moves it without painting.</p>}
+      <p>
+        <button className="btn" onClick={onRender3D} data-testid="show-render3d" title="Draws the volume (and the mask) in 3D here: it loads a reduced copy first and may take a few seconds">
+          Show 3D render
+        </button>
+      </p>
       <p className="muted small">Click in a plane to set the crosshair. Scroll or Page Up / Down steps the slices of the plane you used last. Drag moves the image, Ctrl + scroll or a pinch zooms.</p>
     </>
   );
@@ -385,7 +399,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       const q = v.world.getItemAt(0).viewerElementToImageCoordinates(pos);
       return [q.x, q.y];
     };
-    const radii = (sg: SegPane): [number, number] => (sg.ext ? brushRadii(live.current.plane, live.current.info, sg.ext, sg.tool.sizeMm) : [0, 0]);
+    const radii = (sg: SegPane): [number, number] => (sg.ext ? brushRadii(live.current.plane, live.current.info, sg.ext, brushDiameterMm(sg.tool, live.current.plane, live.current.info, sg.ext)) : [0, 0]);
     type PointerEv = { position: OpenSeadragon.Point; preventDefaultAction: boolean; originalEvent?: MouseEvent; pointerType?: string };
     const on = (name: string, fn: (e: never) => void) => v.addHandler(name as keyof OpenSeadragon.ViewerEventMap, fn as unknown as OpenSeadragon.EventHandler<OpenSeadragon.ViewerEvent>);
     on("canvas-press", (e: PointerEv) => {
@@ -502,16 +516,17 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     if (opacity != null) overlay.current?.setOpacity(opacity);
   }, [opacity, annotationId, imageId, info.frames]);
   // the ring changes with the size and the tool even when the pointer rests
-  const sizeMm = seg?.tool.sizeMm;
+  const sizeMm = seg?.tool.size;
+  const sizeUnit = seg?.tool.unit;
   const toolName = seg?.tool.tool;
   const editable = !!seg?.editable;
   useEffect(() => {
     const sg = live.current.seg;
     const at = pointer.current;
     if (!sg?.editable || !sg.ext || !at || sg.tool.tool === "wand") return brush.current?.setRing(null);
-    const [rx, ry] = brushRadii(plane, info, sg.ext, sg.tool.sizeMm);
+    const [rx, ry] = brushRadii(plane, info, sg.ext, brushDiameterMm(sg.tool, plane, info, sg.ext));
     brush.current?.setRing({ at, rx, ry, erase: sg.tool.tool === "eraser" });
-  }, [sizeMm, toolName, editable, plane, info]);
+  }, [sizeMm, sizeUnit, toolName, editable, plane, info]);
 
   useEffect(() => {
     blender.current?.setPosition(frame);

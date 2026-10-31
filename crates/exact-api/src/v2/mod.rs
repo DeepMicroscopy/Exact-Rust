@@ -16,6 +16,7 @@ pub mod plugins;
 pub mod processing;
 pub mod registration;
 pub mod related;
+pub mod render3d;
 pub mod resources;
 pub mod seg3d;
 pub mod seg_jobs;
@@ -63,6 +64,7 @@ pub fn routes() -> Router<AppState> {
         .merge(segmentation::v2_routes())
         .merge(seg3d::v2_routes())
         .merge(seg_jobs::v2_routes())
+        .merge(render3d::v2_routes())
         .merge(statistics::v2_routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))

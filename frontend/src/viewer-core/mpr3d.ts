@@ -59,10 +59,24 @@ export function formatVolume(mm3: number): string {
 /** The wand tolerance is shown as a percentage of the grey range and sent as 0..255. */
 export const toleranceOf = (percent: number): number => Math.round(Math.min(Math.max(percent, 0), 100) * 2.55);
 
-/** The brush size in mm after `steps` notches of the wheel (or `[` / `]` keys): about 12 % per step, within 0.5 to 60 mm. */
-export function resized(sizeMm: number, steps: number): number {
-  const v = sizeMm * Math.pow(1.12, steps);
-  return Math.round(Math.min(Math.max(v, 0.5), 60) * 10) / 10;
+export type SizeUnit = "px" | "mm";
+
+/** Range of the brush size in a unit. */
+export const sizeRange = (unit: SizeUnit): { min: number; max: number; step: number } => (unit === "px" ? { min: 1, max: 200, step: 1 } : { min: 0.5, max: 60, step: 0.5 });
+
+/** The brush size after `steps` notches of the wheel (or `[` / `]` keys): about 12 % per step (at least one step of the slider), within the range of the unit. */
+export function resized(size: number, steps: number, unit: SizeUnit = "mm"): number {
+  const { min, max, step } = sizeRange(unit);
+  let v = size * Math.pow(1.12, steps);
+  if (Math.abs(v - size) < step) v = size + Math.sign(steps) * step;
+  v = Math.round(Math.min(Math.max(v, min), max) / step) * step;
+  return Math.round(v * 10) / 10;
+}
+
+/** The diameter of the brush in mm: a size in pixels is pixels of the plane drawn in (as wide as the picture shows them). */
+export function brushDiameterMm(tool: { size: number; unit: SizeUnit }, plane: Plane, size: PlaneSize, ext: Extent): number {
+  if (tool.unit === "mm") return tool.size;
+  return tool.size / pixelsPerMm(plane, size, ext)[0];
 }
 
 /** `#rrggbb` (as the types store it) as the six digits the slice route asks for. */

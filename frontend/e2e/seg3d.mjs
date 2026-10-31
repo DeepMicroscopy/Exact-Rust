@@ -124,8 +124,10 @@ try {
     await page.mouse.up();
   };
   await page.locator('[data-testid="seg3d-ball"]').click();
+  check((await page.locator(".seg3d-panel .adjust-val").first().innerText()).endsWith(" px"), "the brush size is in pixels by default");
+  await page.locator('[data-testid="seg3d-unit-mm"]').click();
   await page.locator('[data-testid="seg3d-size"]').fill("14");
-  check((await page.locator(".seg3d-panel .adjust-val").first().innerText()) === "14 mm", "the brush size is set in mm");
+  check((await page.locator(".seg3d-panel .adjust-val").first().innerText()) === "14 mm", "the brush size can be set in mm");
   await stroke(at(0.45, 0.5), at(0.55, 0.5));
   await waitFor(async () => (await volumeMm3()) > 100, `a 3D sphere stroke makes a mask (${await volume()})`);
   const axialPainted = await waitFor(async () => (await masked("axial")) > 50 && (await masked("axial")), "the axial plane shows the mask");
@@ -237,6 +239,35 @@ try {
   await waitFor(async () => (await page.locator('[data-testid="mpr-voxel"]').innerText()) !== before, "Ctrl + click moves the crosshair without painting");
   const vol2 = await volume();
   check((await volume()) === vol2, "...and the mask is as it was");
+  // the optional 3D render in the fourth panel shows the volume and the mask
+  await page.locator('[data-testid="show-render3d"]').click();
+  await page.waitForSelector('[data-testid="render3d-canvas"]');
+  await waitFor(async () => (await page.locator(".render3d-note").count()) === 0, "the 3D render has its volume", 90000);
+  const lit = () =>
+    page.evaluate(() => {
+      const c = document.querySelector('[data-testid="render3d-canvas"]');
+      const t = document.createElement("canvas");
+      t.width = c.width;
+      t.height = c.height;
+      const x = t.getContext("2d");
+      x.drawImage(c, 0, 0);
+      const d = x.getImageData(0, 0, t.width, t.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 16) if (d[i] > 60 || d[i + 1] > 60) n++;
+      return n;
+    });
+  await waitFor(async () => (await lit()) > 50, "the 3D render draws something");
+  const maskBox = page.locator('[data-testid="render3d-mask"]');
+  await waitFor(async () => !(await maskBox.isDisabled()), "...and the mask is loaded into it");
+  const litBefore = await lit();
+  const cbox = await page.locator('[data-testid="render3d-canvas"]').boundingBox();
+  await page.mouse.move(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(cbox.x + cbox.width / 2 + 120, cbox.y + cbox.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await waitFor(async () => (await lit()) !== litBefore, "dragging turns it");
+  await page.locator('[aria-label="Hide the 3D render"]').dispatchEvent("click"); // the tool window may lie over it
+  check((await page.locator('[data-testid="render3d"]').count()) === 0, "the 3D render can be hidden");
   await page.keyboard.press("Escape");
   await waitFor(async () => (await page.locator(".seg3d-panel").count()) === 0 && (await page.locator('[data-testid="mask-overlay"]').count()) === 0, "Escape leaves the segmentation");
   const crosshairBefore = await page.locator('[data-testid="mpr-voxel"]').innerText();

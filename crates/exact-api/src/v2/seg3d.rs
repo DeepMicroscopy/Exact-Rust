@@ -68,15 +68,15 @@ struct Step {
     after: Vec<(Key, Option<Vec<u8>>)>,
 }
 
-struct Entry {
-    vol: MaskVol,
-    geom: Geometry,
+pub(crate) struct Entry {
+    pub(crate) vol: MaskVol,
+    pub(crate) geom: Geometry,
     slide: Arc<dyn exact_wsi::Slide>,
     undo: Vec<Step>,
     redo: Vec<Step>,
 }
 
-type Open = Arc<tokio::sync::Mutex<Entry>>;
+pub(crate) type Open = Arc<tokio::sync::Mutex<Entry>>;
 
 fn cache() -> &'static moka::sync::Cache<i64, Open> {
     static C: OnceLock<moka::sync::Cache<i64, Open>> = OnceLock::new();
@@ -97,7 +97,7 @@ fn png_of(tile: &Tile) -> Vec<u8> {
     encode_mask(&tile[..], T as u32, T as u32)
 }
 
-async fn load_entry(s: &AppState, annotation: i64, t: &Target) -> ApiResult<Open> {
+pub(crate) async fn load_entry(s: &AppState, annotation: i64, t: &Target) -> ApiResult<Open> {
     if let Some(e) = cache().get(&annotation) {
         return Ok(e);
     }

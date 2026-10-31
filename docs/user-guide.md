@@ -54,6 +54,10 @@ download is unaffected. Your settings are remembered for the next image.
 
 ![Three-plane view](assets/screenshots/planes.png)
 
+The fourth panel can show a **3D render** of the volume (**Show 3D render**; with a segmentation type chosen, its mask is drawn in the type's colour). It is off
+until you ask for it: the server first averages the volume onto a coarse grid (choose *Fast* to *Very fine*), which takes a few seconds for a large image the first
+time. Drag to turn it, scroll to zoom; *Bone*, *Soft tissue* and *Maximum intensity* are starting points for the threshold and opacity sliders.
+
 ### Images from a crop
 An image created by *Crop to new image* remembers where it came from. The top bar offers **Show in original**, and the
 pointer position is shown in both coordinate systems.
@@ -108,7 +112,7 @@ the pixels. The window can be moved by its title, and it shows the volume of the
 that hold some of it.
 
 * **Brush** (`B`) paints, **Eraser** (`E`, or hold Alt with the brush) removes. *2D disc* works in the plane you draw in, one slice thick;
-  *3D sphere* reaches through the slices around every point of the stroke. The size is set in mm; `[` and `]` or Alt + mouse wheel change it.
+  *3D sphere* reaches through the slices around every point of the stroke. The size is set in pixels of the plane you draw in (the default) or in mm, switched next to the slider; `[` and `]` or Alt + mouse wheel change it.
   With a mouse, pen or finger a drag is one stroke, stored when you lift the pointer; the ring under the pointer shows the size.
 * **Wand** (`W`) adds the connected region whose grey values are within the *tolerance* of the grey value you click on (Alt + click removes it),
   either in the plane or through the whole volume. *Reach* limits it to a radius (mm) around the click; a region that is too large is refused with a message.

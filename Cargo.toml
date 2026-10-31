@@ -55,5 +55,8 @@ opt-level = 3
 # Image decoding in debug builds is unusably slow otherwise (tiles, LZW, JPEG, Lanczos).
 [profile.dev.package."*"]
 opt-level = 2
+# The 3D mask engine and the render data loop over millions of voxels.
+[profile.dev.package.exact-api]
+opt-level = 2
 [profile.dev.package.exact-wsi]
 opt-level = 2

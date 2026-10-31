@@ -135,6 +135,26 @@ pub struct MaskVol {
     stats: HashMap<Key, TileStat>,
 }
 
+/// Turns the per-cell sums of a coarse grid into bytes: `f(sum, number of voxels the cell covers)`; `per_axis` are the voxels per cell along columns, rows, slices.
+pub(crate) fn cells_to_bytes(
+    sum: &[u32],
+    dims: (usize, usize, usize),
+    per_axis: [&[u32]; 3],
+    f: impl Fn(u32, u32) -> u8,
+) -> Vec<u8> {
+    let (ow, oh, _) = dims;
+    sum.iter()
+        .enumerate()
+        .map(|(idx, &s)| {
+            if s == 0 {
+                return 0;
+            }
+            let (i, j, k) = (idx % ow, (idx / ow) % oh, idx / (ow * oh));
+            f(s, (per_axis[0][i] * per_axis[1][j] * per_axis[2][k]).max(1))
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy)]
 struct TileStat {
     count: u64,
@@ -215,6 +235,42 @@ impl MaskVol {
                 self.stats.remove(&key);
             }
         }
+    }
+
+    /// The mask on a coarse grid of `dims` = (columns, rows, slices) cells for the 3D render: per cell how much of it is mask (0..255).
+    pub fn coverage(&self, g: &Geometry, dims: (usize, usize, usize)) -> Vec<u8> {
+        let (ow, oh, od) = dims;
+        let mut sum = vec![0u32; ow * oh * od];
+        let cell = |i: usize, n: usize, o: usize| i * o / n;
+        for (&(tx, ty, z), t) in &self.tiles {
+            let k = cell(z as usize, g.n, od);
+            for r in 0..T {
+                let row = ty as usize * T + r;
+                if row >= g.h {
+                    break;
+                }
+                let base = (k * oh + cell(row, g.h, oh)) * ow;
+                for c in 0..T {
+                    if t[r * T + c] != 0 {
+                        let col = tx as usize * T + c;
+                        if col < g.w {
+                            sum[base + cell(col, g.w, ow)] += 1;
+                        }
+                    }
+                }
+            }
+        }
+        let per_axis = |n: usize, o: usize| {
+            let mut c = vec![0u32; o];
+            for i in 0..n {
+                c[cell(i, n, o)] += 1;
+            }
+            c
+        };
+        let (cw, ch, cd) = (per_axis(g.w, ow), per_axis(g.h, oh), per_axis(g.n, od));
+        cells_to_bytes(&sum, dims, [&cw, &ch, &cd], |s, full| {
+            ((s as u64 * 255).div_ceil(full as u64)).min(255) as u8
+        })
     }
 
     pub fn keys(&self) -> Vec<Key> {
