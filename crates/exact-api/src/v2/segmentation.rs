@@ -93,7 +93,7 @@ pub fn y_vox_to_axial_row(y_vox: i64, ny_vox: i64, py: i64) -> i64 {
 // tiles
 // ---------------------------------------------------------------------------------------------------------
 
-fn decode_mask(png: &[u8], red: bool) -> Option<(u32, u32, Tile)> {
+pub(crate) fn decode_mask(png: &[u8], red: bool) -> Option<(u32, u32, Tile)> {
     let img = image::load_from_memory_with_format(png, ImageFormat::Png).ok()?;
     let (w, h) = (img.width(), img.height());
     let mask = if red {
@@ -110,7 +110,7 @@ fn decode_mask(png: &[u8], red: bool) -> Option<(u32, u32, Tile)> {
     Some((w, h, mask))
 }
 
-fn encode_mask(mask: &[u8], w: u32, h: u32) -> Vec<u8> {
+pub(crate) fn encode_mask(mask: &[u8], w: u32, h: u32) -> Vec<u8> {
     let gray: Vec<u8> = mask.iter().map(|v| if *v > 0 { 255 } else { 0 }).collect();
     let mut out = Vec::new();
     image::codecs::png::PngEncoder::new(&mut out)
@@ -239,11 +239,16 @@ fn unique(zs: &[i64]) -> Vec<i64> {
 // handlers
 // ---------------------------------------------------------------------------------------------------------
 
-struct Target {
-    image: i64,
+pub(crate) struct Target {
+    pub(crate) image: i64,
 }
 
-async fn annotation_for(s: &AppState, p: &Principal, id: i64, edit: bool) -> ApiResult<Target> {
+pub(crate) async fn annotation_for(
+    s: &AppState,
+    p: &Principal,
+    id: i64,
+    edit: bool,
+) -> ApiResult<Target> {
     let row = annotation_row(s, id)
         .await?
         .ok_or_else(|| ApiError::not_found("No Annotation matches the given query."))?;
@@ -371,6 +376,7 @@ async fn put_tile(
 ) -> ApiResult<Response> {
     let p = require_user(authenticate(&s, &headers, &Method::PUT).await?)?;
     let t = annotation_for(&s, &p, annotation, true).await?;
+    crate::v2::seg3d::forget(annotation); // the open 3D mask (seg3d) is out of date from here on
     if body.is_empty() {
         return Err(ApiError::detail(StatusCode::BAD_REQUEST, "Empty body."));
     }
@@ -434,6 +440,7 @@ async fn delete_tile(
 ) -> ApiResult<Response> {
     let p = require_user(authenticate(&s, &headers, &Method::DELETE).await?)?;
     annotation_for(&s, &p, annotation, true).await?;
+    crate::v2::seg3d::forget(annotation);
     if plane == 0 {
         sqlx::query("DELETE FROM annotations_segmentationtile WHERE annotation_id = $1 AND level = 0 AND tile_x = $2 AND tile_y = $3 AND frame = $4")
             .bind(annotation)

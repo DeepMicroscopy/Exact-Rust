@@ -25,6 +25,7 @@ serde_json.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 moka.workspace = true
+flate2 = "1"
 sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tokio-util = { version = "0.7", features = ["io"] }

@@ -19,7 +19,11 @@ pub struct DicomVolume {
     pub modality: String,
     pub frame_time_ms: Option<f64>,
     mpp: (f64, f64),
+    /// distance between slices in mm (SpacingBetweenSlices, else SliceThickness), 0 when the file says nothing
+    slice_mm: f64,
     pixels: Vec<u8>,
+    /// rendered coronal / sagittal planes: a plane is cut into many tiles and each tile asks for it again
+    planes: moka::sync::Cache<(u32, u32), std::sync::Arc<RgbaImage>>,
     /// display window for >8-bit data, derived from the whole volume when the file has none
     auto_window: (f64, f64),
 }
@@ -184,6 +188,8 @@ impl DicomVolume {
             modality: String::new(),
             frame_time_ms: None,
             mpp: (0.0, 0.0),
+            slice_mm: 0.0,
+            planes: moka::sync::Cache::builder().max_capacity(48).build(),
             pixels: Vec::new(),
             auto_window: (0.0, 255.0),
         };
@@ -225,6 +231,12 @@ impl DicomVolume {
                     let p = nums(v);
                     if p.len() >= 2 && d.mpp.0 == 0.0 {
                         d.mpp = (p[1] * 1000.0, p[0] * 1000.0);
+                    }
+                }
+                (0x0018, 0x0088) => d.slice_mm = nums(v).first().copied().unwrap_or(0.0),
+                (0x0018, 0x0050) => {
+                    if d.slice_mm == 0.0 {
+                        d.slice_mm = nums(v).first().copied().unwrap_or(0.0);
                     }
                 }
                 (0x0028, 0x0100) => d.bits = u16::from_le_bytes([v[0], v[1]]) as usize,
@@ -312,39 +324,112 @@ impl DicomVolume {
         matches!(self.modality.as_str(), "CT" | "MR" | "PT" | "NM")
     }
 
+    /// Display value (0..255) of a modality value, through the window of the file or the one found for the volume.
+    fn to_u8(&self, v: f64) -> u8 {
+        if self.bits == 8 && self.window.is_none() && self.slope == 1.0 && self.intercept == 0.0 {
+            return v.clamp(0.0, 255.0) as u8;
+        }
+        let (lo, hi) = match self.window {
+            Some((c, w)) if w > 0.0 => (c - 0.5 - (w - 1.0) / 2.0, c - 0.5 + (w - 1.0) / 2.0),
+            _ => self.auto_window,
+        };
+        (((v - lo) / (hi - lo)) * 255.0).clamp(0.0, 255.0) as u8
+    }
+
+    /// The pixel at column `x`, row `y` of frame `z` as RGBA.
+    fn rgba_at(&self, x: usize, y: usize, z: usize) -> image::Rgba<u8> {
+        let px = self.rows * self.cols;
+        let i = y * self.cols + x;
+        let base = z * px * self.samples;
+        if self.samples == 1 {
+            let g = self.to_u8(self.raw(base + i) * self.slope + self.intercept);
+            image::Rgba([g, g, g, 255])
+        } else {
+            let at = |ch: usize| {
+                let idx = if self.planar {
+                    base + ch * px + i
+                } else {
+                    base + i * 3 + ch
+                };
+                self.raw(idx).clamp(0.0, 255.0) as u8
+            };
+            image::Rgba([at(0), at(1), at(2), 255])
+        }
+    }
+
     fn render(&self, frame: usize) -> RgbaImage {
         let f = frame.min(self.frames - 1);
-        let px = self.rows * self.cols;
         let mut img = RgbaImage::new(self.cols as u32, self.rows as u32);
-        let base = f * px * self.samples;
-        let to_u8 = |v: f64| -> u8 {
-            if self.bits == 8 && self.window.is_none() && self.slope == 1.0 && self.intercept == 0.0
-            {
-                return v.clamp(0.0, 255.0) as u8;
-            }
-            let (lo, hi) = match self.window {
-                Some((c, w)) if w > 0.0 => (c - 0.5 - (w - 1.0) / 2.0, c - 0.5 + (w - 1.0) / 2.0),
-                _ => self.auto_window,
-            };
-            (((v - lo) / (hi - lo)) * 255.0).clamp(0.0, 255.0) as u8
-        };
         for (i, p) in img.pixels_mut().enumerate() {
-            if self.samples == 1 {
-                let g = to_u8(self.raw(base + i) * self.slope + self.intercept);
-                *p = image::Rgba([g, g, g, 255]);
-            } else {
-                let at = |ch: usize| {
-                    let idx = if self.planar {
-                        base + ch * px + i
-                    } else {
-                        base + i * 3 + ch
-                    };
-                    self.raw(idx).clamp(0.0, 255.0) as u8
-                };
-                *p = image::Rgba([at(0), at(1), at(2), 255]);
-            }
+            *p = self.rgba_at(i % self.cols, i / self.cols, f);
         }
         img
+    }
+
+    /// Voxel size in mm along x, y and between slices (1 mm where the file does not say).
+    fn voxel_mm(&self) -> (f64, f64, f64) {
+        let known = |um: f64| if um > 0.0 { um / 1000.0 } else { 0.0 };
+        let (sx, sy) = (known(self.mpp.0), known(self.mpp.1));
+        let sx_ = if sx > 0.0 {
+            sx
+        } else if sy > 0.0 {
+            sy
+        } else {
+            1.0
+        };
+        let sy_ = if sy > 0.0 { sy } else { sx_ };
+        let sz = if self.slice_mm > 0.0 {
+            self.slice_mm
+        } else {
+            sx_
+        };
+        (sx_, sy_, sz)
+    }
+
+    /// Size of the coronal and sagittal plane images: the width of the axial image is the reference, so that the planes
+    /// show the volume at its physical proportions.
+    fn plane_dims(&self, plane: u32) -> (u32, u32) {
+        let (sx, sy, sz) = self.voxel_mm();
+        let h = ((self.frames as f64 * sz / sx).round()).max(1.0) as u32;
+        match plane {
+            1 => (self.cols as u32, h),
+            2 => (((self.rows as f64 * sy / sx).round()).max(1.0) as u32, h),
+            _ => (self.cols as u32, self.rows as u32),
+        }
+    }
+
+    /// Coronal (1) or sagittal (2) plane `frame`: frame f of the coronal plane shows image row `rows - 1 - f`, frame f of the
+    /// sagittal plane image column `cols - 1 - f` (the order the mask grid of the 3D segmentation expects); Superior (the
+    /// last frame) at the top, the first image row on the left of the sagittal plane.
+    fn render_plane(&self, plane: u32, frame: u32) -> std::sync::Arc<RgbaImage> {
+        let key = (plane, frame.min(self.plane_frames(plane) - 1));
+        self.planes.get_with(key, || {
+            let (nx, ny, nz) = (self.cols, self.rows, self.frames);
+            let f = key.1 as usize;
+            let (w, h) = if plane == 1 { (nx, nz) } else { (ny, nz) };
+            let mut img = RgbaImage::new(w as u32, h as u32);
+            for r in 0..h {
+                for c in 0..w {
+                    let (x, y) = if plane == 1 {
+                        (c, ny - 1 - f)
+                    } else {
+                        (nx - 1 - f, c)
+                    };
+                    img.put_pixel(c as u32, r as u32, self.rgba_at(x, y, nz - 1 - r));
+                }
+            }
+            let want = self.plane_dims(plane);
+            let img = if (img.width(), img.height()) != want {
+                image::imageops::resize(&img, want.0, want.1, image::imageops::FilterType::Lanczos3)
+            } else {
+                img
+            };
+            std::sync::Arc::new(img)
+        })
+    }
+
+    fn plane_frames(&self, plane: u32) -> u32 {
+        [self.frames, self.rows, self.cols][plane.min(2) as usize] as u32
     }
 }
 
@@ -363,6 +448,10 @@ impl Slide for DicomVolume {
             ("openslide.background-color".into(), "000000".into()),
             ("openslide.mpp-x".into(), self.mpp.0.to_string()),
             ("openslide.mpp-y".into(), self.mpp.1.to_string()),
+            (
+                "openslide.mpp-z".into(),
+                (self.voxel_mm().2 * 1000.0).to_string(),
+            ),
             ("openslide.objective-power".into(), "0".into()),
             ("openslide.vendor".into(), "DICOM".into()),
         ])
@@ -379,6 +468,51 @@ impl Slide for DicomVolume {
     }
     fn frame_labels(&self) -> Vec<String> {
         self.frame_descriptors()
+    }
+    fn plane_dimensions(&self, plane: u32) -> Option<(u64, u64)> {
+        if !self.is_volume() || self.frames < 2 {
+            return None;
+        }
+        let d = self.plane_dims(plane.min(2));
+        Some((d.0 as u64, d.1 as u64))
+    }
+    fn plane_frames(&self, plane: u32) -> u32 {
+        DicomVolume::plane_frames(self, plane)
+    }
+    fn plane_frame_descriptors(&self, plane: u32) -> Vec<String> {
+        let (sx, sy, sz) = self.voxel_mm();
+        let (label, n, sp) = match plane {
+            1 => ("y", self.rows, sy),
+            2 => ("x", self.cols, sx),
+            _ => ("z", self.frames, sz),
+        };
+        (0..n)
+            .map(|i| format!("{label}={:.2} mm", i as f64 * sp))
+            .collect()
+    }
+    fn read_region_plane(
+        &self,
+        x: i64,
+        y: i64,
+        level: usize,
+        w: u32,
+        h: u32,
+        frame: u32,
+        plane: u32,
+    ) -> Result<RgbaImage> {
+        if level != 0 {
+            return err("Invalid level");
+        }
+        if plane == 0 || !self.is_volume() {
+            return self.read_region(x, y, level, w, h, frame);
+        }
+        Ok(crop_transparent(
+            &self.render_plane(plane.min(2), frame),
+            x,
+            y,
+            w,
+            h,
+        ))
     }
     fn read_region(
         &self,
@@ -453,6 +587,34 @@ mod tests {
         // frame 1 starts at value 1024 + 80 -> 80 HU, window 40/400 -> (80 - (-160)) / 399 * 255 ~ 153
         let g = r.get_pixel(0, 0)[0];
         assert!((150..=156).contains(&g), "{g}");
+    }
+
+    #[test]
+    fn a_volume_has_coronal_and_sagittal_planes_in_physical_proportions() {
+        let path = std::env::temp_dir().join("exact_dicom_test4.dcm");
+        std::fs::write(&path, synthetic(true)).unwrap();
+        let d = DicomVolume::open(path.to_str().unwrap()).unwrap();
+        // columns 0.25 mm, rows 0.5 mm, slices (not given) like the columns: 4 x 2 x 3 voxels
+        assert_eq!(d.plane_dimensions(0), Some((4, 2)));
+        assert_eq!(d.plane_dimensions(1), Some((4, 3)));
+        assert_eq!(d.plane_dimensions(2), Some((4, 3)));
+        assert_eq!(
+            [d.plane_frames(0), d.plane_frames(1), d.plane_frames(2)],
+            [3, 2, 4]
+        );
+        assert_eq!(d.properties()["openslide.mpp-z"], "250");
+        // coronal frame 1 shows image row 0; the last frame is at the top
+        let cor = d.read_region_plane(0, 0, 0, 4, 3, 1, 1).unwrap();
+        let top = d.read_region(0, 0, 0, 4, 2, 2).unwrap();
+        for c in 0..4 {
+            assert_eq!(cor.get_pixel(c, 0), top.get_pixel(c, 0));
+        }
+        let bottom = d.read_region(0, 0, 0, 4, 2, 0).unwrap();
+        assert_eq!(cor.get_pixel(3, 2), bottom.get_pixel(3, 0));
+        // a plane of a movie or an image without volume modality is not offered
+        let mut movie = DicomVolume::open(path.to_str().unwrap()).unwrap();
+        movie.modality = "OT".into();
+        assert_eq!(movie.plane_dimensions(1), None);
     }
 
     #[test]
