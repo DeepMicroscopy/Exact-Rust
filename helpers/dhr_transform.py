@@ -7,7 +7,6 @@ overview, channel 0 = x, channel 1 = y), the registrations of EXACT map source t
 inverting the field with a fixed-point iteration.
 """
 import numpy as np
-from scipy import ndimage
 
 
 class DhrTransform:
@@ -20,6 +19,8 @@ class DhrTransform:
         self.scale_target = tuple(scale_target)
 
     def _displacement(self, x, y):
+        from scipy import ndimage  # imported here: before qt_wsi_reg's libraries in one process it crashes (two OpenMP runtimes)
+
         pos = [y, x]
         return (ndimage.map_coordinates(self.field[0], pos, order=1, mode="nearest"),
                 ndimage.map_coordinates(self.field[1], pos, order=1, mode="nearest"))

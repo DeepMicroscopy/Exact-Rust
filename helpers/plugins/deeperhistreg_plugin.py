@@ -9,12 +9,18 @@ result); the transform itself goes along as the registration's file, so that the
 deformation, as it does with the quad tree of qt-wsi-registration. `registration_error` is how far, on average, the matrix is
 from the deformable result (target pixels); it is 0 for the rigid and affine modes.
 """
+import json
+import pathlib
 import pickle
+import subprocess
 import sys
 import tempfile
 import time
 
-sys.path.insert(0, __file__.rsplit("/", 2)[0])  # helpers/
+import numpy as np
+
+HELPERS = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(HELPERS))
 from queue_plugin import RegistrationPlugin, RegistrationResult, param  # noqa: E402
 from dhr_transform import DhrTransform  # noqa: E402
 from plugins_common import open_slide  # noqa: E402
@@ -59,49 +65,17 @@ class DeeperHistReg(RegistrationPlugin):
     ]
 
     def unavailable(self):
-        try:
-            import deeperhistreg  # noqa: F401
-        except Exception as e:  # noqa: BLE001
-            return f"deeperhistreg is not installed in this Python ({e.__class__.__name__}: {e}); pip install deeperhistreg"
+        # not imported here: the registration runs in a process of its own (dhr_run.py), the plugin only has to know it can
+        import importlib.util
+
+        for module in ("deeperhistreg", "torch"):
+            if importlib.util.find_spec(module) is None:
+                return f"{module} is not installed in this Python; pip install deeperhistreg"
         return None
 
-    def parameters_for(self, p, device):
-        import deeperhistreg
-
-        deformable = p["mode"] == "deformable"
-        cfg = deeperhistreg.configs.default_nonrigid_fast() if deformable else deeperhistreg.configs.default_initial()
-        cfg["device"] = device
-        cfg["echo"] = False
-        cfg["logging_path"] = None
-        cfg["save_final_images"] = False
-        cfg["save_final_displacement_field"] = False
-        cfg["loading_params"].update(loader="pil", source_resample_ratio=1.0, target_resample_ratio=1.0)
-        cfg["saving_params"].update(final_saver="pil", final_extension=".jpg")
-        cfg["preprocessing_params"]["initial_resolution"] = int(p["registration_size"])
-        cfg["preprocessing_params"]["save_results"] = False
-        initial = deeperhistreg.configs.default_initial()["initial_registration_params"]  # the feature based alignment, in both modes
-        initial.update(save_results=False, device=device, cuda=device != "cpu", transform_type=p["transform_type"],
-                       angle_step=int(p["angle_step"]), run_sift_ransac=bool(p["sift"]), run_superpoint_superglue=bool(p["superglue"]),
-                       registration_size=int(p["registration_size"]))
-        if not (p["sift"] or p["superglue"]):
-            raise ValueError("Switch on SIFT or SuperGlue: one of them must find the keypoints.")
-        cfg["run_initial_registration"] = True
-        cfg["initial_registration_params"] = initial
-        cfg["run_nonrigid_registration"] = deformable
-        cfg["nonrigid_registration_params"]["save_results"] = False
-        if deformable:
-            cfg["nonrigid_registration_params"]["device"] = device
-            cfg["nonrigid_registration_params"]["registration_size"] = int(p["registration_size"])
-        return cfg
-
     def register(self, source_path, target_path, params, ctx):
-        import torch
-        from deeperhistreg.dhr_pipeline import full_resolution
-        from deeperhistreg.dhr_utils import utils as dhr_utils
-
-        device = params["device"]
-        if device == "auto":
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        if not (params["sift"] or params["superglue"]):
+            raise ValueError("Switch on SIFT or SuperGlue: one of them must find the keypoints.")
         started = time.time()
         source_slide, target_slide = open_slide(source_path, ctx.exact_dir), open_slide(target_path, ctx.exact_dir)
         edge = int(params["thumbnail_size"])
@@ -110,15 +84,17 @@ class DeeperHistReg(RegistrationPlugin):
             tgt, scale_tgt = overview(target_slide, edge)
             src.save(f"{tmp}/source.png")
             tgt.save(f"{tmp}/target.png")
-            ctx.log(f"overviews {src.size} and {tgt.size}, device {device}")
-            cfg = self.parameters_for(params, device)
-            cfg["case_name"] = "exact"
-            pipeline = full_resolution.DeeperHistReg_FullResolution(cfg)
-            pipeline.run_registration(f"{tmp}/source.png", f"{tmp}/target.png", tmp)
-            field = dhr_utils.tc_df_to_np_df(pipeline.current_displacement_field)
-        pads = pipeline.padding_params
-        transform = DhrTransform(field, pads["pad_1"], pads["pad_2"], pads.get("initial_resample_ratio", 1.0) if pads.get("initial_resampling") else 1.0,
-                                 scale_src, scale_tgt)
+            with open(f"{tmp}/params.json", "w") as f:
+                json.dump(params, f)
+            ctx.log(f"overviews {src.size} and {tgt.size}")
+            # a process of its own, see dhr_run.py; the output is the worker's log
+            run = subprocess.run([sys.executable, str(HELPERS / "dhr_run.py"), tmp], capture_output=True, text=True)
+            ctx.log(run.stdout[-2000:])
+            if run.returncode:
+                raise RuntimeError(f"DeeperHistReg failed (exit {run.returncode}):\n{run.stderr[-3000:]}")
+            field = np.load(f"{tmp}/field.npy")
+            pads = json.load(open(f"{tmp}/padding.json"))
+        transform = DhrTransform(field, pads["pad_source"], pads["pad_target"], pads["ratio"], scale_src, scale_tgt)
         matrix, error = transform.affine(source_slide.dimensions)
         return RegistrationResult(matrix={f"t_{i}{j}": float(matrix[i][j]) for i in range(3) for j in range(3)}, error=error,
                                   runtime=int(time.time() - started), file=pickle.dumps(transform))
