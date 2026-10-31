@@ -71,7 +71,8 @@ struct Step {
 pub(crate) struct Entry {
     pub(crate) vol: MaskVol,
     pub(crate) geom: Geometry,
-    slide: Arc<dyn exact_wsi::Slide>,
+    /// grey values of the axial slices read so far (the wand needs them, and a plane of another direction needs all of them)
+    gray: Arc<GrayCache>,
     undo: Vec<Step>,
     redo: Vec<Step>,
 }
@@ -159,10 +160,11 @@ pub(crate) async fn load_entry(s: &AppState, annotation: i64, t: &Target) -> Api
     })
     .await
     .map_err(|e| exact_core::Error::Internal(e.to_string()))?;
+    let gray = Arc::new(GrayCache::new(slide.clone(), geom.w as u32, geom.h as u32));
     let open = Arc::new(tokio::sync::Mutex::new(Entry {
         vol,
         geom,
-        slide,
+        gray,
         undo: Vec::new(),
         redo: Vec::new(),
     }));
@@ -208,26 +210,69 @@ pub(crate) fn geometry(slide: &dyn exact_wsi::Slide) -> Option<Geometry> {
     })
 }
 
-struct SlideGray {
+/// Display intensities of axial slices, read from the image once and kept while the mask is open.
+struct GrayCache {
     slide: Arc<dyn exact_wsi::Slide>,
     w: u32,
     h: u32,
-    slices: HashMap<usize, Vec<u8>>,
+    slices: std::sync::Mutex<HashMap<usize, Arc<Vec<u8>>>>,
+}
+
+impl GrayCache {
+    fn new(slide: Arc<dyn exact_wsi::Slide>, w: u32, h: u32) -> Self {
+        Self {
+            slide,
+            w,
+            h,
+            slices: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn get(&self, z: usize) -> Option<Arc<Vec<u8>>> {
+        if let Some(v) = self.slices.lock().ok()?.get(&z) {
+            return Some(v.clone());
+        }
+        let img = self
+            .slide
+            .read_region_plane(0, 0, 0, self.w, self.h, z as u32, 0)
+            .ok()?;
+        let g: Arc<Vec<u8>> = Arc::new(
+            img.pixels()
+                .map(|p| {
+                    ((p.0[0] as u32 * 299 + p.0[1] as u32 * 587 + p.0[2] as u32 * 114) / 1000) as u8
+                })
+                .collect(),
+        );
+        self.slices.lock().ok()?.insert(z, g.clone());
+        Some(g)
+    }
+
+    /// Reads the slices `0..n` that are not there yet, on a few threads (done before the mask is locked: it takes seconds).
+    fn prefetch(&self, n: usize) {
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|sc| {
+            for _ in 0..4 {
+                sc.spawn(|| loop {
+                    let z = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if z >= n {
+                        break;
+                    }
+                    self.get(z);
+                });
+            }
+        });
+    }
+}
+
+struct SlideGray {
+    cache: Arc<GrayCache>,
+    slices: HashMap<usize, Arc<Vec<u8>>>,
 }
 
 impl Gray for SlideGray {
     fn slice(&mut self, z: usize) -> Option<&[u8]> {
         if !self.slices.contains_key(&z) {
-            let img = self
-                .slide
-                .read_region_plane(0, 0, 0, self.w, self.h, z as u32, 0)
-                .ok()?;
-            let g: Vec<u8> = img
-                .pixels()
-                .map(|p| {
-                    ((p.0[0] as u32 * 299 + p.0[1] as u32 * 587 + p.0[2] as u32 * 114) / 1000) as u8
-                })
-                .collect();
+            let g = self.cache.get(z)?;
             self.slices.insert(z, g);
         }
         self.slices.get(&z).map(|v| v.as_slice())
@@ -519,9 +564,7 @@ fn run(e: &mut Entry, op: &Op) -> Result<(Journal, Option<String>), ApiError> {
             }
             let seed = g.voxel_at(g.pixel_mm(*plane, *frame, point[0], point[1]));
             let mut gray = SlideGray {
-                slide: e.slide.clone(),
-                w: g.w as u32,
-                h: g.h as u32,
+                cache: e.gray.clone(),
                 slices: HashMap::new(),
             };
             let o = WandOptions {
@@ -643,6 +686,19 @@ async fn ops_h(
     let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
     let t = annotation_for(&s, &p, annotation, true).await?;
     let open = load_entry(&s, annotation, &t).await?;
+    if let Op::Wand { plane, volume, .. } = &op {
+        if *plane != 0 || *volume {
+            // a plane of another direction (or the volume) is made of all axial slices: read them before the mask is locked,
+            // so that the pictures of the mask are not held up meanwhile
+            let (gray, n) = {
+                let e = open.lock().await;
+                (e.gray.clone(), e.geom.n)
+            };
+            tokio::task::spawn_blocking(move || gray.prefetch(n))
+                .await
+                .map_err(|e| exact_core::Error::Internal(e.to_string()))?;
+        }
+    }
     let mut guard = open.clone().lock_owned().await;
     let (guard, j, note) = tokio::task::spawn_blocking(move || {
         let r = run(&mut guard, &op);
