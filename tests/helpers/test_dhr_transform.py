@@ -66,3 +66,14 @@ def test_homography_fit_recovers_a_rigid_motion():
     got = (m @ np.c_[pts, np.ones(2)].T).T[:, :2]
     assert err < 0.5 and np.abs(got - truth(t, angle, shift, shape, pts)).max() < 0.5
     assert np.allclose(m[2], [0, 0, 1])
+
+
+def test_overviews_of_a_region_shift_the_slide_coordinates():
+    """Cropped overviews: the same field, but the slides' pixels are counted from the corner of the region shown."""
+    t, angle, shift, shape = make()
+    cropped = DhrTransform(t.field, t.pad_source, t.pad_target, t.ratio, t.scale_source, t.scale_target, (700.0, 300.0), (-400.0, 50.0))
+    pts = np.array([[1500.0, 1200.0], [2500.0, 1700.0]])
+    plain = t.convert(pts - [700.0, 300.0])  # the same points in the coordinates of the uncropped transform
+    assert np.allclose(cropped.convert(pts), plain + [-400.0, 50.0])
+    m, err = cropped.affine((3000, 2000))
+    assert err < 0.5 and np.allclose((m @ np.c_[pts, np.ones(2)].T).T[:, :2], cropped.convert(pts), atol=0.5)

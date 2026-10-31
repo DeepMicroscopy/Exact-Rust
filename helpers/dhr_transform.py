@@ -10,13 +10,17 @@ import numpy as np
 
 
 class DhrTransform:
-    def __init__(self, field, pad_source, pad_target, ratio, scale_source, scale_target):
+    origin_source = origin_target = (0, 0)  # pickles written before the overviews were cropped to the tissue
+
+    def __init__(self, field, pad_source, pad_target, ratio, scale_source, scale_target, origin_source=(0, 0), origin_target=(0, 0)):
         self.field = np.ascontiguousarray(field, dtype=np.float32)  # (2, H, W)
         self.pad_source = pad_source  # ((top, bottom), (left, right)) in overview pixels, as DeeperHistReg pads the pair
         self.pad_target = pad_target
         self.ratio = float(ratio)  # padded overview pixels per field pixel
         self.scale_source = tuple(scale_source)  # slide (level 0) pixels per overview pixel, (x, y)
         self.scale_target = tuple(scale_target)
+        self.origin_source = tuple(origin_source)  # slide pixel at the overview's top left corner: the overviews show the tissue only
+        self.origin_target = tuple(origin_target)
 
     def _displacement(self, x, y):
         from scipy import ndimage  # imported here: before qt_wsi_reg's libraries in one process it crashes (two OpenMP runtimes)
@@ -28,8 +32,8 @@ class DhrTransform:
     def convert(self, points):
         """Source slide pixels (n, 2) -> target slide pixels (n, 2)."""
         p = np.asarray(points, dtype=np.float64).reshape(-1, 2)
-        sx = p[:, 0] / self.scale_source[0] + self.pad_source[1][0]
-        sy = p[:, 1] / self.scale_source[1] + self.pad_source[0][0]
+        sx = (p[:, 0] - self.origin_source[0]) / self.scale_source[0] + self.pad_source[1][0]
+        sy = (p[:, 1] - self.origin_source[1]) / self.scale_source[1] + self.pad_source[0][0]
         sx, sy = sx / self.ratio, sy / self.ratio  # now in field pixels
         tx, ty = sx.copy(), sy.copy()
         for _ in range(40):  # target = source - field(target); converges for the smooth fields registration produces
@@ -39,8 +43,8 @@ class DhrTransform:
             tx, ty = nx, ny
             if moved < 1e-3:
                 break
-        tx = (tx * self.ratio - self.pad_target[1][0]) * self.scale_target[0]
-        ty = (ty * self.ratio - self.pad_target[0][0]) * self.scale_target[1]
+        tx = (tx * self.ratio - self.pad_target[1][0]) * self.scale_target[0] + self.origin_target[0]
+        ty = (ty * self.ratio - self.pad_target[0][0]) * self.scale_target[1] + self.origin_target[1]
         return np.stack([tx, ty], axis=1)
 
     def transform_boxes(self, boxes):
@@ -56,8 +60,8 @@ class DhrTransform:
         xs, ys = np.meshgrid(np.linspace(0, size[0], grid), np.linspace(0, size[1], grid))
         src = np.stack([xs.ravel(), ys.ravel()], axis=1)
         dst = self.convert(src)
-        fx = (dst[:, 0] / self.scale_target[0] + self.pad_target[1][0]) / self.ratio  # where in the field the target lies: points that
-        fy = (dst[:, 1] / self.scale_target[1] + self.pad_target[0][0]) / self.ratio  # fall outside it say nothing about the alignment
+        fx = ((dst[:, 0] - self.origin_target[0]) / self.scale_target[0] + self.pad_target[1][0]) / self.ratio  # where in the field the target lies: points that
+        fy = ((dst[:, 1] - self.origin_target[1]) / self.scale_target[1] + self.pad_target[0][0]) / self.ratio  # fall outside it say nothing about the alignment
         inside = (fx >= 0) & (fx <= self.field.shape[2]) & (fy >= 0) & (fy <= self.field.shape[1])
         if inside.sum() >= 6:
             src, dst = src[inside], dst[inside]

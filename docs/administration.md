@@ -68,8 +68,9 @@ scripts keep working through `/api/v1`; see [the claim](queuerunner-v2).
 **DeeperHistReg** (registration plugin, `helpers/plugins/deeperhistreg_plugin.py`) registers two images with the method that won ACROBAT 2023:
 SIFT and SuperPoint/SuperGlue matching for a rigid or affine alignment, and with *Mode: deformable* an additional non-rigid registration. It
 needs `pip install deeperhistreg` (with PyTorch) in the worker's Python and says so in the log when it is missing (the other plugins still run);
-the container builds it in with `--build-arg WITH_DEEPERHISTREG=1`. It does not read the slides directly: it renders an overview of each
-(*Overview size*, 4096 px by default) with EXACT's readers, so every format EXACT reads works, and registers those. The result is stored
+the container builds it in with `--build-arg WITH_DEEPERHISTREG=1`. It does not read the slides directly: it finds the tissue on each scan (what is not glass) and renders an overview of that part
+(*Overview size*, 4096 px by default) with EXACT's readers, so every format EXACT reads works, and registers those. This matters for scans that are mostly
+glass: on a 182k x 413k px slide with a tissue block a quarter of its height, the tissue gets four times the pixels it would on an overview of the whole slide. The result is stored
 as a matrix (the best homography; what exact-sync and the registration lists show) **and** as the full deformation, which the server uses
 when it converts points, so a deformable result is exact where the matrix is not. *Registration error* is the mean distance of the matrix from the
 deformation in target pixels (0 for rigid and affine). A deformable registration at the default sizes wants a GPU; on a CPU lower the *Registration size*.
