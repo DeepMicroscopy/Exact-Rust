@@ -18,6 +18,7 @@ pub mod registration;
 pub mod related;
 pub mod resources;
 pub mod seg3d;
+pub mod seg_jobs;
 pub mod segmentation;
 pub mod statistics;
 pub mod volmask;
@@ -61,6 +62,7 @@ pub fn routes() -> Router<AppState> {
         .merge(export::v2_routes())
         .merge(segmentation::v2_routes())
         .merge(seg3d::v2_routes())
+        .merge(seg_jobs::v2_routes())
         .merge(statistics::v2_routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))

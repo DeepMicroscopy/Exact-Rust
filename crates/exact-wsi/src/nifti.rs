@@ -554,6 +554,22 @@ impl Slide for Nifti {
     fn frame_labels(&self) -> Vec<String> {
         self.plane_frame_descriptors(0)
     }
+    fn intensity_slice(&self, z: u32) -> Option<Vec<f32>> {
+        let (nx, ny, nz) = self.shape;
+        let (w, h) = (self.ax.0 as usize, self.ax.1 as usize);
+        let z = (z as usize).min(nz - 1);
+        // pixel (c, r) of the axial plane shows voxel (nx - 1 - c, ny - 1 - r); a resampled plane takes the nearest voxel
+        let col = |c: usize| nx - 1 - ((c * nx + nx / 2) / w).min(nx - 1);
+        let row = |r: usize| ny - 1 - ((r * ny + ny / 2) / h).min(ny - 1);
+        let mut out = Vec::with_capacity(w * h);
+        for r in 0..h {
+            let y = row(r);
+            for c in 0..w {
+                out.push(self.vox.at(col(c), y, z));
+            }
+        }
+        Some(out)
+    }
     fn plane_dimensions(&self, plane: u32) -> Option<(u64, u64)> {
         let d = self.dims(plane.min(2));
         Some((d.0 as u64, d.1 as u64))
@@ -643,6 +659,10 @@ mod tests {
         // the voxel (3, 2, 1) is 123, read through the orientation of the volume
         assert_eq!(a.vox.at(3, 2, 1), 123.0);
         assert_eq!(b.vox.at(3, 2, 1), 123.0);
+        // the axial pixel grid starts with that voxel (column 0 shows x = nx - 1, row 0 shows y = ny - 1)
+        let slice = a.intensity_slice(1).unwrap();
+        assert_eq!(slice.len(), 12);
+        assert_eq!(slice[0], 123.0);
         for p in 0..3 {
             assert_eq!(a.render(p, 1).as_raw(), b.render(p, 1).as_raw());
         }

@@ -171,7 +171,7 @@ async fn load_entry(s: &AppState, annotation: i64, t: &Target) -> ApiResult<Open
 }
 
 /// The geometry of a volume as its reader renders it.
-fn geometry(slide: &dyn exact_wsi::Slide) -> Option<Geometry> {
+pub(crate) fn geometry(slide: &dyn exact_wsi::Slide) -> Option<Geometry> {
     let (w, h) = slide.plane_dimensions(0)?;
     let cor = slide.plane_dimensions(1)?;
     let sag = slide.plane_dimensions(2)?;

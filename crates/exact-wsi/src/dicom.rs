@@ -469,6 +469,25 @@ impl Slide for DicomVolume {
     fn frame_labels(&self) -> Vec<String> {
         self.frame_descriptors()
     }
+    fn intensity_slice(&self, z: u32) -> Option<Vec<f32>> {
+        if !self.is_volume() || self.frames < 2 {
+            return None;
+        }
+        let z = (z as usize).min(self.frames - 1);
+        let px = self.rows * self.cols;
+        Some(
+            (0..px)
+                .map(|i| {
+                    if self.samples == 1 {
+                        self.modality_value(z * px + i) as f32
+                    } else {
+                        let p = self.rgba_at(i % self.cols, i / self.cols, z).0;
+                        p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114
+                    }
+                })
+                .collect(),
+        )
+    }
     fn plane_dimensions(&self, plane: u32) -> Option<(u64, u64)> {
         if !self.is_volume() || self.frames < 2 {
             return None;
@@ -611,6 +630,11 @@ mod tests {
         }
         let bottom = d.read_region(0, 0, 0, 4, 2, 0).unwrap();
         assert_eq!(cor.get_pixel(3, 2), bottom.get_pixel(3, 0));
+        // true values: 1024 + 10 i - 1024 (slope 1, intercept -1024) in the grid of the axial plane
+        let v = d.intensity_slice(1).unwrap();
+        assert_eq!(v.len(), 8);
+        assert_eq!(v[0], 80.0); // frame 1 starts at i = 8
+        assert_eq!(v[7], 150.0);
         // a plane of a movie or an image without volume modality is not offered
         let mut movie = DicomVolume::open(path.to_str().unwrap()).unwrap();
         movie.modality = "OT".into();
