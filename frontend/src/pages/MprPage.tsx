@@ -1,14 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import OpenSeadragon from "openseadragon";
 import { api, listAll } from "../api/client";
-import { ANNOTATION_FIELDS } from "../api/annotations";
+import { ANNOTATION_FIELDS, createAnnotation } from "../api/annotations";
+import { useAuth } from "../auth/AuthContext";
+import { Dropdown, type DropdownItem } from "../components/Dropdown";
+import { DEFAULT_TOOL, Segment3DPanel, type SegTool } from "../components/Segment3DPanel";
+import { useSegment3D, type Op } from "../hooks/useSegment3D";
+import { BrushLayer } from "../viewer-core/brushLayer";
+import { MaskOverlay } from "../viewer-core/maskOverlay";
+import { brushRadii, dropClose, hexDigits, resized, thin, toleranceOf, type Extent } from "../viewer-core/mpr3d";
+import { pen } from "../viewer-core/pen";
+import { isTypingTarget } from "../viewer-core/shortcuts";
 import type { Annotation, AnnotationType } from "../api/types";
 import { AnnotationLayer } from "../viewer-core/annotationLayer";
 import { visibleOnFrame } from "../viewer-core/frames";
 import { toShape } from "../viewer-core/shapes";
-import type { Shape, TypeStyle } from "../viewer-core/types";
+import { VectorType, type Shape, type TypeStyle } from "../viewer-core/types";
 import { loadTileSource } from "../viewer-core/tileSource";
 import { ZBlender } from "../viewer-core/zBlend";
 import { CrosshairLayer } from "../viewer-core/crosshair";
@@ -76,6 +85,66 @@ export function MprPage() {
   }, [annotations.data, types.data, styles, voxel]);
   const [active, setActive] = useState<Plane>(0);
 
+  // ---- 3D segmentation: the mask of one segmentation type, shown on all three planes and edited with the tool window ----
+  const qc = useQueryClient();
+  const { user: me } = useAuth();
+  const readOnly = !!me?.read_only;
+  const imageSetId = image.data?.image_set;
+  const imageSet = useQuery({
+    queryKey: ["image-set", imageSetId],
+    enabled: imageSetId != null,
+    queryFn: () => api<{ id: number; product_set: number[] }>(`/api/v2/image-sets/${imageSetId}?fields=id,product_set`),
+  });
+  const segTypes = useMemo(
+    () => (types.data ?? []).filter((t) => t.vector_type === VectorType.Segmentation && (!imageSet.data || imageSet.data.product_set.includes(t.product as number))),
+    [types.data, imageSet.data],
+  );
+  const [segTypeId, setSegTypeId] = useState<number | null>(null);
+  const [tool, setTool] = useState<SegTool>(DEFAULT_TOOL);
+  const [segError, setSegError] = useState<string | null>(null);
+  const segType = segTypes.find((t) => t.id === segTypeId) ?? null;
+  const segAnnotation = segTypeId == null ? null : (annotations.data ?? []).find((a) => a.annotation_type === segTypeId && !a.deleted && a.id > 0) ?? null;
+  const seg3d = useSegment3D(segAnnotation?.id ?? null);
+  // the one mask annotation of the type is made with the first use of the type in this image
+  const creating = useRef(false);
+  useEffect(() => {
+    if (segTypeId == null || !annotations.data || segAnnotation || !planes || creating.current || readOnly) return;
+    creating.current = true;
+    createAnnotation({ image: id, annotation_type: segTypeId, vector: { tile_size: 256, width: planes[0].width, height: planes[0].height }, unique_identifier: crypto.randomUUID() })
+      .then(() => qc.invalidateQueries({ queryKey: ["annotations", id] }))
+      .catch((e: Error) => setSegError(`Could not create the mask: ${e.message}`))
+      .finally(() => {
+        creating.current = false;
+      });
+  }, [segTypeId, annotations.data, segAnnotation, planes, id, qc, readOnly]);
+  useEffect(() => setSegTypeId(null), [id]);
+  const ext: Extent | null = seg3d.state?.extent_mm ?? null;
+  const editable = !readOnly && !!segAnnotation && !!ext;
+  const doOp = seg3d.op;
+  const segLive = useRef({ tool, doOp, undo: seg3d.undo, redo: seg3d.redo });
+  segLive.current = { tool, doOp, undo: seg3d.undo, redo: seg3d.redo };
+  const patchTool = useCallback((p: Partial<SegTool>) => setTool((t) => ({ ...t, ...p })), []);
+  const segPane: SegPane | null =
+    segAnnotation && segType
+      ? {
+          annotationId: segAnnotation.id,
+          color: segType.color_code,
+          version: seg3d.version,
+          tool,
+          editable,
+          ext,
+          onStroke: (plane, frame, points, erase) =>
+            segLive.current.doOp({ op: "stroke", plane, frame, points, radius_mm: segLive.current.tool.sizeMm / 2, ball: segLive.current.tool.ball, mode: erase ? "remove" : "add" }),
+          onWand: (plane, frame, point, erase) => {
+            const t = segLive.current.tool;
+            const o: Op = { op: "wand", plane, frame, point, tolerance: toleranceOf(t.tolerance), volume: t.wand3d, mode: erase ? "remove" : "add", ...(t.maxRadiusMm > 0 ? { max_radius_mm: t.maxRadiusMm } : {}) };
+            return segLive.current.doOp(o);
+          },
+          onSize: (steps) => setTool((t) => ({ ...t, sizeMm: resized(t.sizeMm, steps) })),
+        }
+      : null;
+  const segItems: DropdownItem[] = [...segTypes.map((t) => ({ id: t.id, label: `▨ ${t.name}`, color: t.color_code, checked: t.id === segTypeId })), ...(segTypeId != null ? [{ id: "off", label: "Leave segmentation" }] : [])];
+
   // the crosshair starts where a link says, else in the middle of the volume
   useEffect(() => {
     if (!shape || voxel) return;
@@ -103,7 +172,22 @@ export function MprPage() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") && isTypingTarget(el)) return;
+      if (segTypeId != null) {
+        const k = e.key.toLowerCase();
+        const mod = e.ctrlKey || e.metaKey;
+        if (e.key === "Escape") setSegTypeId(null);
+        else if (mod && k === "z") void (e.shiftKey ? segLive.current.redo() : segLive.current.undo());
+        else if (mod && k === "y") void segLive.current.redo();
+        else if (!mod && !e.altKey && editableRef.current && (k === "b" || k === "e" || k === "w")) setTool((t) => ({ ...t, tool: k === "b" ? "brush" : k === "e" ? "eraser" : "wand" }));
+        else if (!mod && !e.altKey && editableRef.current && (e.key === "[" || e.key === "]")) setTool((t) => ({ ...t, sizeMm: resized(t.sizeMm, e.key === "]" ? 1 : -1) }));
+        else if (!(e.key === "PageUp" || e.key === "ArrowUp" || e.key === "PageDown" || e.key === "ArrowDown")) return;
+        else {
+          step(active, e.key === "PageUp" || e.key === "ArrowUp" ? 1 : -1);
+        }
+        e.preventDefault();
+        return;
+      }
       if (e.key === "PageUp" || e.key === "ArrowUp") step(active, 1);
       else if (e.key === "PageDown" || e.key === "ArrowDown") step(active, -1);
       else return;
@@ -111,7 +195,9 @@ export function MprPage() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [active, step]);
+  }, [active, step, segTypeId]);
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
 
   if (image.isError) return <p className="error">Image {id} was not found.</p>;
   if (meta.data && !planes) return <p className="muted">This image has no planes to show. <Link to={`/images/${id}`}>Open it</Link></p>;
@@ -123,6 +209,16 @@ export function MprPage() {
         </Link>
         <span className="viewer-title">{image.data?.name ?? "…"}</span>
         <span className="spacer" />
+        <Dropdown
+          items={segItems}
+          onPick={(pid) => setSegTypeId(pid === "off" ? null : Number(pid))}
+          disabled={segTypes.length === 0}
+          title={segTypes.length === 0 ? "This image set has no segmentation type: add a product that has one" : "Paint or look at the mask of a segmentation type on all three planes"}
+          className={segTypeId != null ? "on" : ""}
+          name="segment"
+        >
+          {segType ? `▨ ${segType.name}` : "Segment"}
+        </Dropdown>
         <button
           className="btn"
           onClick={() => {
@@ -140,18 +236,36 @@ export function MprPage() {
       <div className="mpr-grid">
         {shape && planes && voxel
           ? ([0, 1, 2] as Plane[]).map((p) => (
-              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} />
+              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} />
             ))
           : null}
         <div className="mpr-info glass" data-testid="mpr-info">
-          {voxel && shape ? <Info voxel={voxel} shape={shape} planes={planes ?? []} /> : <span className="muted">Loading…</span>}
+          {voxel && shape ? <Info voxel={voxel} shape={shape} planes={planes ?? []} segmenting={segTypeId != null && editable} /> : <span className="muted">Loading…</span>}
+          {segError && <p className="error small" role="alert">{segError}</p>}
         </div>
       </div>
+      {segType && shape && voxel && (
+        <Segment3DPanel
+          type={{ name: segType.name, color: segType.color_code }}
+          state={seg3d.state}
+          message={seg3d.message}
+          busy={seg3d.busy}
+          tool={tool}
+          onTool={patchTool}
+          readOnly={readOnly}
+          z={voxel.z}
+          slices={shape.nz}
+          onOp={(o) => void seg3d.op(o)}
+          onUndo={() => void seg3d.undo()}
+          onRedo={() => void seg3d.redo()}
+          onClose={() => setSegTypeId(null)}
+        />
+      )}
     </div>
   );
 }
 
-function Info({ voxel, shape, planes }: { voxel: Voxel; shape: VolumeShape; planes: PlaneInfo[] }) {
+function Info({ voxel, shape, planes, segmenting }: { voxel: Voxel; shape: VolumeShape; planes: PlaneInfo[]; segmenting: boolean }) {
   const label = (p: Plane) => planes[p]?.frame_descriptors[frameOf(p, voxel)] ?? "";
   return (
     <>
@@ -162,19 +276,37 @@ function Info({ voxel, shape, planes }: { voxel: Voxel; shape: VolumeShape; plan
       <p className="muted small">
         {label(2)} · {label(1)} · {label(0)}
       </p>
+      {segmenting && <p className="muted small">A click or stroke with a tool also moves the crosshair to that point; Ctrl (Cmd) + click moves it without painting.</p>}
       <p className="muted small">Click in a plane to set the crosshair. Scroll or Page Up / Down steps the slices of the plane you used last. Drag moves the image, Ctrl + scroll or a pinch zooms.</p>
     </>
   );
 }
 
-function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onActivate, onPick, onStep }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void }) {
+/** What a plane needs to show and edit the mask of the segmentation type that is chosen. */
+interface SegPane {
+  annotationId: number;
+  color: string;
+  version: number;
+  tool: SegTool;
+  /** tools work: the mask exists, its geometry is known and the account may change it */
+  editable: boolean;
+  ext: Extent | null;
+  onStroke(plane: number, frame: number, points: [number, number][], erase: boolean): Promise<unknown>;
+  onWand(plane: number, frame: number, point: [number, number], erase: boolean): Promise<unknown>;
+  onSize(steps: number): void;
+}
+
+function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onActivate, onPick, onStep, seg }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null }) {
   const host = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null);
   const blender = useRef<ZBlender | null>(null);
   const cross = useRef<CrosshairLayer | null>(null);
   const notes = useRef<AnnotationLayer | null>(null);
-  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles });
-  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles };
+  const brush = useRef<BrushLayer | null>(null);
+  const overlay = useRef<MaskOverlay | null>(null);
+  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info });
+  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info };
+  const pointer = useRef<[number, number] | null>(null);
   const [busy, setBusy] = useState(false);
   const frame = frameOf(plane, voxel);
 
@@ -190,6 +322,15 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     const el = v.canvas as HTMLElement;
     let rest = 0;
     const wheel = (e: WheelEvent) => {
+      const sg = live.current.seg;
+      if (sg?.editable && e.altKey && sg.tool.tool !== "wand") {
+        // Alt + wheel sizes the brush
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const d = e.deltaY || e.deltaX;
+        if (d) sg.onSize(d < 0 ? 1 : -1);
+        return;
+      }
       if (classifyWheel(e, performance.now(), -Infinity) !== "wheel") return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -211,11 +352,88 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       live.current.onActivate();
       live.current.onPick(voxelAt(s, pl, p.x, p.y, frameOf(pl, vx)));
     });
-    v.addHandler("canvas-press", () => live.current.onActivate());
+
+    // the mask tools: a drag with the brush or eraser is one stroke (previewed here, stored when the pointer is lifted), a click with the wand grows a region
+    let stroke: { points: [number, number][]; erase: boolean; frame: number } | null = null;
+    let space = false;
+    const spaceKey = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !isTypingTarget(e.target)) space = e.type === "keydown";
+    };
+    const blur = () => (space = false);
+    window.addEventListener("keydown", spaceKey);
+    window.addEventListener("keyup", spaceKey);
+    window.addEventListener("blur", blur);
+    const toPlane = (pos: OpenSeadragon.Point): [number, number] | null => {
+      if (!v.world.getItemCount()) return null;
+      const q = v.world.getItemAt(0).viewerElementToImageCoordinates(pos);
+      return [q.x, q.y];
+    };
+    const radii = (sg: SegPane): [number, number] => (sg.ext ? brushRadii(live.current.plane, live.current.info, sg.ext, sg.tool.sizeMm) : [0, 0]);
+    type PointerEv = { position: OpenSeadragon.Point; preventDefaultAction: boolean; originalEvent?: MouseEvent; pointerType?: string };
+    const on = (name: string, fn: (e: never) => void) => v.addHandler(name as keyof OpenSeadragon.ViewerEventMap, fn as unknown as OpenSeadragon.EventHandler<OpenSeadragon.ViewerEvent>);
+    on("canvas-press", (e: PointerEv) => {
+      live.current.onActivate();
+      const sg = live.current.seg;
+      const oe = e.originalEvent;
+      if (!sg?.editable || space || oe?.button === 1 || oe?.ctrlKey || oe?.metaKey || pen.ignores(e.pointerType)) return;
+      const at = toPlane(e.position);
+      if (!at) return;
+      pen.note({ pointerType: e.pointerType ?? "mouse" });
+      e.preventDefaultAction = true;
+      const { shape: s, plane: pl, voxel: vx } = live.current;
+      const frame = frameOf(pl, vx);
+      live.current.onPick(voxelAt(s, pl, at[0], at[1], frame)); // the other planes follow the point that is worked on
+      const erase = sg.tool.tool === "eraser" || !!oe?.altKey;
+      if (sg.tool.tool === "wand") {
+        void sg.onWand(pl, frame, at, erase);
+        return;
+      }
+      stroke = { points: [at], erase, frame };
+      const [rx, ry] = radii(sg);
+      brush.current?.setStroke({ points: stroke.points, rx, ry, erase });
+    });
+    on("canvas-drag", (e: PointerEv) => {
+      const sg = live.current.seg;
+      if (!stroke || !sg) return;
+      e.preventDefaultAction = true;
+      const at = toPlane(e.position);
+      if (!at) return;
+      stroke.points.push(at);
+      const [rx, ry] = radii(sg);
+      brush.current?.setStroke({ points: stroke.points, rx, ry, erase: stroke.erase });
+    });
+    on("canvas-release", () => {
+      const sg = live.current.seg;
+      if (!stroke || !sg) return;
+      const done = stroke;
+      stroke = null;
+      const points = thin(dropClose(done.points, 0.5), 2000);
+      // the preview stays until the stored mask is shown (the overlay clears it); this is for a failed or unseen answer
+      void sg
+        .onStroke(live.current.plane, done.frame, points, done.erase)
+        .finally(() => window.setTimeout(() => brush.current?.setStroke(null), 1200));
+    });
+    // the ring of the brush follows the pointer
+    const move = (ev: PointerEvent) => {
+      const sg = live.current.seg;
+      const r = el.getBoundingClientRect();
+      const at = toPlane(new OpenSeadragon.Point(ev.clientX - r.left, ev.clientY - r.top));
+      pointer.current = at;
+      if (!sg?.editable || sg.tool.tool === "wand" || !at) return brush.current?.setRing(null);
+      const [rx, ry] = radii(sg);
+      brush.current?.setRing({ at, rx, ry, erase: sg.tool.tool === "eraser" || ev.altKey });
+    };
+    const leave = () => {
+      pointer.current = null;
+      brush.current?.setRing(null);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerleave", leave);
     notes.current = plane === 0 ? new AnnotationLayer(v) : null; // below the crosshair
     if (live.current.shapes) notes.current?.setData(live.current.shapes, live.current.styles);
     const c = new CrosshairLayer(v);
     cross.current = c;
+    brush.current = new BrushLayer(v);
     const b = new ZBlender(v, info.frames, (f) => loadTileSource(imageId, plane + 1, f), {
       blend: false,
       onBusy: setBusy,
@@ -225,6 +443,13 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     b.setPosition(frameOf(plane, live.current.voxel));
     return () => {
       el.removeEventListener("wheel", wheel, { capture: true });
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerleave", leave);
+      window.removeEventListener("keydown", spaceKey);
+      window.removeEventListener("keyup", spaceKey);
+      window.removeEventListener("blur", blur);
+      brush.current?.destroy();
+      brush.current = null;
       b.destroy();
       c.destroy();
       notes.current?.destroy();
@@ -235,6 +460,41 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       cross.current = null;
     };
   }, [imageId, plane, info.frames]);
+
+  // the mask of the chosen type over this plane: a PNG of the slice, reloaded when the slice or the mask changes
+  const annotationId = seg?.annotationId ?? null;
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v || annotationId == null) return;
+    const o = new MaskOverlay(v, info.width, info.height, () => brush.current?.setStroke(null));
+    overlay.current = o;
+    return () => {
+      o.destroy();
+      overlay.current = null;
+    };
+  }, [annotationId, info.width, info.height, imageId, plane, info.frames]);
+  const color = seg?.color;
+  const version = seg?.version;
+  useEffect(() => {
+    if (annotationId == null || color == null) return;
+    const t = window.setTimeout(() => overlay.current?.load(`/api/v2/segmentation/${annotationId}/slice/${plane}/${frame}?color=${hexDigits(color)}&alpha=255&v=${version}`), 30);
+    return () => window.clearTimeout(t);
+  }, [annotationId, color, plane, frame, version, imageId, info.frames]);
+  const opacity = seg?.tool.opacity;
+  useEffect(() => {
+    if (opacity != null) overlay.current?.setOpacity(opacity);
+  }, [opacity, annotationId, imageId, info.frames]);
+  // the ring changes with the size and the tool even when the pointer rests
+  const sizeMm = seg?.tool.sizeMm;
+  const toolName = seg?.tool.tool;
+  const editable = !!seg?.editable;
+  useEffect(() => {
+    const sg = live.current.seg;
+    const at = pointer.current;
+    if (!sg?.editable || !sg.ext || !at || sg.tool.tool === "wand") return brush.current?.setRing(null);
+    const [rx, ry] = brushRadii(plane, info, sg.ext, sg.tool.sizeMm);
+    brush.current?.setRing({ at, rx, ry, erase: sg.tool.tool === "eraser" });
+  }, [sizeMm, toolName, editable, plane, info]);
 
   useEffect(() => {
     blender.current?.setPosition(frame);

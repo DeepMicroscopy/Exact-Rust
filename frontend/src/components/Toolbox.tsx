@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { pen, usePen } from "../viewer-core/pen";
 import { Dropdown, type DropdownItem } from "./Dropdown";
 import type { BrushMode, PolyOp } from "../viewer-core/editor";
@@ -34,7 +35,7 @@ export interface ToolboxProps {
   /** touch: taps add or remove annotations from the selection, a drag draws a frame */
   multiMode: boolean;
   /** why annotating is not possible here (the coronal and sagittal planes of a volume), or null */
-  locked?: string | null;
+  locked?: ReactNode;
   canPaste: boolean;
   canUndo: boolean;
   canRedo: boolean;

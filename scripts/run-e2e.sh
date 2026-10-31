@@ -23,6 +23,7 @@ case "${1:-annotate}" in
   smoke) SHOTS=/tmp/shots node e2e/smoke.mjs || rc=$? ;;
   imageset) SHOTS=/tmp/shots node e2e/imageset.mjs || rc=$? ;;
   admin) SHOTS=/tmp/shots node e2e/admin.mjs || rc=$? ;;
-  all) SHOTS=/tmp/shots node e2e/smoke.mjs && SHOTS=/tmp/shots node e2e/imageset.mjs && SHOTS=/tmp/shots node e2e/admin.mjs && SHOTS=/tmp/shots node e2e/annotate.mjs || rc=$? ;;
+  seg3d) SHOTS=/tmp/shots node e2e/seg3d.mjs || rc=$? ;;
+  all) SHOTS=/tmp/shots node e2e/smoke.mjs && SHOTS=/tmp/shots node e2e/imageset.mjs && SHOTS=/tmp/shots node e2e/admin.mjs && SHOTS=/tmp/shots node e2e/seg3d.mjs && SHOTS=/tmp/shots node e2e/annotate.mjs || rc=$? ;;
 esac
 exit $rc

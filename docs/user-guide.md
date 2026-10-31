@@ -97,6 +97,31 @@ The toolbox at the bottom changes with what you are doing.
 
 Annotation works on desktop and tablet (touch targets are large, drawing works with a pen); viewing also works on a phone.
 
+## 3D segmentation
+In the three-plane view of a volume (NIfTI, and DICOM CT, MR and PET volumes: they work alike) you can paint a **mask** that
+belongs to a *segmentation* type, and see and edit it on the axial, coronal and sagittal plane at once. The **Segment** button in the
+top bar lists the segmentation types of the image set (marked ▨; the set needs a product that has one). Choosing a type opens the tool window
+and lays that type's mask over all three planes; the first use creates the mask in the image. **Escape** or the window's ✕ leaves the mode.
+
+Everything is measured in millimetres, so a brush of 8 mm is round in the picture of every plane, also when the slices are thicker than
+the pixels. The window can be moved by its title, and it shows the volume of the mask (mm³, from 1000 mm³ in ml) and the number of axial slices
+that hold some of it.
+
+* **Brush** (`B`) paints, **Eraser** (`E`, or hold Alt with the brush) removes. *2D disc* works in the plane you draw in, one slice thick;
+  *3D sphere* reaches through the slices around every point of the stroke. The size is set in mm; `[` and `]` or Alt + mouse wheel change it.
+  With a mouse, pen or finger a drag is one stroke, stored when you lift the pointer; the ring under the pointer shows the size.
+* **Wand** (`W`) adds the connected region whose grey values are within the *tolerance* of the grey value you click on (Alt + click removes it),
+  either in the plane or through the whole volume. *Reach* limits it to a radius (mm) around the click; a region that is too large is refused with a message.
+* **Interpolate slices** fills the empty axial slices between painted ones by blending their shapes. **Copy** repeats the slice of the crosshair
+  onto the next or previous slices.
+* **Grow** and **Shrink** change the mask by a number of voxels, **Fill holes** closes cavities, **Largest part only** removes the small separate pieces,
+  **Clear mask** (click twice) empties it.
+* **Undo** and **Redo** (`Ctrl/Cmd+Z`, `Shift+Ctrl/Cmd+Z`) go back and forth through these steps; the steps are kept while the mask is open in the server.
+* A click or stroke also moves the crosshair to that point, so the other two planes show it. `Ctrl` (`Cmd`) + click moves the crosshair without painting;
+  the mouse wheel and Page Up / Down still step through the slices. Accounts that are read-only see the mask and have no tools.
+
+The single-plane view of a volume paints masks on the axial plane only; for the other planes its toolbox points to the three-plane view.
+
 ## Registration
 Registration aligns two images of the same tissue, for example a stain and its neighbour.
 

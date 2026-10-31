@@ -562,6 +562,7 @@ export function ViewerPage() {
       const t = (types.data ?? []).find((x) => x.id === a.annotation_type);
       if (t?.vector_type === VectorType.Segmentation) wanted.set(a.id, t.color_code);
     }
+    if (!annotationsHere) wanted.clear(); // the masks of a volume are shown and painted in the three-plane view: the coronal and sagittal tiles of the single plane are not laid out like its pictures
     masks.sync(wanted, (annotationId) => ({ annotationId, width: planeDims.w, height: planeDims.h, plane: planeIndex, frame: segFrame, ph: planeDims.h, nf: planeFrames }));
     for (const [aid, layer] of masks.layers) {
       const a = (annotations.data ?? []).find((x) => x.id === aid);
@@ -569,7 +570,10 @@ export function ViewerPage() {
       layer.opacity = maskOpacity;
     }
     layerRef.current?.invalidate();
-  }, [annotations.data, types.data, planeDims, planeIndex, segFrame, planeFrames, showAnnotations, hidden, maskOpacity]);
+  }, [annotations.data, types.data, planeDims, planeIndex, segFrame, planeFrames, showAnnotations, hidden, maskOpacity, annotationsHere]);
+  useEffect(() => {
+    if (!annotationsHere) setSegTypeId(null);
+  }, [annotationsHere]);
   useEffect(() => setPlaneDims(null), [id, z]);
 
   // the mask of the chosen type is the one that is painted (it is created with the first stroke's tool)
@@ -1081,7 +1085,22 @@ export function ViewerPage() {
         {toolsOpen && !readOnly && (
         <Toolbox
           palette={drawable}
-          locked={annotationsHere ? null : "Annotations are drawn in the axial plane."}
+          locked={
+            annotationsHere ? null : (
+              <>
+                Annotations are drawn in the axial plane; masks of a volume are painted in the three-plane view.{" "}
+                <button
+                  className="btn"
+                  onClick={() => {
+                    rememberThreePlanes(true);
+                    navigate(`/images/${id}/planes`);
+                  }}
+                >
+                  Three planes
+                </button>
+              </>
+            )
+          }
           globals={globals.map((entry) => ({ entry, set: (annotations.data ?? []).some((a) => a.annotation_type === entry.id && !a.deleted) }))}
           drawing={drawing}
           oneClick={oneClick}
