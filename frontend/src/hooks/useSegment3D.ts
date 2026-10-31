@@ -92,6 +92,20 @@ export function useSegment3D(annotationId: number | null) {
     message,
     dismiss: useCallback(() => setMessage(null), []),
     op: useCallback((o: Op) => send("ops", o), [send]),
+    /** the mask was changed elsewhere (an automatic segmentation finished): read its state again and redraw */
+    reload: useCallback(async () => {
+      const id = current.current;
+      if (id == null) return;
+      try {
+        const s = await api<MaskState>(`/api/v2/segmentation/${id}/volume`);
+        if (current.current === id) {
+          setState(s);
+          setVersion((v) => v + 1);
+        }
+      } catch (e) {
+        if (current.current === id) setMessage({ kind: "error", text: e instanceof ApiError ? e.detail : String(e) });
+      }
+    }, []),
     undo: useCallback(() => send("undo"), [send]),
     redo: useCallback(() => send("redo"), [send]),
   };

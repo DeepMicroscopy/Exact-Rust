@@ -4,6 +4,7 @@
 // Usage: node e2e/seg3d.mjs [baseUrl]   (env: CHROME, SHOTS=dir)
 import { chromium } from "playwright-core";
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 
 const base = process.argv[2] ?? "http://127.0.0.1:8002";
 const chrome = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -200,6 +201,36 @@ try {
   await page.locator('[data-testid="seg3d-copy-next"]').click();
   await waitFor(async () => Number((await volume()).match(/(\d+) slices? painted/)[1]) >= 9, `the slice is copied to the next ones (${await volume()})`);
 
+  // ------------------------------------------------------------------------------------------ automatic segmentation
+  // the worker is a real one (helpers/segment_worker.py, the threshold method), started when the job is waiting
+  const worker = () =>
+    new Promise((resolve) => {
+      const py = process.env.SEG_PYTHON ?? "/opt/miniconda3/envs/env311/bin/python";
+      const w = spawn(py, ["helpers/segment_worker.py", "--url", base, "--user", "aubreville", "--password", "rust-test-pw", "--name", "e2e-segmenter", "--once"], { cwd: new URL("../..", import.meta.url).pathname });
+      let out = "";
+      w.stdout.on("data", (d) => (out += d));
+      w.stderr.on("data", (d) => (out += d));
+      w.on("close", () => resolve(out));
+    });
+  const painted = await volume();
+  await worker(); // announces its methods (and finds nothing to do)
+  await page.locator('[data-testid="auto-segment"]').click();
+  await page.waitForSelector('select[aria-label="Segmentation method"]');
+  check((await page.locator('select[aria-label="Segmentation method"] option').allInnerTexts()).some((t) => /threshold/i.test(t)), "Auto segment lists the threshold method of the worker");
+  check((await page.locator('select[aria-label="Segmentation type"] option:checked').innerText()).length > 0, "...and the segmentation type receiving the mask (the one being edited first)");
+  await page.locator('[role="radio"]', { hasText: "Replace" }).click();
+  await page.locator(".modal .btn.primary", { hasText: "Start" }).click();
+  await waitFor(async () => /Waiting for a worker/.test(await page.locator('.modal [role="status"]').innerText()), "the job waits for a worker");
+  const workerOut = worker();
+  await waitFor(async () => /mask is ready/.test(await page.locator('.modal [role="status"]').innerText().catch(() => "")), "the dialog reports that the mask is ready", 120000);
+  console.log((await workerOut).trim().split("\n").slice(-2).join(" | "));
+  await page.locator(".modal .btn", { hasText: "Close" }).click();
+  await waitFor(async () => (await volume()) !== painted, "the tool window reads the new mask", 20000);
+  const auto = await volume();
+  check(/slices? painted/.test(auto) && Number(auto.match(/(\d+) slices? painted/)[1]) > 20, `the automatic mask replaced the painted one and shows in the tool window (${auto})`);
+  await page.locator('[data-testid="seg3d-undo"]').click();
+  await waitFor(async () => (await volume()) !== auto, "undo takes the automatic mask away again");
+
   // ------------------------------------------------------------------------------------------ the crosshair still works with Ctrl + click, and Escape leaves
   const before = await page.locator('[data-testid="mpr-voxel"]').innerText();
   await page.mouse.click(...at(0.3, 0.3), { modifiers: ["Control"] });
@@ -227,6 +258,7 @@ try {
   check((await reader.locator('[data-testid="seg3d-brush"]').count()) === 0 && (await reader.locator('[data-testid="seg3d-clear"]').count()) === 0, "...and has no brush, no wand and no way to clear it");
   check((await reader.locator(".seg3d-panel").innerText()).includes("Read only"), "...and is told why");
   const rbox = await reader.locator('[data-testid="mpr-axial"]').boundingBox();
+  await waitFor(async () => /painted/.test(await reader.locator('[data-testid="seg3d-readout"]').innerText()), "the read-only account's readout has the mask state");
   const before2 = await reader.locator('[data-testid="seg3d-readout"]').innerText();
   await reader.mouse.move(rbox.x + rbox.width / 2, rbox.y + rbox.height / 2);
   await reader.mouse.down();

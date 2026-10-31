@@ -7,6 +7,7 @@ import { ANNOTATION_FIELDS, createAnnotation } from "../api/annotations";
 import { useAuth } from "../auth/AuthContext";
 import { Dropdown, type DropdownItem } from "../components/Dropdown";
 import { DEFAULT_TOOL, Segment3DPanel, type SegTool } from "../components/Segment3DPanel";
+import { AutoSegmentDialog } from "../components/AutoSegmentDialog";
 import { useSegment3D, type Op } from "../hooks/useSegment3D";
 import { BrushLayer } from "../viewer-core/brushLayer";
 import { MaskOverlay } from "../viewer-core/maskOverlay";
@@ -105,6 +106,7 @@ export function MprPage() {
   const segType = segTypes.find((t) => t.id === segTypeId) ?? null;
   const segAnnotation = segTypeId == null ? null : (annotations.data ?? []).find((a) => a.annotation_type === segTypeId && !a.deleted && a.id > 0) ?? null;
   const seg3d = useSegment3D(segAnnotation?.id ?? null);
+  const [autoOpen, setAutoOpen] = useState(false);
   // the one mask annotation of the type is made with the first use of the type in this image
   const creating = useRef(false);
   useEffect(() => {
@@ -259,6 +261,21 @@ export function MprPage() {
           onUndo={() => void seg3d.undo()}
           onRedo={() => void seg3d.redo()}
           onClose={() => setSegTypeId(null)}
+          extra={
+            readOnly ? null : (
+              <button className="btn" onClick={() => setAutoOpen(true)} data-testid="auto-segment" title="Let a program segment the whole volume">
+                Auto segment…
+              </button>
+            )
+          }
+        />
+      )}
+      {autoOpen && (
+        <AutoSegmentDialog
+          imageId={id}
+          segTypes={[...segTypes].sort((a, b) => Number(b.id === segTypeId) - Number(a.id === segTypeId)).map((t) => ({ id: t.id, name: t.name, color: t.color_code }))}
+          onClose={() => setAutoOpen(false)}
+          onDone={() => void seg3d.reload()}
         />
       )}
     </div>
