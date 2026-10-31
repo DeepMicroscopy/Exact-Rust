@@ -410,20 +410,24 @@ pub fn wand(
     o: &WandOptions,
 ) -> Option<usize> {
     let normal = Geometry::normal_axis(plane);
-    let at = |gray: &mut dyn Gray, c: usize, r: usize, z: usize| -> Option<i32> {
-        gray.slice(z).map(|s| s[r * g.w + c] as i32)
+    let (w, h, n) = (g.w, g.h, g.n);
+    // the slices read so far (a region touches many voxels: a lookup per voxel must be an index, not a hash)
+    let mut slices: Vec<Option<Vec<u8>>> = vec![None; n];
+    let mut at = |c: usize, r: usize, z: usize| -> Option<i32> {
+        if slices[z].is_none() {
+            slices[z] = Some(gray.slice(z)?.to_vec());
+        }
+        slices[z].as_ref().map(|s| s[r * w + c] as i32)
     };
-    // seed value
     let (mut sum, mut cnt) = (0i32, 0i32);
     for dz in -1i32..=1 {
         for dr in -1i32..=1 {
             for dc in -1i32..=1 {
                 let (c, r, z) = (seed.0 as i32 + dc, seed.1 as i32 + dr, seed.2 as i32 + dz);
-                if c < 0 || r < 0 || z < 0 || c >= g.w as i32 || r >= g.h as i32 || z >= g.n as i32
-                {
+                if c < 0 || r < 0 || z < 0 || c >= w as i32 || r >= h as i32 || z >= n as i32 {
                     continue;
                 }
-                if let Some(v) = at(gray, c as usize, r as usize, z as usize) {
+                if let Some(v) = at(c as usize, r as usize, z as usize) {
                     sum += v;
                     cnt += 1;
                 }
@@ -435,18 +439,29 @@ pub fn wand(
     }
     let target = sum / cnt;
     let seed_mm = g.voxel_center(seed.0, seed.1, seed.2);
-    let dims = [g.w as i32, g.h as i32, g.n as i32];
-    let mut seen: HashMap<(usize, usize, usize), ()> = HashMap::new();
-    let mut found: Vec<(usize, usize, usize)> = Vec::new();
-    let mut queue = VecDeque::from([seed]);
-    seen.insert(seed, ());
+    let lin = |c: usize, r: usize, z: usize| (z * h + r) * w + c;
+    let mut seen = vec![0u64; (w * h * n).div_ceil(64)];
+    let mut mark = |i: usize| -> bool {
+        let (word, bit) = (i / 64, 1u64 << (i % 64));
+        let fresh = seen[word] & bit == 0;
+        seen[word] |= bit;
+        fresh
+    };
+    let mut found: Vec<u32> = Vec::new();
+    let mut queue: VecDeque<u32> = VecDeque::new();
+    mark(lin(seed.0, seed.1, seed.2));
+    queue.push_back(lin(seed.0, seed.1, seed.2) as u32);
     let cell = [seed.0, seed.1, seed.2];
-    while let Some((c, r, z)) = queue.pop_front() {
-        let Some(v) = at(gray, c, r, z) else { continue };
+    let dims = [w as i32, h as i32, n as i32];
+    let r2 = o.max_radius_mm.map(|r| r * r);
+    while let Some(i) = queue.pop_front() {
+        let i = i as usize;
+        let (c, r, z) = (i % w, i / w % h, i / (w * h));
+        let Some(v) = at(c, r, z) else { continue };
         if (v - target).abs() > o.tolerance as i32 {
             continue;
         }
-        found.push((c, r, z));
+        found.push(i as u32);
         if found.len() > o.max_voxels {
             return None;
         }
@@ -463,23 +478,25 @@ pub fn wand(
             if !o.volume && [np.0, np.1, np.2][normal] != cell[normal] {
                 continue;
             }
-            if let Some(rad) = o.max_radius_mm {
+            if let Some(r2) = r2 {
                 let q = g.voxel_center(np.0, np.1, np.2);
                 let d2: f64 = (0..3).map(|a| (q[a] - seed_mm[a]).powi(2)).sum();
-                if d2 > rad * rad {
+                if d2 > r2 {
                     continue;
                 }
             }
-            if seen.insert(np, ()).is_none() {
-                queue.push_back(np);
+            let ni = lin(np.0, np.1, np.2);
+            if mark(ni) {
+                queue.push_back(ni as u32);
             }
         }
     }
-    let n = found.len();
-    for (c, r, z) in found {
-        m.set(j, c, r, z, o.mode.on());
+    let count = found.len();
+    for i in found {
+        let i = i as usize;
+        m.set(j, i % w, i / w % h, i / (w * h), o.mode.on());
     }
-    Some(n)
+    Some(count)
 }
 
 /// Copies the mask of axial slice `from` onto slice `to` (`add`: union; otherwise replace).
