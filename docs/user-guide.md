@@ -97,6 +97,19 @@ The toolbox at the bottom changes with what you are doing.
 
 Annotation works on desktop and tablet (touch targets are large, drawing works with a pen); viewing also works on a phone.
 
+## Automatic segmentation
+In the three-plane view of a volume (NIfTI, or a multi-frame CT / MR DICOM) **Auto segment…** asks a worker to compute the mask of the whole volume:
+
+1. pick the **method** (a threshold ships with EXACT; your administrator can add others, for example a deep-learning model of the lab),
+   the **type** that receives the mask and whether the result **replaces** the mask or is **added** to it, and set the method's parameters;
+2. **Start**. The dialog shows the progress and may be closed (the job keeps running; the **Jobs** page lists it). A job waits as long as no worker
+   is running;
+3. when it is done the mask is in the image like a painted one: look at it on all three planes, correct it with the brush, and **undo** takes
+   the whole result back.
+
+The threshold method finds what separates by brightness (bone or contrast in CT, tissue against air); it does not know anatomy, so touching
+structures of the same brightness stay one. Check every automatic mask before you use it.
+
 ## Registration
 Registration aligns two images of the same tissue, for example a stain and its neighbour.
 

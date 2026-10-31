@@ -64,6 +64,29 @@ Reading images and annotations needs no model permission here; the list covers w
 The worker announces its plugin (`POST /api/v2/plugins/register`), claims jobs atomically and reports progress. Unmodified QueueRunner
 scripts keep working through `/api/v1`; see [the claim](queuerunner-v2).
 
+### Segmentation worker
+**Auto segment** (three-plane view of a volume) is done by its own worker, `helpers/segment_worker.py`. It is not an analysis plugin: it
+announces *segmenters* (`POST /api/v2/segmenters/register`), claims segmentation jobs and puts the mask it computed into the mask annotation
+(`PUT /api/v2/segmentation/{annotation}/labels`), so the result is an ordinary mask that can be corrected and undone. It reads no image
+files: the voxels come over HTTP (`GET /api/v2/images/{id}/voxels`), so it may run anywhere that reaches the server, also on a GPU machine.
+
+* **Account**: a user with `processing.add_plugin` (to announce segmenters) who is a **member of the teams** whose images it serves and who may
+  annotate and edit annotations in their image sets (a normal team member does). **Users → New worker account…** with *Analysis worker*
+  creates the first part; add the teams there.
+* **Run it**: `python helpers/segment_worker.py --url https://exact.example.org --user … --password … [--plugins-dir DIR] [--name NAME]`, or with
+  Docker: set `SEGMENT_WORKER_USER` / `SEGMENT_WORKER_PASSWORD` in `exact.env` and `docker compose --profile segmentation up -d`.
+  Needs numpy; the shipped method also scipy (both are in the image).
+* **Segmenters** are the Python modules of `helpers/segmenters/` (or of `--plugins-dir`): a module defines `NAME`, `DESCRIPTION`, `PARAMS`
+  (the parameter list of the dialog, as for registration plugins) and `segment(volume, spacing_mm, params, progress)` that returns a mask.
+  The worker passes the volume as float32 `(z, y, x)` with true values (HU for CT), in the mask grid of the viewer.
+  **`threshold.py`** ships and works: Otsu or fixed bounds, closing, holes filled, only the largest part kept. **No trained model ships.**
+  `nnunet_example.py` is a documented skeleton for connecting nnU-Net (or MONAI, TotalSegmentator, …) with a model you provide; it stays
+  invisible until nnU-Net is installed and `EXACT_NNUNET_MODEL` points at a model. Copy it for every model; the orientation, spacing and
+  channels the model expects are yours to check, and so is whether its output may be used for anything but research.
+* **Jobs** show on the Jobs page as kind *segmentation* (progress, failed with the reason, restart, cancel). A job whose worker went silent for
+  30 minutes is offered again. The jobs wait while no worker runs; the dialog says so when none has asked for work lately.
+* Image types: NIfTI volumes and multi-frame DICOM volumes with a volume modality (CT, MR, PT, NM), the images that have the three planes.
+
 ## Image repair and storage
 The server writes into the image store (uploads, move, delete, repair, crop), so back up `IMAGE_PATH` and `MEDIA_ROOT` like the
 database. Thumbnails in `EXACT_CACHE_DIR` can be deleted at any time; inflated NIfTI volumes in `EXACT_NIFTI_CACHE` grow and are

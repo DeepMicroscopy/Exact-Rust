@@ -85,6 +85,9 @@ until login rate limiting exists. Mail is not configured: users get in through i
 4. An annotation: create, edit, delete in a test image set of your own. Open an image with many annotations.
 5. exact-sync: `EXACT_URL=https://<host> ... pytest tests/conformance/test_exact_sync.py` (read-only), or one of your notebooks.
 6. The registration worker has announced itself: Administration → Plugins shows a registration plugin with a recent worker; start an automatic registration of two images.
+6b. (Optional) Automatic segmentation: `docker compose --profile segmentation up -d` starts `segment-worker` (account in `exact.env`: `SEGMENT_WORKER_USER`,
+   `SEGMENT_WORKER_PASSWORD`; permissions and teams as in [Administration](administration), "Segmentation worker"). It needs no image mount. Check:
+   `GET /api/v2/segmenters` lists "Threshold". No trained model is shipped; a deep-learning model is connected through `helpers/segmenters/nnunet_example.py`.
 7. Export an image set and compare with what production's export gives for the same set (the export templates are re-implemented).
 
 ## 7. Operating notes

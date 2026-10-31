@@ -59,5 +59,16 @@ services:
       - ${IMAGE_PATH}:/data/images:ro
     command: ["sh", "-c", "python /app/helpers/queue_worker.py --url http://server:8002 --user \"$WORKER_USER\" --password \"$WORKER_PASSWORD\" --exact-dir /opt/exact/exact"]
     restart: unless-stopped
+  # Automatic segmentation (optional): `docker compose --profile segmentation up -d`. It reads no image files (the voxels come over HTTP),
+  # so it has no image mount. Account and env: SEGMENT_WORKER_USER / SEGMENT_WORKER_PASSWORD in exact.env (see docs/administration.md).
+  segment-worker:
+    image: exact-rust
+    profiles: ["segmentation"]
+    user: "${CONTAINER_USER:-exact}"
+    depends_on: [server]
+    healthcheck: { disable: true }
+    env_file: exact.env
+    command: ["sh", "-c", "python /app/helpers/segment_worker.py --url http://server:8002 --user \"$SEGMENT_WORKER_USER\" --password \"$SEGMENT_WORKER_PASSWORD\""]
+    restart: unless-stopped
 volumes:
   pgdata:

@@ -103,6 +103,11 @@ pub trait Slide: Send + Sync {
     fn needs_registration(&self) -> bool {
         false
     }
+    /// True values (HU, signal, ...) of axial slice `z` as float32 in the pixel grid of the axial plane (`plane_dimensions(0)`,
+    /// row-major), for programs that compute on them; `None` for readers that have no volume data.
+    fn intensity_slice(&self, _z: u32) -> Option<Vec<f32>> {
+        None
+    }
     /// Problems found in the file that viewers should know about (`damaged_pyramid`: lower levels are not copies of level 0).
     fn issues(&self) -> Vec<String> {
         Vec::new()

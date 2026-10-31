@@ -12,7 +12,7 @@ use crate::{
     cascade,
     compat::engine::db_err,
     error::{ApiError, ApiResult},
-    v2::{processing, registration},
+    v2::{processing, registration, seg_jobs},
     AppState,
 };
 use axum::{
@@ -35,7 +35,10 @@ pub fn v2_routes() -> Router<AppState> {
         .route("/api/v2/jobs/{kind}/{id}/restart", post(restart_h))
 }
 
+/// Kinds a worker can claim through `/api/v2/jobs/claim`; segmentation jobs have their own claim (`seg_jobs.rs`).
 const KINDS: [&str; 2] = ["registration", "plugin"];
+/// Kinds the list shows and the other endpoints act on.
+const LIST_KINDS: [&str; 3] = ["registration", "plugin", "segmentation"];
 
 /// Workers that asked for work lately: name -> (kinds, when). Process-local; it tells the screens whether anybody is
 /// listening for the jobs that wait (an idle worker leaves no trace in the tables).
@@ -100,8 +103,10 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
         form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
             .into_owned()
             .collect();
-    if q.get("kind").is_some_and(|k| !KINDS.contains(&k.as_str())) {
-        return Err(bad("kind must be registration or plugin."));
+    if q.get("kind")
+        .is_some_and(|k| !LIST_KINDS.contains(&k.as_str()))
+    {
+        return Err(bad("kind must be registration, plugin or segmentation."));
     }
     let limit = q
         .get("limit")
@@ -134,20 +139,25 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
          ORDER BY u.created DESC NULLS LAST, u.id DESC LIMIT {limit}",
         status = plugin_job_status_sql(),
     );
-    let rows = sqlx::query(&sql)
-        .bind(q.get("kind"))
-        .bind(q.get("status"))
-        .bind(q.get("image").and_then(|v| v.parse::<i64>().ok()))
-        .bind(v.id)
-        .bind(v.token_teams)
-        .fetch_all(&s.pool)
-        .await
-        .map_err(db_err)?;
+    let only_segmentation = q.get("kind").is_some_and(|k| k == "segmentation");
+    let rows = if only_segmentation {
+        Vec::new()
+    } else {
+        sqlx::query(&sql)
+            .bind(q.get("kind"))
+            .bind(q.get("status"))
+            .bind(q.get("image").and_then(|v| v.parse::<i64>().ok()))
+            .bind(v.id)
+            .bind(v.token_teams)
+            .fetch_all(&s.pool)
+            .await
+            .map_err(db_err)?
+    };
     let t = |r: &sqlx::postgres::PgRow, i: usize| {
         r.get::<Option<chrono::DateTime<chrono::Utc>>, _>(i)
             .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Micros, true))
     };
-    let items: Vec<Value> = rows
+    let mut items: Vec<Value> = rows
         .iter()
         .map(|r| {
             json!({
@@ -161,6 +171,20 @@ async fn list_h(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiR
             })
         })
         .collect();
+    if !q.contains_key("kind") || only_segmentation {
+        let seg = seg_jobs::list_items(
+            &s,
+            &p,
+            q.get("image").and_then(|v| v.parse::<i64>().ok()),
+            q.get("status").map(String::as_str),
+            limit,
+        )
+        .await?;
+        items.extend(seg.iter().map(seg_jobs::as_list_item));
+        // newest first across the kinds (the stamps are RFC 3339 in UTC, so they sort as text)
+        items.sort_by(|a, b| b["created_at"].as_str().cmp(&a["created_at"].as_str()));
+        items.truncate(limit as usize);
+    }
     Ok(Json(json!({"items": items, "workers": workers_seen()})).into_response())
 }
 
@@ -321,6 +345,10 @@ async fn remove_h(
     Path((kind, id)): Path<(String, i64)>,
 ) -> ApiResult<Response> {
     let p = require_user(authenticate(&s, &headers, &Method::DELETE).await?)?;
+    if kind == "segmentation" {
+        seg_jobs::remove(&s, &p, id).await?;
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    }
     actionable(&s, &p, &kind, id).await?;
     let mut tx = s.pool.begin().await.map_err(db_err)?;
     let results: Vec<i64> = sqlx::query_scalar(
@@ -345,6 +373,10 @@ async fn restart_h(
     Path((kind, id)): Path<(String, i64)>,
 ) -> ApiResult<Response> {
     let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    if kind == "segmentation" {
+        seg_jobs::restart(&s, &p, id).await?;
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    }
     let status = actionable(&s, &p, &kind, id).await?;
     if status != "failed" {
         return Err(ApiError::detail(
