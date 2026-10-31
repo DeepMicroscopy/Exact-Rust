@@ -24,7 +24,7 @@ import { loadTileSource } from "../viewer-core/tileSource";
 import { ZBlender } from "../viewer-core/zBlend";
 import { CrosshairLayer } from "../viewer-core/crosshair";
 import { installGestures, POINTER_GESTURES } from "../viewer-core/gestures";
-import { classifyWheel } from "../viewer-core/wheel";
+import { classifyWheel, WheelStepper } from "../viewer-core/wheel";
 import { CROSS_PLANES, PLANE_COLORS, PLANE_NAMES, centreOf, frameOf, pixelOf, shapeOf, stepped, voxelAt, type Plane, type Voxel, type VolumeShape } from "../viewer-core/mpr";
 
 export const MPR_PREFERENCE = "exact.mpr";
@@ -356,7 +356,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     });
     // a plain mouse wheel steps through the slices (a pinch and Ctrl + wheel zoom, a track pad swipe moves the image)
     const el = v.canvas as HTMLElement;
-    let rest = 0;
+    const stepper = new WheelStepper();
     const wheel = (e: WheelEvent) => {
       const sg = live.current.seg;
       if (sg?.editable && e.altKey && sg.tool.tool === "brush") {
@@ -371,12 +371,8 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       e.preventDefault();
       e.stopImmediatePropagation();
       // a notch of a wheel is 100 or so pixels, finer wheels and line-mode events add up to the same
-      rest += e.deltaMode === 0 ? e.deltaY : Math.sign(e.deltaY) * 100;
-      const d = Math.trunc(rest / 100);
-      if (d) {
-        rest -= d * 100;
-        live.current.onStep(d);
-      }
+      const d = stepper.push(e, performance.now());
+      if (d) live.current.onStep(d);
     };
     el.addEventListener("wheel", wheel, { passive: false, capture: true });
     installGestures(v, () => false);
@@ -419,7 +415,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       const { shape: s, plane: pl, voxel: vx } = live.current;
       const frame = frameOf(pl, vx);
       live.current.onPick(voxelAt(s, pl, at[0], at[1], frame)); // the other planes follow the point that is worked on
-      const erase = sg.tool.erase !== !!oe?.altKey;
+      const erase = sg.tool.erase !== !!(oe?.shiftKey || oe?.altKey);
       if (sg.tool.tool === "wand") {
         void sg.onWand(pl, frame, at, erase);
         return;
@@ -472,12 +468,23 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       pointer.current = at;
       if (!sg?.editable || sg.tool.tool !== "brush" || !at) return brush.current?.setRing(null);
       const [rx, ry] = radii(sg);
-      brush.current?.setRing({ at, rx, ry, erase: sg.tool.erase !== ev.altKey });
+      brush.current?.setRing({ at, rx, ry, erase: sg.tool.erase !== (ev.shiftKey || ev.altKey) });
     };
     const leave = () => {
       pointer.current = null;
       brush.current?.setRing(null);
     };
+    // Shift or Alt turn + and − around: the ring shows it at once, without the pointer having to move
+    const heldKeys = (ev: KeyboardEvent) => {
+      if (ev.key !== "Shift" && ev.key !== "Alt") return;
+      const sg = live.current.seg;
+      const at = pointer.current;
+      if (!sg?.editable || sg.tool.tool !== "brush" || !at) return;
+      const [rx, ry] = radii(sg);
+      brush.current?.setRing({ at, rx, ry, erase: sg.tool.erase !== (ev.shiftKey || ev.altKey) });
+    };
+    window.addEventListener("keydown", heldKeys);
+    window.addEventListener("keyup", heldKeys);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerleave", leave);
     notes.current = plane === 0 ? new AnnotationLayer(v) : null; // below the crosshair
@@ -499,6 +506,8 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     b.setPosition(frameOf(plane, live.current.voxel));
     return () => {
       el.removeEventListener("wheel", wheel, { capture: true });
+      window.removeEventListener("keydown", heldKeys);
+      window.removeEventListener("keyup", heldKeys);
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerleave", leave);
       window.removeEventListener("keydown", spaceKey);

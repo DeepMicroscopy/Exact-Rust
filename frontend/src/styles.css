@@ -571,3 +571,4 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .seg3d-panel .pt-round.seg3d-mode { width: 44px; height: 44px; font-size: 1.7rem; flex: none; box-shadow: none; }
 .seg3d-mode.add { color: #6adf8a; border-color: #6adf8a; }
 .seg3d-mode.erase { color: #ff6a5a; border-color: #ff6a5a; }
+.seg3d-mode.held { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35); }

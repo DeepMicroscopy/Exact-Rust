@@ -155,6 +155,16 @@ try {
   // + / − back to adding; Alt + wheel sizes the brush
   await page.locator('[data-testid="seg3d-mode"]').click();
   await page.locator('[data-testid="seg3d-brush"]').click();
+  // Shift held turns + around: the brush in + mode removes, and the button shows it meanwhile
+  await page.mouse.move(...at(0.5, 0.5));
+  await page.keyboard.down("Shift");
+  check((await page.locator('[data-testid="seg3d-mode"]').innerText()) === "−", "while Shift is held the mode button shows −");
+  await stroke(at(0.35, 0.5), at(0.65, 0.5));
+  await page.keyboard.up("Shift");
+  await waitFor(async () => (await volumeMm3()) === 0, `a stroke with Shift held removes (${await volume()})`);
+  check((await page.locator('[data-testid="seg3d-mode"]').innerText()) === "+", "...and the button shows + again when Shift is let go");
+  await page.keyboard.press("Control+z");
+  await waitFor(async () => Math.abs((await volumeMm3()) - v1) < 1, "Ctrl+Z brings it back");
   await page.mouse.move(...at(0.5, 0.5));
   await page.keyboard.down("Alt");
   await page.mouse.wheel(0, 100);

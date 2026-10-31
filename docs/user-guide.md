@@ -112,7 +112,7 @@ the pixels. The window can be moved by its title, and it shows the volume of the
 that hold some of it.
 
 * The three tools are shown as icons: **Brush** (`B`), **Lasso** (`L`) and **Wand** (`W`). The round **+ / −** button next to them (or `E`) decides whether the tool
-  adds to the mask or subtracts from it; holding Alt turns it around for as long as it is held. The **Brush** paints. *2D disc* works in the plane you draw in, one slice thick;
+  adds to the mask or subtracts from it; holding **Shift** (or Alt) turns it around for as long as it is held, as with the polygon tools. The **Brush** paints. *2D disc* works in the plane you draw in, one slice thick;
   *3D sphere* reaches through the slices around every point of the stroke. The size is set in pixels of the plane you draw in (the default) or in mm, switched next to the slider; `[` and `]` or Alt + mouse wheel change it.
   With a mouse, pen or finger a drag is one stroke, stored when you lift the pointer; the ring under the pointer shows the size.
 * **Lasso** works like a pen that fills what it encircles: draw around an area in one plane and lift the pointer; the outline is closed and the area filled (or taken out with −) in that slice.

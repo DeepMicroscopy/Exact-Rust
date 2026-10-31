@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { FloatingPanel } from "./FloatingPanel";
 import { copyTargets, formatVolume, sizeRange, type SizeUnit } from "../viewer-core/mpr3d";
 import type { MaskState, Message, Op } from "../hooks/useSegment3D";
@@ -85,8 +85,28 @@ function Slider({ label, value, min, max, step, show, onChange, testid }: { labe
   );
 }
 
+/** Is Shift or Alt held: they turn + and − around for as long as they are. */
+function useInverting(): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => setHeld(e.shiftKey || e.altKey);
+    const off = () => setHeld(false);
+    window.addEventListener("keydown", on);
+    window.addEventListener("keyup", on);
+    window.addEventListener("blur", off);
+    return () => {
+      window.removeEventListener("keydown", on);
+      window.removeEventListener("keyup", on);
+      window.removeEventListener("blur", off);
+    };
+  }, []);
+  return held;
+}
+
 /** The movable window of the 3D mask tools. */
 export function Segment3DPanel({ type, state, message, busy, tool, onTool, readOnly, z, slices, onOp, onUndo, onRedo, onClose, extra }: Props) {
+  const inverting = useInverting();
+  const effectiveErase = tool.erase !== inverting;
   const [steps, setSteps] = useState(1);
   const [copyN, setCopyN] = useState(3);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -130,18 +150,18 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
               ))}
             </div>
             <button
-              className={`pt-round seg3d-mode ${tool.erase ? "erase" : "add"}`}
+              className={`pt-round seg3d-mode ${effectiveErase ? "erase" : "add"} ${inverting ? "held" : ""}`}
               onClick={() => onTool({ erase: !tool.erase })}
               aria-pressed={tool.erase}
               aria-label={tool.erase ? "Subtracting (tap to add)" : "Adding (tap to subtract)"}
-              title={tool.erase ? "Subtracting from the mask: click to add (E, or hold Alt)" : "Adding to the mask: click to subtract (E, or hold Alt)"}
+              title={tool.erase ? "Subtracting from the mask: click to add (E, or hold Shift)" : "Adding to the mask: click to subtract (E, or hold Shift)"}
               data-testid="seg3d-mode"
             >
-              {tool.erase ? "−" : "+"}
+              {effectiveErase ? "−" : "+"}
             </button>
           </div>
           {tool.tool === "lasso" ? (
-            <p className="muted small">Draw around the area in a plane: when you lift the pointer the outline is closed and filled in that slice. Alt turns + and − around.</p>
+            <p className="muted small">Draw around the area in a plane: when you lift the pointer the outline is closed and filled in that slice. Shift turns + and − around while held.</p>
           ) : tool.tool === "brush" ? (
             <>
               <div className="seg" role="group" aria-label="Brush shape">
@@ -160,7 +180,7 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
                   </button>
                 ))}
               </div>
-              <p className="muted small">Alt turns + and − around, Alt + wheel or [ ] changes the size.</p>
+              <p className="muted small">Shift turns + and − around while held; Alt + wheel or [ ] changes the size.</p>
             </>
           ) : (
             <>
@@ -174,7 +194,7 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
               </div>
               <Slider label="Tolerance" value={tool.tolerance} min={0} max={100} step={1} show={`${tool.tolerance} %`} onChange={(v) => onTool({ tolerance: v })} testid="seg3d-tolerance" />
               <Slider label="Reach" value={tool.maxRadiusMm} min={0} max={100} step={1} show={tool.maxRadiusMm ? `${tool.maxRadiusMm} mm` : "no limit"} onChange={(v) => onTool({ maxRadiusMm: v })} testid="seg3d-reach" />
-              <p className="muted small">Click to add (+) or remove (−) the connected region of similar grey values; Alt turns it around.</p>
+              <p className="muted small">Click to add (+) or remove (−) the connected region of similar grey values; Shift turns it around while held.</p>
             </>
           )}
         </>
