@@ -35,6 +35,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && (pip install --no-cache-dir slideio || echo "WARNING: no slideio wheel for this platform: CZI, VSI and DICOM cannot be read") \
     && pip install --no-cache-dir "${QT_WSI_REGISTRATION}" \
     && apt-get purge -y build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+# DeeperHistReg (optional registration plugin, pulls in PyTorch: ~1 GB): docker build --build-arg WITH_DEEPERHISTREG=1 ... The CPU
+# build of torch is used; for a GPU worker install the CUDA build of torch in a derived image. Not built or tested on this host.
+ARG WITH_DEEPERHISTREG=0
+RUN if [ "${WITH_DEEPERHISTREG}" = "1" ]; then \
+      pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+      && pip install --no-cache-dir deeperhistreg "pyvips[binary]" SimpleITK kornia tqdm; \
+    fi
 # EXACT's code: the registration worker reads slides through `util.slide_server` and the helper unpickles EXACT's slide objects
 ARG EXACT_REPO=https://github.com/DeepMicroscopy/Exact.git
 ARG EXACT_REF=master

@@ -11,6 +11,8 @@ import os
 import pickle
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # `python -I` does not: dhr_transform is unpickled from here
+
 # the pickled tree holds EXACT's slide objects (`util.slide_server`, ...): they unpickle only with EXACT's code on the path
 # (`python -I` ignores PYTHONPATH, hence REGISTRATION_EXACT_DIR: the `exact` folder of an EXACT checkout)
 if os.environ.get("REGISTRATION_EXACT_DIR"):

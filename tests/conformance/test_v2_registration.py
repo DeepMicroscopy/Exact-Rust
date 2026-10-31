@@ -205,6 +205,27 @@ def test_real_worker_registers_and_the_helper_converts_through_the_pickle():
     assert set(conv.json()) == {"x1", "y1"}
 
 
+@pytest.mark.skipif(not os.environ.get("REG_E2E"), reason="REG_E2E=1 runs the real registration worker")
+@pytest.mark.parametrize("mode", ["affine", "deformable"])
+def test_real_worker_registers_with_deeperhistreg(mode):
+    c = client()
+    py = os.environ.get("REGISTRATION_PYTHON", "/opt/miniconda3/envs/env311/bin/python")
+    src, tgt = int(os.environ.get("REG_SRC", 43)), int(os.environ.get("REG_TGT", 2))
+    plugin = c.post("/api/v2/plugins/register", json={"name": "DeeperHistReg", "author": "tests", "package": "deeperhistreg", "plugin_type": 2}).json()
+    j = c.post(f"/api/v2/images/{src}/register", json={"target_image": tgt, "plugin": plugin["id"], "mode": mode, "device": "cpu",
+                                                       "thumbnail_size": 1024, "registration_size": 512, "angle_step": 90}).json()
+    env = {**os.environ, "EXACT_URL": BASE, "EXACT_USER": "aubreville", "EXACT_PASSWORD": PW,
+           "EXACT_DIR": os.environ.get("REGISTRATION_EXACT_DIR", str(pathlib.Path.home() / "code/Exact/exact"))}
+    out = subprocess.run([py, str(ROOT / "helpers/queue_worker.py"), "--only", "DeeperHistReg", "--once", "--name", "e2e-dhr"], env=env, capture_output=True, text=True, timeout=1800)
+    job = c.get(f"/api/v2/registration-jobs/{j['id']}").json()
+    assert job["status"] == "done", out.stdout + out.stderr
+    reg = c.get(f"/api/v2/registrations/{job['registration']}").json()
+    assert reg["file"] and reg["transformation_matrix"]
+    conv = c.get(f"/api/v2/registrations/{reg['id']}/convert", params={"vector": '{"x1": 1000, "y1": 1000}'})
+    assert conv.status_code == 200, conv.text
+    assert set(conv.json()) == {"x1", "y1"}
+
+
 def test_team_members_manage_registrations_without_model_permissions():
     t, a = client("rt_teamadmin"), client()
     j = t.post("/api/v2/images/6/register", json={"target_image": 11})  # rt_teamadmin has no Django model permissions, only the team
