@@ -131,16 +131,44 @@ impl Geometry {
 #[derive(Default, Clone)]
 pub struct MaskVol {
     tiles: HashMap<Key, Tile>,
+    /// per tile: number of voxels and the box `[c0, c1, r0, r1]` inside the tile (so that the totals do not need a pass over all voxels)
+    stats: HashMap<Key, TileStat>,
+}
+
+#[derive(Clone, Copy)]
+struct TileStat {
+    count: u64,
+    bbox: [usize; 4],
+}
+
+fn tile_stat(t: &Tile) -> TileStat {
+    let (mut c0, mut c1, mut r0, mut r1, mut count) = (T, 0, T, 0, 0u64);
+    for r in 0..T {
+        let row = &t[r * T..(r + 1) * T];
+        let first = row.iter().position(|v| *v != 0);
+        if let Some(first) = first {
+            let last = row.iter().rposition(|v| *v != 0).unwrap_or(first);
+            count += row.iter().filter(|v| **v != 0).count() as u64;
+            c0 = c0.min(first);
+            c1 = c1.max(last);
+            r0 = r0.min(r);
+            r1 = r1.max(r);
+        }
+    }
+    TileStat {
+        count,
+        bbox: [c0, c1, r0, r1],
+    }
 }
 
 impl MaskVol {
     pub fn from_tiles(tiles: impl IntoIterator<Item = (Key, Tile)>) -> Self {
-        Self {
-            tiles: tiles
-                .into_iter()
-                .filter(|(_, t)| t.iter().any(|v| *v != 0))
-                .collect(),
-        }
+        let tiles: HashMap<Key, Tile> = tiles
+            .into_iter()
+            .filter(|(_, t)| t.iter().any(|v| *v != 0))
+            .collect();
+        let stats = tiles.iter().map(|(k, t)| (*k, tile_stat(t))).collect();
+        Self { tiles, stats }
     }
 
     pub fn get(&self, c: usize, r: usize, z: usize) -> bool {
@@ -179,10 +207,12 @@ impl MaskVol {
     pub fn put_tile(&mut self, key: Key, tile: Option<Tile>) {
         match tile {
             Some(t) if t.iter().any(|v| *v != 0) => {
+                self.stats.insert(key, tile_stat(&t));
                 self.tiles.insert(key, t);
             }
             _ => {
                 self.tiles.remove(&key);
+                self.stats.remove(&key);
             }
         }
     }
@@ -192,30 +222,14 @@ impl MaskVol {
     }
 
     pub fn count(&self) -> u64 {
-        self.tiles
-            .values()
-            .map(|t| t.iter().filter(|v| **v != 0).count() as u64)
-            .sum()
+        self.stats.values().map(|s| s.count).sum()
     }
 
     /// Bounding box `[c0, c1, r0, r1, z0, z1]` (inclusive) of the mask, if there is one.
     pub fn bbox(&self) -> Option<[usize; 6]> {
         let mut b: Option<[usize; 6]> = None;
-        for (&(tx, ty, z), t) in &self.tiles {
-            let (mut c0, mut c1, mut r0, mut r1) = (T, 0, T, 0);
-            for r in 0..T {
-                for c in 0..T {
-                    if t[r * T + c] != 0 {
-                        c0 = c0.min(c);
-                        c1 = c1.max(c);
-                        r0 = r0.min(r);
-                        r1 = r1.max(r);
-                    }
-                }
-            }
-            if c0 > c1 {
-                continue;
-            }
+        for (&(tx, ty, z), st) in &self.stats {
+            let [c0, c1, r0, r1] = st.bbox;
             let (c0, c1) = (tx as usize * T + c0, tx as usize * T + c1);
             let (r0, r1) = (ty as usize * T + r0, ty as usize * T + r1);
             let z = z as usize;
@@ -846,6 +860,7 @@ pub fn clear(m: &mut MaskVol, j: &mut Journal) {
             j.touch(key, Some(t));
         }
         m.tiles.remove(&key);
+        m.stats.remove(&key);
     }
 }
 
@@ -878,9 +893,14 @@ pub fn settle(m: &mut MaskVol, j: &Journal) -> Vec<(Key, Option<Tile>)> {
         let empty = m.tiles.get(&key).is_none_or(|t| t.iter().all(|v| *v == 0));
         if empty {
             m.tiles.remove(&key);
+            m.stats.remove(&key);
             out.push((key, None));
         } else {
-            out.push((key, m.tiles.get(&key).cloned()));
+            let t = m.tiles.get(&key).cloned();
+            if let Some(t) = &t {
+                m.stats.insert(key, tile_stat(t));
+            }
+            out.push((key, t));
         }
     }
     out
@@ -905,6 +925,28 @@ mod tests {
         }
     }
 
+    /// the totals are kept per tile and refreshed by `settle`; these tests change tiles without it
+    fn cnt(m: &mut MaskVol) -> u64 {
+        m.stats = m.tiles.iter().map(|(k, t)| (*k, tile_stat(t))).collect();
+        m.count()
+    }
+
+    fn clear_box(
+        m: &mut MaskVol,
+        j: &mut Journal,
+        c: std::ops::Range<usize>,
+        r: std::ops::Range<usize>,
+        z: std::ops::Range<usize>,
+    ) {
+        for z in z {
+            for r in r.clone() {
+                for c in c.clone() {
+                    m.set(j, c, r, z, false);
+                }
+            }
+        }
+    }
+
     fn fill_box(
         m: &mut MaskVol,
         c: std::ops::Range<usize>,
@@ -919,6 +961,34 @@ mod tests {
                 }
             }
         }
+        settle(m, &j);
+    }
+
+    #[test]
+    fn count_and_box_follow_every_change() {
+        let mut m = MaskVol::default();
+        let mut j = Journal::default();
+        for z in 3..6 {
+            for r in 2..9 {
+                for c in 5..12 {
+                    m.set(&mut j, c, r, z, true);
+                }
+            }
+        }
+        settle(&mut m, &j);
+        assert_eq!(m.count(), 3 * 7 * 7);
+        assert_eq!(m.bbox(), Some([5, 11, 2, 8, 3, 5]));
+        let mut j = Journal::default();
+        clear_box(&mut m, &mut j, 5..12, 2..9, 5..6);
+        settle(&mut m, &j);
+        assert_eq!(m.count(), 2 * 7 * 7);
+        assert_eq!(m.bbox(), Some([5, 11, 2, 8, 3, 4]));
+        m.put_tile((0, 0, 3), None);
+        assert_eq!(m.count(), 7 * 7);
+        assert_eq!(m.bbox(), Some([5, 11, 2, 8, 4, 4]));
+        let mut j = Journal::default();
+        clear(&mut m, &mut j);
+        assert_eq!((m.count(), m.bbox()), (0, None));
     }
 
     #[test]
@@ -1157,12 +1227,12 @@ mod tests {
         let g = geom();
         let mut m = MaskVol::default();
         fill_box(&mut m, 10..15, 10..15, 5..10);
-        let before = m.count();
+        let before = cnt(&mut m);
         let mut j = Journal::default();
         morph(&mut m, &mut j, &g, true, 1);
-        assert!(m.count() > before && m.get(9, 12, 7) && !m.get(8, 12, 7));
+        assert!(cnt(&mut m) > before && m.get(9, 12, 7) && !m.get(8, 12, 7));
         morph(&mut m, &mut j, &g, false, 1);
-        assert_eq!(m.count(), before);
+        assert_eq!(cnt(&mut m), before);
         // fill holes: a hollow cube becomes solid
         let mut m = MaskVol::default();
         fill_box(&mut m, 10..20, 10..20, 5..15);
@@ -1174,10 +1244,11 @@ mod tests {
                 }
             }
         }
+        settle(&mut m, &j);
         assert!(!m.get(15, 15, 10));
         fill_holes(&mut m, &mut Journal::default(), &g);
         assert!(m.get(15, 15, 10));
-        assert_eq!(m.count(), 1000);
+        assert_eq!(cnt(&mut m), 1000);
         // a cavity open to the outside stays
         let mut m = MaskVol::default();
         fill_box(&mut m, 10..20, 10..20, 5..15);
@@ -1189,9 +1260,9 @@ mod tests {
                 }
             }
         }
-        let c0 = m.count();
+        let c0 = cnt(&mut m);
         fill_holes(&mut m, &mut Journal::default(), &g);
-        assert_eq!(m.count(), c0);
+        assert_eq!(cnt(&mut m), c0);
         // largest component
         let mut m = MaskVol::default();
         fill_box(&mut m, 2..6, 2..6, 2..6);
@@ -1210,7 +1281,7 @@ mod tests {
         copy_slice(&mut m, &mut j, &g, 5, 6, false);
         assert!(m.get(12, 12, 6));
         clear(&mut m, &mut j);
-        assert_eq!(m.count(), 0);
+        assert_eq!(cnt(&mut m), 0);
         assert_eq!(j.keys().len(), 2);
     }
 
@@ -1244,6 +1315,6 @@ mod tests {
         let out = settle(&mut m, &j2);
         assert_eq!(out.len(), 1);
         assert!(out[0].1.is_none());
-        assert_eq!(m.count(), 0);
+        assert_eq!(cnt(&mut m), 0);
     }
 }

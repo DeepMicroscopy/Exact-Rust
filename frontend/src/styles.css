@@ -42,6 +42,11 @@ input:not([type="range"]):not([type="checkbox"]) {
   width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit;
 }
 input:focus { outline: none; border-color: var(--border-h); }
+/* the general padding would squeeze the swatch of a colour input to nothing */
+input[type="color"] { padding: 3px; width: 56px; min-height: 40px; cursor: pointer; }
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
+input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
 
 .login-wrap { height: 100%; display: grid; place-items: center; padding: 16px; }
 .login { width: min(360px, 100%); padding: 32px; display: flex; flex-direction: column; gap: 14px; }
@@ -184,6 +189,9 @@ kbd { font: 600 0.72rem/1 ui-monospace, monospace; background: rgba(255, 255, 25
 .dropdown .dd-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dropdown .caret { opacity: 0.6; font-size: 0.8rem; }
 .dd-pop { position: absolute; bottom: calc(100% + 8px); left: 0; min-width: 230px; max-width: 320px; z-index: 8; padding: 6px; background: rgba(18, 18, 24, 0.97); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
+/* in the top bar the list opens downwards, to the left of the button's right edge */
+.viewer-bar .dd-pop { bottom: auto; top: calc(100% + 8px); left: auto; right: 0; }
+.viewer-bar { position: relative; z-index: 20; }
 .dd-filter { width: 100%; box-sizing: border-box; margin-bottom: 6px; background: var(--glass); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; font: inherit; }
 .dd-list { max-height: min(46vh, 360px); overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 .dd-item { display: flex; align-items: center; gap: 8px; text-align: left; background: transparent; border: 0; color: var(--text); border-radius: 7px; padding: 8px 9px; cursor: pointer; font: inherit; min-height: 36px; }
