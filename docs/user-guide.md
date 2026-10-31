@@ -117,7 +117,7 @@ that hold some of it.
   With a mouse, pen or finger a drag is one stroke, stored when you lift the pointer; the ring under the pointer shows the size.
 * **Lasso** works like a pen that fills what it encircles: draw around an area in one plane and lift the pointer; the outline is closed and the area filled (or taken out with −) in that slice.
 * **Wand** adds (or with − removes) the connected region whose grey values are within the *tolerance* of the grey value you click on,
-  either in the plane or through the whole volume. *Reach* limits it to a radius (mm) around the click; a region that is too large is refused with a message.
+  either in the plane (the default) or through the whole volume. *Reach* limits it to a radius (mm) around the click; a region that is too large is refused with a message.
 * **Interpolate slices** fills the empty axial slices between painted ones by blending their shapes. **Copy** repeats the slice of the crosshair
   onto the next or previous slices.
 * **Grow** and **Shrink** change the mask by a number of voxels, **Fill holes** closes cavities, **Largest part only** removes the small separate pieces,

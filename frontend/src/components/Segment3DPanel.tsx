@@ -24,7 +24,7 @@ export interface SegTool {
   opacity: number;
 }
 
-export const DEFAULT_TOOL: SegTool = { tool: "brush", erase: false, ball: false, size: 12, unit: "px", wand3d: true, tolerance: 12, maxRadiusMm: 0, opacity: 0.55 };
+export const DEFAULT_TOOL: SegTool = { tool: "brush", erase: false, ball: false, size: 12, unit: "px", wand3d: false, tolerance: 12, maxRadiusMm: 0, opacity: 0.55 };
 
 interface Props {
   type: { name: string; color: string };
