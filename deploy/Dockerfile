@@ -35,9 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && (pip install --no-cache-dir slideio || echo "WARNING: no slideio wheel for this platform: CZI, VSI and DICOM cannot be read") \
     && pip install --no-cache-dir "${QT_WSI_REGISTRATION}" \
     && apt-get purge -y build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-# DeeperHistReg (optional registration plugin, pulls in PyTorch: ~1 GB): docker build --build-arg WITH_DEEPERHISTREG=1 ... The CPU
-# build of torch is used; for a GPU worker install the CUDA build of torch in a derived image. Not built or tested on this host.
-ARG WITH_DEEPERHISTREG=0
+# DeeperHistReg (registration plugin; PyTorch makes the image about 1 GB larger): part of the image, `--build-arg WITH_DEEPERHISTREG=0`
+# leaves it out. The CPU build of torch is used; for a GPU worker install the CUDA build of torch in a derived image.
+ARG WITH_DEEPERHISTREG=1
 RUN if [ "${WITH_DEEPERHISTREG}" = "1" ]; then \
       pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
       && pip install --no-cache-dir deeperhistreg "pyvips[binary]" SimpleITK kornia tqdm; \
@@ -48,6 +48,7 @@ ARG EXACT_REF=master
 RUN git clone --depth 1 --branch "${EXACT_REF}" "${EXACT_REPO}" /opt/exact && rm -rf /opt/exact/.git
 COPY --from=build /src/target/release/exact-server /src/target/release/exact-cli /usr/local/bin/
 COPY helpers /app/helpers
+COPY --chmod=755 deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY baseline /app/baseline
 COPY --from=ui /src/frontend/dist /app/frontend/dist
 ENV EXACT_LISTEN=0.0.0.0:8002 \
@@ -60,4 +61,5 @@ USER exact
 WORKDIR /app
 EXPOSE 8002
 HEALTHCHECK --interval=30s --timeout=5s CMD curl -fsS http://127.0.0.1:8002/timesync/ >/dev/null || exit 1
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["exact-server"]

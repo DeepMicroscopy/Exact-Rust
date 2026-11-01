@@ -3,8 +3,7 @@
 #   alias dc='docker compose --env-file deploy/exact.env -f deploy/docker-compose.yml'   # the env file also fills ${...} below
 #   dc build && dc up -d db
 #   dc exec -T db pg_restore --no-owner --role="$SQL_USER" -U "$SQL_USER" -d "$SQL_DATABASE" < production.dump   # a pg_dump -Fc of EXACT (PostgreSQL 12 or newer)
-#   dc run --rm server sh -c 'exact-cli migrate --confirm-db "$SQL_DATABASE"'
-#   dc up -d
+#   dc up -d                                       # the server migrates the database itself on every start (EXACT_AUTO_MIGRATE=0 in exact.env: not)
 # The database lives in the volume `pgdata` (`dc down -v` throws it away) and is reachable by the other services as host `db`
 # (SQL_HOST in exact.env is ignored here). For psql / scripts/audit-backup.sh on the host it is published on 127.0.0.1:5433.
 # IMAGE_MODE=ro (default) mounts the image store read-only into the server: view-only, so the real files cannot be touched (uploads, move,

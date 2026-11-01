@@ -31,8 +31,9 @@ and `EXACT_NIFTI_CACHE` (inflated `.nii.gz` volumes, grows) on their own folders
 **With Docker** (`deploy/docker-compose.yml`): `dc up -d db` creates the empty database in the volume `pgdata` (name, user, password from `exact.env`), then
 ```
 dc exec -T db pg_restore --no-owner --role="$SQL_USER" -U "$SQL_USER" -d "$SQL_DATABASE" < production.dump
-dc run --rm server sh -c 'exact-cli migrate --confirm-db "$SQL_DATABASE"'
+dc up -d
 ```
+The server container applies the migrations itself on every start (its entrypoint runs `exact-cli migrate --confirm-db "$SQL_DATABASE"` first; `EXACT_AUTO_MIGRATE=0` in `exact.env` turns that off). Restore the dump *before* the first start of the server: migrating an empty database first would make `pg_restore` collide with the tables that already exist.
 (`dc` is the alias from the compose file's header; a dump of the production PostgreSQL 12 restores into 16.) A dump of the beta: `dc exec -T db pg_dump -Fc -U "$SQL_USER" "$SQL_DATABASE" > beta.dump`; throw it all away: `dc down -v`.
 
 **Native** (existing PostgreSQL):
@@ -45,7 +46,7 @@ safe to repeat; Django's data stays as it is):
 ```
 SQL_DATABASE=exact_beta ... exact-cli migrate --confirm-db exact_beta
 ```
-`migrate` is not run by the server on start: run it after every update of the binary.
+`migrate` is not run by the server binary on start: run it after every update of the binary (the Docker image does it in its entrypoint).
 
 ## 3. Configure
 `cp deploy/exact.env.example exact.env` and fill it in (database, the three folders, `FIDO_SERVER_ID`, the worker account).
@@ -92,7 +93,7 @@ until login rate limiting exists. Mail is not configured: users get in through i
 
 ## 7. Operating notes
 * Logs: stdout of the units (`journalctl -u exact-server`). Slow requests and the helper processes (slideio, registration) log there.
-* Update: stop, replace binary (and `frontend/dist`), `exact-cli migrate`, start. (With the Docker setup: `dc build`, `dc run --rm server sh -c 'exact-cli migrate --confirm-db "$SQL_DATABASE"'`, `dc up -d`.) The server refuses to start on a database that was not migrated for its version and says so in the log.
+* Update: stop, replace binary (and `frontend/dist`), `exact-cli migrate`, start. (With the Docker setup: `dc build`, `dc up -d`; the migration runs when the server container starts.) The server refuses to start on a database that was not migrated for its version and says so in the log.
 * Throw away: stop both units, `dropdb exact_beta`, delete the file copy. Production is untouched.
 * Known gaps: no window/level in the three-plane view, no editor for export formats, global annotations have no frame, no per-user rate limiting (hence the access restriction).
 
