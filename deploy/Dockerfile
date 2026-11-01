@@ -28,10 +28,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Python for the slideio helper (CZI, VSI, DICOM) and the registration worker / helper. slideio publishes wheels for Linux x86_64
 # (and macOS), none for Linux arm64: there the image builds without it and CZI/VSI/DICOM are unavailable.
 ARG QT_WSI_REGISTRATION=git+https://github.com/DeepMicroscopy/WsiRegistration.git
+# (tifffile, zarr and xmltodict are pinned like EXACT's requirements.txt: its util.slide_server, which the registration worker reads slides
+# through, imports zarr.core / tifffile.tifffile.ZarrTiffStore, which newer releases no longer have)
 # (probreg, a dependency of qt-wsi-registration, compiles C++ on install: the compiler is removed again afterwards)
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
-    && pip install --no-cache-dir numpy pillow opencv-python-headless openslide-python tifffile ome-types pydicom czifile \
+    && pip install --no-cache-dir numpy pillow opencv-python-headless openslide-python ome-types pydicom czifile \
       scikit-image scipy pandas matplotlib scikit-learn \
+      tifffile==2023.2.28 zarr==2.18.7 xmltodict==0.13.0 \
     && (pip install --no-cache-dir slideio || echo "WARNING: no slideio wheel for this platform: CZI, VSI and DICOM cannot be read") \
     && pip install --no-cache-dir "${QT_WSI_REGISTRATION}" \
     && apt-get purge -y build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
@@ -48,6 +51,9 @@ RUN if [ "${WITH_DEEPERHISTREG}" = "1" ]; then \
 ARG EXACT_REPO=https://github.com/DeepMicroscopy/Exact.git
 ARG EXACT_REF=master
 RUN git clone --depth 1 --branch "${EXACT_REF}" "${EXACT_REPO}" /opt/exact && rm -rf /opt/exact/.git
+# the worker's slide reader must import (it did not once: zarr missing): fails the build instead of the first registration job.
+# Without slideio (no wheel for arm64) EXACT's reader cannot be imported at all; that case was already announced above.
+RUN if python -c "import slideio" 2>/dev/null; then cd /opt/exact/exact && python -c "import util.slide_server"; else echo "WARNING: no slideio: the registration worker cannot read slides here"; fi
 COPY --from=build /src/target/release/exact-server /src/target/release/exact-cli /usr/local/bin/
 COPY helpers /app/helpers
 COPY --chmod=755 deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
