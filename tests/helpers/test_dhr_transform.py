@@ -61,7 +61,7 @@ def test_it_survives_pickling_and_converts_boxes_like_the_quad_tree():
 
 def test_homography_fit_recovers_a_rigid_motion():
     t, angle, shift, shape = make()
-    m, err = t.affine((3000, 2000))
+    m, err = t.affine((0, 0, 3000, 2000))
     pts = np.array([[1500.0, 1200.0], [2500.0, 1700.0]])
     got = (m @ np.c_[pts, np.ones(2)].T).T[:, :2]
     assert err < 0.5 and np.abs(got - truth(t, angle, shift, shape, pts)).max() < 0.5
@@ -75,5 +75,22 @@ def test_overviews_of_a_region_shift_the_slide_coordinates():
     pts = np.array([[1500.0, 1200.0], [2500.0, 1700.0]])
     plain = t.convert(pts - [700.0, 300.0])  # the same points in the coordinates of the uncropped transform
     assert np.allclose(cropped.convert(pts), plain + [-400.0, 50.0])
-    m, err = cropped.affine((3000, 2000))
+    m, err = cropped.affine((0, 0, 3000, 2000))
     assert err < 0.5 and np.allclose((m @ np.c_[pts, np.ones(2)].T).T[:, :2], cropped.convert(pts), atol=0.5)
+
+
+def test_a_rotation_of_more_than_ninety_degrees_converts_too():
+    """The first inversion (a fixed point iteration) diverged above ~60 degrees: slides scanned turned by 90 or 180 degrees failed."""
+    for angle in (1.75, 3.2, -2.4):
+        t, a, shift, shape = make(angle=angle)
+        h, w = shape
+        c, s = np.cos(a), np.sin(a)
+        src, want = [], []
+        for fx, fy in [(200, 150), (300, 250), (150, 300), (350, 120)]:  # targets inside the field (500 x 400 pixels)
+            sx = c * (fx - w / 2) - s * (fy - h / 2) + w / 2 + shift[0]  # the source position of that target, in field pixels
+            sy = s * (fx - w / 2) + c * (fy - h / 2) + h / 2 + shift[1]
+            src.append([sx * 1.25 * 10.0, (sy * 1.25 - 20) * 10.0])  # source slide pixels (padded overview / ratio, padding 20 px above)
+            want.append([(fx * 1.25 - 30) * 12.0, fy * 1.25 * 12.0])  # target slide pixels
+        assert np.abs(t.convert(src) - np.array(want)).max() < 0.1, angle
+        m, err = t.affine((0, 0, 3000, 2000))
+        assert err < 1.0

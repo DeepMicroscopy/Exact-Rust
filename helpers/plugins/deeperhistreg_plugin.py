@@ -7,7 +7,7 @@ overview of both slides with EXACT's own readers, registers the overviews and ke
 sent to the server is the homography that fits that transform best (all the web UI and exact-sync need for a rigid or affine
 result); the transform itself goes along as the registration's file, so that the server converts points through the full
 deformation, as it does with the quad tree of qt-wsi-registration. `registration_error` is how far, on average, the matrix is
-from the deformable result (target pixels); it is 0 for the rigid and affine modes.
+from the deformable result over the source tissue (target pixels); it is 0 for the rigid and affine modes.
 """
 import json
 import pathlib
@@ -116,7 +116,7 @@ class DeeperHistReg(RegistrationPlugin):
             field = np.load(f"{tmp}/field.npy")
             pads = json.load(open(f"{tmp}/padding.json"))
         transform = DhrTransform(field, pads["pad_source"], pads["pad_target"], pads["ratio"], scale_src, scale_tgt, box_src[:2], box_tgt[:2])
-        matrix, error = transform.affine(source_slide.dimensions)
+        matrix, error = transform.affine(box_src)
         return RegistrationResult(matrix={f"t_{i}{j}": float(matrix[i][j]) for i in range(3) for j in range(3)}, error=error,
                                   runtime=int(time.time() - started), file=pickle.dumps(transform))
 
