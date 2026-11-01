@@ -1,0 +1,17 @@
+# Registration worker on an NVIDIA GPU (DeeperHistReg uses it when torch sees one). Needs the NVIDIA driver and the NVIDIA Container
+# Toolkit on the host, and an image built with the CUDA build of torch:
+#   dc build --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124 worker server
+#   dc -f deploy/docker-compose.gpu.yml run --rm worker nvidia-smi            # the GPU is visible in the container
+#   dc -f deploy/docker-compose.gpu.yml run --rm worker python -c "import torch; print(torch.cuda.is_available())"
+#   dc -f deploy/docker-compose.gpu.yml up -d
+# (`dc` is the alias from docker-compose.yml's header; the second -f adds this file to it.) A 6 GB card (RTX 2060) registers affine at any
+# size and deformable at a registration size of 1024-2048; if it runs out of memory ("CUDA out of memory" in the job's error) lower the size.
+services:
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

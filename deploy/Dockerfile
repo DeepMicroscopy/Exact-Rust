@@ -36,10 +36,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && pip install --no-cache-dir "${QT_WSI_REGISTRATION}" \
     && apt-get purge -y build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 # DeeperHistReg (registration plugin; PyTorch makes the image about 1 GB larger): part of the image, `--build-arg WITH_DEEPERHISTREG=0`
-# leaves it out. The CPU build of torch is used; for a GPU worker install the CUDA build of torch in a derived image.
+# leaves it out. The CPU build of torch is the default; for a GPU worker build with
+# `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124` (about 2-3 GB more) and start it with deploy/docker-compose.gpu.yml.
 ARG WITH_DEEPERHISTREG=1
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
 RUN if [ "${WITH_DEEPERHISTREG}" = "1" ]; then \
-      pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+      pip install --no-cache-dir torch torchvision --index-url "${TORCH_INDEX}" \
       && pip install --no-cache-dir deeperhistreg "pyvips[binary]" SimpleITK kornia tqdm; \
     fi
 # EXACT's code: the registration worker reads slides through `util.slide_server` and the helper unpickles EXACT's slide objects
