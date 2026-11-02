@@ -38,11 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && (pip install --no-cache-dir slideio || echo "WARNING: no slideio wheel for this platform: CZI, VSI and DICOM cannot be read") \
     && pip install --no-cache-dir "${QT_WSI_REGISTRATION}" \
     && apt-get purge -y build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-# DeeperHistReg (registration plugin; PyTorch makes the image about 1 GB larger): part of the image, `--build-arg WITH_DEEPERHISTREG=0`
-# leaves it out. The CPU build of torch is the default; for a GPU worker build with
-# `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124` (about 2-3 GB more) and start it with deploy/docker-compose.gpu.yml.
+# DeeperHistReg (registration plugin; PyTorch makes the image 2-3 GB larger): part of the image, `--build-arg WITH_DEEPERHISTREG=0`
+# leaves it out. The CUDA build of torch is the default (it runs on the CPU as well when the container sees no GPU); for a smaller
+# image on a host without a GPU build with `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu` and start with
+# deploy/docker-compose.cpu.yml.
 ARG WITH_DEEPERHISTREG=1
-ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cu124
 RUN if [ "${WITH_DEEPERHISTREG}" = "1" ]; then \
       pip install --no-cache-dir torch torchvision --index-url "${TORCH_INDEX}" \
       && pip install --no-cache-dir deeperhistreg "pyvips[binary]" SimpleITK kornia tqdm; \

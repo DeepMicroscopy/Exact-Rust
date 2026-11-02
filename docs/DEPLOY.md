@@ -68,6 +68,18 @@ baseline comes from a development database), but each one should be understood.
 Production has probably not applied EXACT PR #167 (migration `processing/0015_registration_plugins`; the audit says). That is fine:
 `exact-cli migrate` adds the same columns with the same DDL, and Django's migration later finds them present.
 
+## 4c. GPU for the registration worker
+The image carries the CUDA build of PyTorch and `docker-compose.yml` reserves one NVIDIA GPU for the worker; DeeperHistReg uses it when
+torch sees one (a registration of a pair of large slides takes about 30 s on an RTX 2060 instead of minutes). The host needs the NVIDIA
+driver and the NVIDIA Container Toolkit (`nvidia-ctk`); with rootless Docker also
+`nvidia-ctk runtime configure --runtime=docker --config=$HOME/.config/docker/daemon.json`, `nvidia-container-cli.no-cgroups = true`
+in `/etc/nvidia-container-runtime/config.toml` and `systemctl --user restart docker`. Check it:
+`dc run --rm worker nvidia-smi` and `dc run --rm worker python -c "import torch; print(torch.cuda.is_available())"`.
+A 6 GB card registers affine at any size and deformable at a registration size of 1024-2048; if a job fails with "CUDA out of memory",
+lower the size. **Without a GPU** (or without the toolkit: "could not select device driver nvidia") add the second file,
+`dc -f deploy/docker-compose.cpu.yml up -d` (Docker Compose 2.24+), and build with
+`--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu` to save about 2 GB.
+
 ## 5. Start
 Native: build (`cargo build --release -p exact-server -p exact-cli`, needs libclang and ffmpeg dev libraries; `cd frontend && pnpm
 install && pnpm build`), install the binary and `frontend/dist`, then `deploy/exact-server.service` and `deploy/exact-worker.service`

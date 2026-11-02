@@ -1,0 +1,7 @@
+# Registration worker without a GPU: drops the NVIDIA device reservation of docker-compose.yml (hosts without the NVIDIA Container
+# Toolkit would refuse to start the worker with "could not select device driver nvidia"). DeeperHistReg then runs on the CPU
+# (device auto picks it); a build with `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu` saves about 2 GB.
+#   dc -f deploy/docker-compose.cpu.yml up -d     # (`dc` is the alias from docker-compose.yml's header; needs Docker Compose 2.24+)
+services:
+  worker:
+    deploy: !reset null

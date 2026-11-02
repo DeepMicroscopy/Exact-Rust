@@ -56,6 +56,15 @@ services:
     # the worker reads the slide files itself (the paths the server hands out are the server's: /data/images/...)
     volumes:
       - ${IMAGE_PATH}:/data/images:ro
+    # the registration worker uses the host's NVIDIA GPU (needs the NVIDIA driver and the NVIDIA Container Toolkit, see docs/DEPLOY.md);
+    # without a GPU start with the second file `-f deploy/docker-compose.cpu.yml` (Docker Compose 2.24 or newer)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: ["sh", "-c", "python /app/helpers/queue_worker.py --url http://server:8002 --user \"$WORKER_USER\" --password \"$WORKER_PASSWORD\" --exact-dir /opt/exact/exact"]
     restart: unless-stopped
   # Automatic segmentation (optional): `docker compose --profile segmentation up -d`. It reads no image files (the voxels come over HTTP),
