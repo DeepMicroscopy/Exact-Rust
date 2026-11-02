@@ -1,6 +1,7 @@
 ---
 title: Administration
 nav_order: 4
+has_children: true
 ---
 
 # Administration
@@ -105,22 +106,6 @@ safe to delete too.
 
 
 ## System health (site admins)
-Site admins have a pulse icon in the top bar. It carries a yellow or red dot only while a check is in alarm; hovering shows the storage
-(used, free and total space of the volumes of the image store, media files and cache), clicking lists every check with its status
-(`GET /api/v2/health`, refreshed every minute):
-
-| Check | Source | Alarm |
-|---|---|---|
-| CPU utilization | `/proc/stat` (all cores, 0.3 s sample) | warning from 85 %, critical from 95 % |
-| GPU utilization | `nvidia-smi` in the server container | none (shown for information; its temperature counts below) |
-| Active users | everybody whose browser or API token (exact-sync) made a request in the last 5 minutes; workers are not counted | none |
-| RAID status | the status file of the host (below) | degraded / rebuilding: warning, failed: critical, file older than 15 minutes: warning |
-| Temperature | hottest sensor in `/sys/class/hwmon`, the GPU, `temperature_c` of the status file | warning from 80 °C, critical from 90 °C |
-| Free space | the volumes of images, media and cache | warning below 10 % free, critical below 5 % |
-
-A check that cannot be read (no GPU, no sensors, no status file) is shown grey as "n/a" and is no alert. A hardware RAID is invisible
-to a container: `deploy/host-status.py` (cron on the host, every 5 minutes) reads it through `ssacli` (HPE Smart Array, e.g. a ProLiant DL380 Gen9; `storcli64` and `/proc/mdstat` work too) and the iLO temperature through `ipmitool`, and writes the state into
-`HOST_STATUS_DIR/status.json`, which compose mounts read-only into the server; see the script's header for the file format and to
-adapt it to another controller. `ssacli` comes from HPE's Management Component Pack / SPP repository (package `ssacli`); check what it prints with
-`ssacli ctrl all show config` and `ssacli ctrl all show status`. `ssacli` comes from HPE's Management Component Pack / SPP repository (`ssacli` package); check what it prints with
-`ssacli ctrl all show config` and `ssacli ctrl all show status`. The server container gets the GPU with the `utility` capability only (`nvidia-smi`), no compute.
+Site admins have a pulse icon in the top bar: it shows a dot only while CPU, GPU, storage, temperature or the RAID is in alarm, the free
+space on hover and every check on click. What it measures, the one-time setup of the RAID script on the host, and troubleshooting are on
+its own page: [System health](system-health.html).

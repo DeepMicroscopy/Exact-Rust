@@ -80,6 +80,10 @@ lower the size. **Without a GPU** (or without the toolkit: "could not select dev
 `dc -f deploy/docker-compose.cpu.yml up -d` (Docker Compose 2.24+), and build with
 `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu` to save about 2 GB.
 
+## 4d. System health
+The pulse icon for site admins needs nothing but the compose file, except for the RAID: a cron job on the host (`deploy/host-status.py`)
+writes its state into `HOST_STATUS_DIR`. Setup and what is checked: [System health](system-health.html).
+
 ## 5. Start
 Native: build (`cargo build --release -p exact-server -p exact-cli`, needs libclang and ffmpeg dev libraries; `cd frontend && pnpm
 install && pnpm build`), install the binary and `frontend/dist`, then `deploy/exact-server.service` and `deploy/exact-worker.service`
