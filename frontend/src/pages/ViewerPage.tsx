@@ -22,6 +22,7 @@ import { clipboard, pasteVector } from "../viewer-core/clipboard";
 import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
 import { loadTileSource } from "../viewer-core/tileSource";
 import { OverlayControl } from "../components/OverlayControl";
+import { ScaleBar } from "../components/ScaleBar";
 import { coverageOf, ZBlender } from "../viewer-core/zBlend";
 import type { ZRange } from "../viewer-core/zFormat";
 import { RepairBanner } from "../components/RepairBanner";
@@ -997,6 +998,7 @@ export function ViewerPage() {
       {adjustOpen && <ImageAdjustPanel value={adjust} onChange={setAdjust} onClose={() => setAdjustOpen(false)} />}
       <div className={`viewer-body ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
+        {!failed && <ScaleBar viewerRef={viewerRef} mpp={mpp} />}
         {opening && !failed && <OpeningSpinner name={image.data?.name} />}
         {planeBusy && !failed && (
           <div className="plane-busy glass" role="status" aria-label="Loading the plane" data-testid="plane-busy">
