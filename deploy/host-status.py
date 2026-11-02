@@ -56,8 +56,14 @@ def parse_ssacli(config, status=""):
     if pds:
         parts.append(f"{len(pds) - len(bad)} of {len(pds)} physical drives OK")
     for m in re.finditer(r"^\s*(Controller|Cache|Battery/Capacitor) Status: (.+)$", status, re.M):
-        if ssacli_level(m.group(2)) != "ok":
-            parts.append(f"{m.group(1).lower()} status: {m.group(2).strip()}")
+        what, state = m.group(1).lower(), m.group(2).strip()
+        if ssacli_level(state) == "ok":
+            continue
+        parts.append(f"{what} status: {state}")
+        # a cache that is off for good (no cache module, or its capacitor is gone) is a setting, not a fault: it is reported, not alarmed
+        if what == "controller":
+            level = worse(level, ssacli_level(state))
+        elif not (what == "cache" and state.lower() == "permanently disabled"):
             level = worse(level, "warning")
     if not re.search(r"logicaldrive", config):
         return "unknown", "ssacli lists no logical drive"
