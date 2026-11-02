@@ -27,6 +27,7 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
   const [source, setSource] = useState<number>(initialSource ?? images[0]?.id ?? 0);
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [targetSet, setTargetSet] = useState<number>(setId);
+  const [team, setTeam] = useState<number | null>(null);
   const [target, setTarget] = useState<number>(initialTarget ?? images.find((i) => i.id !== (initialSource ?? images[0]?.id))?.id ?? 0);
   const [inverse, setInverse] = useState(true);
   const [advanced, setAdvanced] = useState(false);
@@ -34,7 +35,27 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
   const [values, setValues] = useState<ParamValues>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sets = useQuery({ queryKey: ["image-set-names"], queryFn: () => listAll<{ id: number; name: string }>("/api/v2/image-sets", { fields: "id,name" }) });
+  const sets = useQuery({ queryKey: ["image-set-names"], queryFn: () => listAll<{ id: number; name: string; team: number }>("/api/v2/image-sets", { fields: "id,name,team" }) });
+  const teams = useQuery({ queryKey: ["teams"], queryFn: () => listAll<{ id: number; name: string }>("/api/v2/teams", { fields: "id,name" }) });
+  // the target sets grouped by team, teams and sets in alphabetical order
+  const groups = useMemo(() => {
+    const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+    const names = new Map((teams.data ?? []).map((t) => [t.id, t.name]));
+    const grouped = new Map<number, { id: number; name: string; team: number }[]>();
+    for (const x of sets.data ?? []) grouped.set(x.team, [...(grouped.get(x.team) ?? []), x]);
+    return [...grouped.entries()]
+      .map(([team, items]) => ({ team, name: names.get(team) ?? `Team ${team}`, items: items.sort(byName) }))
+      .sort(byName);
+  }, [sets.data, teams.data]);
+  // the team of the chosen set; the Team field is only there when the sets belong to more than one team
+  const teamOf = (id: number) => sets.data?.find((x) => x.id === id)?.team ?? null;
+  const shownTeam = team ?? teamOf(targetSet);
+  const teamSets = groups.find((g) => g.team === shownTeam)?.items ?? [];
+  const pickTeam = (id: number) => {
+    setTeam(id);
+    const items = groups.find((g) => g.team === id)?.items ?? [];
+    if (!items.some((x) => x.id === targetSet)) setTargetSet(items[0]?.id ?? targetSet);
+  };
   const other = useQuery({
     queryKey: ["images", targetSet],
     enabled: targetSet !== setId,
@@ -83,17 +104,28 @@ export function NewRegistrationDialog({ images, setId, source: initialSource, ta
         {mode === "auto" ? "A worker finds the transformation that maps the source image onto the target image; this can take a few minutes for large slides." : "You click the same spots in both images; the transformation is estimated from them. Works for any pair, also where the automatic registration fails."}
       </p>
       <ImagePicker label="Source image" images={images} value={source} onChange={setSource} />
+      {groups.length > 1 && (
+        <label className="field">
+          <span>Team</span>
+          <select aria-label="Team" value={shownTeam ?? ""} onChange={(e) => pickTeam(Number(e.target.value))}>
+            {groups.map((g) => (
+              <option key={g.team} value={g.team}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="field">
         <span>Target image set</span>
         <select aria-label="Target image set" value={targetSet} onChange={(e) => setTargetSet(Number(e.target.value))}>
-          <option value={setId}>This image set</option>
-          {(sets.data ?? [])
-            .filter((x) => x.id !== setId)
-            .map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
+          {!teamSets.some((x) => x.id === setId) && shownTeam === teamOf(setId) && <option value={setId}>This image set</option>}
+          {teamSets.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+              {x.id === setId ? " (this image set)" : ""}
+            </option>
+          ))}
         </select>
       </label>
       <ImagePicker label="Target image" images={candidates} value={target} onChange={setTarget} />
