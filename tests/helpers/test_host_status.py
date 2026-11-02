@@ -60,10 +60,10 @@ Smart Array P840 in Slot 1                (sn: PDNNF0ARH8X3DN)
 REAL_STATUS = "Smart Array P840 in Slot 1\n   Controller Status: OK\n   Cache Status: Permanently Disabled\n\n"
 
 
-def test_the_real_controller_is_healthy_although_its_cache_is_off():
+def test_the_real_controller_is_healthy_and_its_missing_cache_is_not_mentioned():
     level, detail = hs.parse_ssacli(REAL_CONFIG, REAL_STATUS)
     assert level == "ok"
-    assert "logical drive 2 RAID 6 72.76 TB: OK" in detail and "4 of 4 physical drives OK" in detail and "cache status: Permanently Disabled" in detail
+    assert "logical drive 2 RAID 6 72.76 TB: OK" in detail and "4 of 4 physical drives OK" in detail and "cache" not in detail
     assert hs.parse_ssacli(REAL_CONFIG, REAL_STATUS.replace("Controller Status: OK", "Controller Status: Failed"))[0] == "critical"
 
 
