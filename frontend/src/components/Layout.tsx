@@ -6,6 +6,7 @@ import type { Job } from "../pages/JobsPage";
 import { useAuth } from "../auth/AuthContext";
 import { Logo } from "./Logo";
 import { useAdminMe } from "../pages/AdminPage";
+import { SystemHealth } from "./SystemHealth";
 import { OPEN_WELCOME } from "./WelcomeDialog";
 
 export function Layout() {
@@ -32,6 +33,7 @@ export function Layout() {
           <Logo height={18} />
         </Link>
         <span className="spacer" />
+        {admin.data?.is_site_admin && <SystemHealth />}
         <Link to="/jobs" className="btn ghost nowrap">
           Jobs{active > 0 ? ` (${active})` : ""}
         </Link>

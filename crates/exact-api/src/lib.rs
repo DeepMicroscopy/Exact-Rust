@@ -17,6 +17,7 @@ pub mod auth;
 pub mod cascade;
 pub mod compat;
 pub mod error;
+pub mod health;
 pub mod media;
 pub mod page;
 pub mod repair;
@@ -43,6 +44,8 @@ pub struct AppState {
     pub media_root: std::path::PathBuf,
     /// A line for the top of the first-login greeting (`EXACT_WELCOME_NOTICE`).
     pub welcome_notice: Option<String>,
+    /// Who used the UI or a token lately (the system health shows the active users).
+    pub activity: health::Activity,
 }
 
 impl AppState {
@@ -64,6 +67,7 @@ impl AppState {
             db_name: cfg.db_name.clone(),
             media_root: cfg.media_root.clone(),
             welcome_notice: cfg.welcome_notice.clone(),
+            activity: Default::default(),
         })
     }
 }
@@ -167,6 +171,7 @@ mod tests {
             db_name: "exact".into(),
             media_root: "./media".into(),
             welcome_notice: None,
+            activity: Default::default(),
         })
     }
 

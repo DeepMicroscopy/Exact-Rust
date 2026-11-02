@@ -37,6 +37,8 @@ services:
       MEDIA_ROOT: /data/media
       EXACT_CACHE_DIR: /data/cache
       EXACT_NIFTI_CACHE: /data/cache/nifti
+      EXACT_HOST_STATUS_FILE: /data/host-status/status.json   # written by deploy/host-status.py (RAID); optional
+      NVIDIA_DRIVER_CAPABILITIES: utility                      # nvidia-smi for the system health, no compute
     depends_on:
       db: { condition: service_healthy }
     ports: ["127.0.0.1:8002:8002"]   # the reverse proxy runs on the host
@@ -44,6 +46,15 @@ services:
       - ${IMAGE_PATH:?set IMAGE_PATH in exact.env and export it for compose}:/data/images:${IMAGE_MODE:-ro}
       - ${MEDIA_ROOT:?set MEDIA_ROOT}:/data/media
       - ${EXACT_CACHE_DIR:?set EXACT_CACHE_DIR}:/data/cache
+      - ${HOST_STATUS_DIR:-./host-status}:/data/host-status:ro
+    # the GPU's load and temperature for the system health check (without a GPU: -f docker-compose.cpu.yml)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, utility]
     restart: unless-stopped
   worker:
     image: exact-rust

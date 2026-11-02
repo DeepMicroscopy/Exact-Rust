@@ -66,6 +66,7 @@ pub fn routes() -> Router<AppState> {
         .merge(seg_jobs::v2_routes())
         .merge(render3d::v2_routes())
         .merge(statistics::v2_routes())
+        .merge(crate::health::routes())
         .merge(catalog::v2_routes())
         .route("/api/v2/auth/login", post(login))
         .route("/api/v2/auth/stop-impersonating", post(stop_impersonating))

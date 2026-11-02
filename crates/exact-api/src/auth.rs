@@ -149,6 +149,19 @@ pub async fn authenticate_account(
     headers: &HeaderMap,
     method: &Method,
 ) -> Result<Option<Principal>, ApiError> {
+    let p = identify(state, headers, method).await?;
+    // browsers and tokens (exact-sync) count as activity; basic auth is what the workers poll with
+    if let Some(p) = p.as_ref().filter(|p| !matches!(p.kind, AuthKind::Basic)) {
+        state.activity.touch(p.user.id, &p.user.username);
+    }
+    Ok(p)
+}
+
+async fn identify(
+    state: &AppState,
+    headers: &HeaderMap,
+    method: &Method,
+) -> Result<Option<Principal>, ApiError> {
     let auth = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
