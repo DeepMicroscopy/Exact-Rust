@@ -950,6 +950,24 @@ async fn download(
     Ok(r)
 }
 
+/// The Olympus scanner names the data folder of `slide-1.vsi` `_slide_1_`: everything but letters and digits becomes `_`.
+fn vsi_scanner_dir(file: &std::path::Path) -> Option<std::path::PathBuf> {
+    let flat = |t: &str| -> String {
+        t.chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect()
+    };
+    let stem = file.file_stem()?.to_string_lossy().into_owned();
+    std::fs::read_dir(file.parent()?)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| {
+            let n = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            p.is_dir() && n.len() > 2 && n.starts_with('_') && n.ends_with('_') && flat(&n[1..n.len() - 1]) == flat(&stem)
+        })
+}
+
 /// MRXS / VSI slides consist of the index file plus a companion directory; they are downloaded as one zip.
 pub fn zip_companions(
     file: &std::path::Path,
@@ -962,7 +980,12 @@ pub fn zip_companions(
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
-        stem_dir.with_file_name(format!("_{stem}_"))
+        let exact = stem_dir.with_file_name(format!("_{stem}_"));
+        if exact.is_dir() {
+            exact
+        } else {
+            vsi_scanner_dir(file).unwrap_or(exact)
+        }
     } else {
         stem_dir
     };
@@ -1011,4 +1034,30 @@ pub fn zip_companions(
     std::io::copy(&mut std::fs::File::open(file)?, &mut zip)?;
     zip.finish()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::zip_companions;
+
+    #[test]
+    fn a_vsi_is_zipped_with_the_folder_the_scanner_named() {
+        let dir = std::env::temp_dir().join(format!("exact-vsi-{}", uuid::Uuid::new_v4()));
+        // the scanner turns the hyphen of `slide-1.vsi` into an underscore in the folder name
+        let data = dir.join("_slide_1_/stack1");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("frame_t.ets"), b"pixels").unwrap();
+        let vsi = dir.join("slide-1.vsi");
+        std::fs::write(&vsi, b"index").unwrap();
+        let out = dir.join("out.zip");
+        zip_companions(&vsi, "VSI", &out).unwrap();
+        let names: Vec<String> = zip::ZipArchive::new(std::fs::File::open(&out).unwrap())
+            .unwrap()
+            .file_names()
+            .map(String::from)
+            .collect();
+        assert!(names.contains(&"_slide_1_/stack1/frame_t.ets".to_string()), "{names:?}");
+        assert!(names.contains(&"_slide_1_/slide-1.vsi".to_string()), "{names:?}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

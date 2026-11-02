@@ -11,9 +11,12 @@ Protocol on stdin/stdout, one request per line (JSON), one answer per request:
 Errors: {"ok":false,"error":"..."}.  The Rust side (exact-wsi/src/slideio.rs) owns lifecycle and restarts.
 Ported from exact/util/slideio.py; keep the semantics identical.
 """
+import hashlib
 import json
 import os
+import re
 import sys
+import tempfile
 
 import numpy as np
 import slideio
@@ -23,11 +26,33 @@ MAX_OPEN = int(os.environ.get("SLIDEIO_MAX_OPEN", "12"))
 slides = {}
 
 
+def vsi_path(path):
+    """The Olympus scanner writes `slide-1.vsi` with the data in `_slide_1_` (anything but letters and digits becomes `_` in the
+    folder name), but the reader looks for `_slide-1_`. When only the scanner's spelling exists, the file is opened through a
+    link in a folder of its own that carries the folder's name."""
+    if not path.lower().endswith(".vsi"):
+        return path
+    here, name = os.path.split(path)
+    stem = name[:-4]
+    if os.path.isdir(os.path.join(here, f"_{stem}_")):
+        return path
+    flat = re.sub(r"[^0-9A-Za-z]", "_", stem)
+    for entry in os.listdir(here):
+        if entry.startswith("_") and entry.endswith("_") and len(entry) > 2 and re.sub(r"[^0-9A-Za-z]", "_", entry[1:-1]) == flat and os.path.isdir(os.path.join(here, entry)):
+            alias = os.path.join(tempfile.gettempdir(), "exact-vsi", hashlib.sha1(path.encode()).hexdigest()[:16])
+            os.makedirs(alias, exist_ok=True)
+            for link, target in ((f"{entry[1:-1]}.vsi", path), (entry, os.path.join(here, entry))):
+                if not os.path.lexists(os.path.join(alias, link)):
+                    os.symlink(target, os.path.join(alias, link))
+            return os.path.join(alias, f"{entry[1:-1]}.vsi")
+    return path
+
+
 def open_slide(path):
     if path in slides:
         slides[path] = slides.pop(path)  # most recently used last
         return slides[path]
-    fh = slideio.open_slide(path)
+    fh = slideio.open_slide(vsi_path(path))
     scene = fh.get_scene(0)
     slides[path] = (fh, scene)
     while len(slides) > MAX_OPEN:
