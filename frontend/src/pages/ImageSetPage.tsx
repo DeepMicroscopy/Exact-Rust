@@ -6,6 +6,7 @@ import type { Product, SetImage, SetSettings, Tag } from "../api/types";
 import { Dropdown } from "../components/Dropdown";
 import { NameConflictDialog } from "../components/NameConflictDialog";
 import { UploadTile } from "../components/UploadTile";
+import { AnnotationCounts } from "../components/AnnotationCounts";
 import { AuxFilesDialog } from "../components/AuxFilesDialog";
 import { ExportDialog } from "../components/ExportDialog";
 import { ManualRegistration } from "../components/ManualRegistration";
@@ -72,6 +73,7 @@ export function ImageSetPage() {
 
   const refresh = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ["images", id] });
+    void qc.invalidateQueries({ queryKey: ["annotation-counts", id] });
     void qc.invalidateQueries({ queryKey: ["set-settings", id] });
     void qc.invalidateQueries({ queryKey: ["image-sets"] });
     setSelected(new Set());
@@ -249,7 +251,8 @@ export function ImageSetPage() {
       </div>
 
       {tab === "images" && (
-        <>
+        <div className="set-layout">
+        <div className="set-main">
           <div className="toolbar">
             <label className="check" title="Select all shown">
               <input type="checkbox" checked={allShown} onChange={() => setSelected(allShown ? new Set() : new Set(visible.map((i) => i.id)))} />
@@ -315,7 +318,9 @@ export function ImageSetPage() {
               <ImageTile key={i.id} image={i} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} onMenu={(x, y) => openMenu(i, x, y)} />
             ))}
           </div>
-        </>
+        </div>
+        <AnnotationCounts setId={id} />
+        </div>
       )}
       {tab === "registration" && (
         <RegistrationPanel

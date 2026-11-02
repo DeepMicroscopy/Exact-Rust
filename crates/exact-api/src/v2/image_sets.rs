@@ -41,6 +41,10 @@ pub fn v2_routes() -> Router<AppState> {
             axum::routing::get(aux_list_h),
         )
         .route(
+            "/api/v2/image-sets/{id}/annotation-counts",
+            axum::routing::get(annotation_counts_h),
+        )
+        .route(
             "/api/v2/auxiliary-files/{id}/download",
             axum::routing::get(aux_download_h),
         )
@@ -48,6 +52,42 @@ pub fn v2_routes() -> Router<AppState> {
             "/api/v2/auxiliary-files/{id}",
             axum::routing::delete(aux_delete_h),
         )
+}
+
+/// `GET /api/v2/image-sets/{id}/annotation-counts`: every annotation type of the set (those of its products, and any other that has
+/// annotations in it) with the number of annotations and of images that have one; for the overview's side list.
+async fn annotation_counts_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(set): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let row = set_row(&s, set)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Not found."))?;
+    if !perms(&s, &p, &row).await?.read {
+        return Err(ApiError::not_found("Not found."));
+    }
+    let rows = sqlx::query(
+        "SELECT t.id, t.name, t.color_code, COALESCE(c.n, 0), COALESCE(c.images, 0) FROM annotations_annotationtype t \
+         LEFT JOIN (SELECT a.annotation_type_id, count(*) AS n, count(DISTINCT a.image_id) AS images FROM annotations_annotation a \
+                    JOIN images_image i ON i.id = a.image_id WHERE i.image_set_id = $1 AND NOT a.deleted GROUP BY a.annotation_type_id) c \
+                ON c.annotation_type_id = t.id \
+         WHERE c.n IS NOT NULL OR t.product_id IN (SELECT product_id FROM administration_product_imagesets WHERE imageset_id = $1) \
+         ORDER BY t.name, t.id",
+    )
+    .bind(set)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            json!({"id": r.get::<i64, _>(0), "name": r.get::<String, _>(1), "color": r.get::<String, _>(2),
+                   "count": r.get::<i64, _>(3), "images": r.get::<i64, _>(4)})
+        })
+        .collect();
+    Ok(Json(json!({"items": items})).into_response())
 }
 
 async fn aux_list_h(
