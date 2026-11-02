@@ -19,6 +19,8 @@ import sys
 import tempfile
 
 LEVELS = ["ok", "warning", "critical"]
+# cron's PATH is only /usr/bin:/bin, ssacli lives in /usr/sbin
+os.environ["PATH"] = os.environ.get("PATH", "") + ":/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin"
 
 
 def worse(a, b):
