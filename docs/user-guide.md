@@ -111,6 +111,9 @@ The tools open as a **small palette** (tool, + / −, undo / redo and the size o
 by its top edge. **⤢** opens the whole window with all options (slices, shape, opacity, automatic segmentation), **⤡** collapses it again,
 and **⇱** docks the palette in the top bar, where it takes no room from the images (**⧉** floats it again). The choice is remembered.
 
+Each plane has a **⤢** button at its top right: it enlarges that plane to the whole area (the crosshair, tools and slice slider keep working),
+and **⤡** brings the three planes back.
+
 Everything is measured in millimetres, so a brush of 8 mm is round in the picture of every plane, also when the slices are thicker than
 the pixels. The window can be moved by its title, and it shows the volume of the mask (mm³, from 1000 mm³ in ml) and the number of axial slices
 that hold some of it.

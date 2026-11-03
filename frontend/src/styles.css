@@ -442,7 +442,11 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .mpr-pane.active { opacity: 1; box-shadow: 0 0 0 1px currentColor; }
 .mpr-pane .osd { position: absolute; inset: 0; }
 .mpr-label { position: absolute; top: 8px; left: 10px; font-size: 13px; font-weight: 600; text-shadow: 0 1px 3px #000; pointer-events: none; }
-.mpr-busy { position: absolute; top: 8px; right: 10px; }
+.mpr-busy { position: absolute; top: 12px; right: 46px; }
+.mpr-max { position: absolute; top: 6px; right: 8px; width: 30px; height: 30px; padding: 0; z-index: 2; opacity: 0.7; font-size: 16px; line-height: 1; }
+.mpr-max:hover { opacity: 1; }
+.mpr-grid.maxed { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.mpr-pane[hidden], .mpr-info[hidden] { display: none; }
 .mpr-steps { position: absolute; left: 6px; right: 6px; bottom: 4px; display: flex; align-items: center; gap: 4px; }
 .mpr-slider { flex: 1; min-width: 0; opacity: 0.55; }
 .mpr-slider:hover, .mpr-slider:focus { opacity: 1; }

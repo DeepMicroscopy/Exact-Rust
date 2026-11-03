@@ -89,6 +89,7 @@ export function MprPage() {
     return out;
   }, [annotations.data, types.data, styles, voxel]);
   const [active, setActive] = useState<Plane>(0);
+  const [maxed, setMaxed] = useState<Plane | null>(null);
   const [render3d, setRender3d] = useState(false);
   useEffect(() => setRender3d(false), [id]);
 
@@ -297,13 +298,13 @@ export function MprPage() {
           Image sets
         </button>
       </header>
-      <div className="mpr-grid">
+      <div className={`mpr-grid ${maxed != null ? "maxed" : ""}`}>
         {shape && planes && voxel
           ? ([0, 1, 2] as Plane[]).map((p) => (
-              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} linked={linked} linkedOpacity={linkedOpacity} />
+              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} maxed={maxed === p} hidden={maxed != null && maxed !== p} onMaximize={() => { setActive(p); setMaxed((m) => (m === p ? null : p)); }}  onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} linked={linked} linkedOpacity={linkedOpacity} />
             ))
           : null}
-        <div className={`mpr-info glass ${render3d ? "has-render" : ""}`} data-testid="mpr-info">
+        <div className={`mpr-info glass ${render3d ? "has-render" : ""}`} hidden={maxed != null} data-testid="mpr-info">
           {render3d ? (
             <Render3D imageId={id} mask={segAnnotation && segType ? { annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version } : null} linked={renderLinked} onHide={() => setRender3d(false)} />
           ) : voxel && shape ? (
@@ -412,7 +413,7 @@ interface LinkedPane {
   hide: number[];
 }
 
-function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onActivate, onPick, onStep, seg, linked, linkedOpacity }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null; linked: LinkedPane[]; linkedOpacity: number }) {
+function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxed, hidden, onMaximize, onActivate, onPick, onStep, seg, linked, linkedOpacity }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; maxed: boolean; hidden: boolean; onMaximize(): void; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null; linked: LinkedPane[]; linkedOpacity: number }) {
   const host = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null);
   const blender = useRef<ZBlender | null>(null);
@@ -706,18 +707,32 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
   useEffect(() => {
     if (shapes) notes.current?.setData(shapes, styles);
   }, [shapes, styles]);
+  // the pane changed its size (maximized or back): OpenSeadragon only follows window resizes by itself
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => {
+      const el = host.current;
+      const v = viewerRef.current;
+      if (!el || !v || el.clientWidth === 0) return;
+      window.dispatchEvent(new Event("resize")); // OpenSeadragon measures its container on a window resize
+      v.viewport.goHome(true);
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [maxed, hidden]);
   useEffect(() => {
     const [px, py] = pixelOf(shape, plane, voxel);
     cross.current?.set([px, py], { vertical: PLANE_COLORS[CROSS_PLANES[plane].vertical], horizontal: PLANE_COLORS[CROSS_PLANES[plane].horizontal] });
   }, [shape, plane, voxel]);
 
   return (
-    <div className={`mpr-pane ${active ? "active" : ""}`} data-testid={`mpr-${PLANE_NAMES[plane].toLowerCase()}`} style={{ borderColor: PLANE_COLORS[plane] }}>
+    <div className={`mpr-pane ${active ? "active" : ""}`} hidden={hidden} data-testid={`mpr-${PLANE_NAMES[plane].toLowerCase()}`} style={{ borderColor: PLANE_COLORS[plane] }}>
       <div ref={host} className="osd" />
       <div className="mpr-label" style={{ color: PLANE_COLORS[plane] }}>
         {PLANE_NAMES[plane]} · {frame + 1} / {info.frames}
         <span className="muted small"> {info.frame_descriptors[frame] ?? ""}</span>
       </div>
+      <button type="button" className="mpr-max" onClick={onMaximize} aria-pressed={maxed} aria-label={maxed ? `Back to the three planes` : `Maximize the ${PLANE_NAMES[plane].toLowerCase()} plane`} title={maxed ? "Back to the three planes" : "Maximize this plane"} data-testid={`mpr-max-${PLANE_NAMES[plane].toLowerCase()}`}>
+        {maxed ? "⤡" : "⤢"}
+      </button>
       {busy && <span className="spinner mpr-busy" role="status" aria-label="Loading the slice" />}
       <div className="mpr-steps">
         <button type="button" className="mpr-step" disabled={frame <= 0} onClick={() => onStep(-1)} aria-label={`${PLANE_NAMES[plane]}: previous slice`}>−</button>
