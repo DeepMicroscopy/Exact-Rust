@@ -716,7 +716,11 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
         <span className="muted small"> {info.frame_descriptors[frame] ?? ""}</span>
       </div>
       {busy && <span className="spinner mpr-busy" role="status" aria-label="Loading the slice" />}
-      <input className="mpr-slider" type="range" min={0} max={info.frames - 1} value={frame} onChange={(e) => onStep(Number(e.target.value) - frame)} aria-label={`${PLANE_NAMES[plane]} slice`} />
+      <div className="mpr-steps">
+        <button type="button" className="mpr-step" disabled={frame <= 0} onClick={() => onStep(-1)} aria-label={`${PLANE_NAMES[plane]}: previous slice`}>−</button>
+        <input className="mpr-slider" type="range" min={0} max={info.frames - 1} value={frame} onChange={(e) => onStep(Number(e.target.value) - frame)} aria-label={`${PLANE_NAMES[plane]} slice`} />
+        <button type="button" className="mpr-step" disabled={frame >= info.frames - 1} onClick={() => onStep(1)} aria-label={`${PLANE_NAMES[plane]}: next slice`}>+</button>
+      </div>
     </div>
   );
 }
