@@ -99,7 +99,7 @@ async fn related(
     .map_err(db_err)?;
     // segmentation files linked to this volume (visible() has checked the image): `id` is the volume, so that the entry opens it
     let files = sqlx::query(
-        "SELECT i.id::bigint, lv.name, st.id::bigint, st.name FROM exact_rust_linked_volume lv \
+        "SELECT i.id::bigint, lv.name, st.id::bigint, st.name, lv.id FROM exact_rust_linked_volume lv \
          JOIN images_image i ON i.id = lv.image_id JOIN images_imageset st ON st.id = i.image_set_id \
          WHERE lv.image_id = $1 ORDER BY lv.name",
     )
@@ -112,6 +112,10 @@ async fn related(
     out.extend(crops.iter().map(|r| entry(r, "crop")));
     out.extend(registered_to.iter().map(|r| entry(r, "registered_to")));
     out.extend(registered_from.iter().map(|r| entry(r, "registered_from")));
-    out.extend(files.iter().map(|r| entry(r, "segmentation")));
+    out.extend(files.iter().map(|r| {
+        let mut e = entry(r, "segmentation");
+        e["file"] = json!(r.get::<i64, _>(4)); // the segmentation file, so that the entry can open the volume with this one shown
+        e
+    }));
     Ok(Json(out).into_response())
 }

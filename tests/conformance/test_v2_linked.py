@@ -126,7 +126,7 @@ def test_upload_link_and_look_at_the_labels(made, swap):
     assert [x["id"] for x in c.get(f"/api/v2/images/{NIFTI}/linked-volumes").json()] == [fid]
     assert [x["id"] for x in c.get(f"/api/v2/image-sets/{SET}/linked-volumes").json()] == [fid]
     rel = [r for r in c.get(f"/api/v2/images/{NIFTI}/related").json() if r["kind"] == "segmentation"]
-    assert [(r["id"], r["name"]) for r in rel] == [(NIFTI, f["name"])]
+    assert [(r["id"], r["name"], r["file"]) for r in rel] == [(NIFTI, f["name"], fid)]
 
     unlinked = c.put(f"/api/v2/linked-volumes/{fid}", json={"image": None})
     assert unlinked.status_code == 200 and unlinked.json()["image"] is None

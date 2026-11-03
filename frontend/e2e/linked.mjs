@@ -159,6 +159,33 @@ try {
   check(exported.subarray(0, 8).toString() === "NRRD0004" && exported.includes("Segment0_Name:=") && exported.includes("Ball"), "the export is a Slicer segmentation with the segment Ball");
   for (const m of masks) await api("DELETE", `/api/v2/annotations/${m.id}`); // soft delete: the types stay
 
+  // two segmentations of one volume: a click on a card shows that one only, the volume's own page the newest
+  const second = path.join(dir, `CT_Philips second_${Date.now() % 100000}.seg.nrrd`);
+  execFileSync(path.join(root, "reference/.venv/bin/python"), ["-c", `import sys; import test_v2_linked as t; open(sys.argv[1], 'wb').write(t.nrrd()[0])`, second], { cwd: path.join(root, "tests/conformance"), env: { ...process.env, EXACT_URL: base } });
+  await page.goto(`${base}/sets/${SET}`);
+  await page.waitForSelector(".tile");
+  await page.setInputFiles('input[type="file"]', second);
+  await page.waitForSelector('[data-testid="link-seg"]');
+  await page.click('[data-testid="link-go"]');
+  await page.waitForSelector('[data-testid="link-seg"]', { state: "detached" });
+  const both = (await api("GET", `/api/v2/image-sets/${SET}/linked-volumes`)).body.filter((f) => f.image === IMAGE);
+  const fileA = both.find((f) => path.basename(file) === f.filename);
+  const fileB = both.find((f) => path.basename(second) === f.filename);
+  check(!!fileA && !!fileB, "two segmentation files are linked to the volume");
+  const drawn = () => page.evaluate(() => [...document.querySelectorAll('img[data-testid="mask-overlay"][data-url*="/linked-volumes/"]')].map((i) => i.getAttribute("data-url").match(/linked-volumes\/(\d+)\//)[1]));
+  for (const [open, other, name] of [[fileA, fileB, path.basename(file)], [fileB, fileA, path.basename(second)]]) {
+    await page.goto(`${base}/sets/${SET}`);
+    await page.locator(".seg-tile", { hasText: name }).locator("button.seg-open").click();
+    await page.waitForURL(new RegExp(`/images/${IMAGE}/planes\\?seg=${open.id}`));
+    await waitFor(async () => (await drawn()).length === 3, "the opened file is drawn on the three planes");
+    check((await drawn()).every((id) => id === String(open.id)), `opening ${name} shows only that file`);
+    check((await page.getByRole("checkbox", { name: `Show ${open.name}` }).isChecked()) && !(await page.getByRole("checkbox", { name: `Show ${other.name}` }).isChecked()), "the window has the other file, unticked");
+  }
+  await page.goto(`${base}/images/${IMAGE}/planes`);
+  await waitFor(async () => (await drawn()).length === 3, "the volume's own page draws a file");
+  check((await drawn()).every((id) => id === String(fileB.id)), "the volume opened by itself shows the newest file only");
+  await api("DELETE", `/api/v2/linked-volumes/${fileB.id}`);
+
   // an NRRD that was uploaded as an image (before segmentation files existed): a click offers to convert it; the viewer page does too
   const legacy = () => JSON.parse(execFileSync(path.join(root, "reference/.venv/bin/python"), ["-c", `import json; import test_v2_linked as t; i, n = t.old_nrrd_image(None); print(json.dumps([i, n]))`], { cwd: path.join(root, "tests/conformance"), env: { ...process.env, EXACT_URL: base } }).toString().trim().split("\n").pop());
   const [oldId, oldName] = legacy();

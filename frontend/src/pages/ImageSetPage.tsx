@@ -144,7 +144,7 @@ export function ImageSetPage() {
     void qc.invalidateQueries({ queryKey: ["linked-image"] });
     void qc.invalidateQueries({ queryKey: ["related"] });
   }, [qc, id]);
-  const openSeg = (f: LinkedFile) => (f.image != null ? navigate(`/images/${f.image}/planes`) : setLinkOne(f.id));
+  const openSeg = (f: LinkedFile) => (f.image != null ? navigate(`/images/${f.image}/planes?seg=${f.id}`) : setLinkOne(f.id));
   const chosen = useMemo(() => (images.data ?? []).filter((i) => selected.has(i.id)), [images.data, selected]);
   // the menu of an image; Move acts on the whole selection when the image is part of it, otherwise on this one image
   const [menu, setMenu] = useState<(ImageMenuModel & { image: SetImage }) | null>(null);
@@ -413,7 +413,7 @@ export function ImageSetPage() {
           }}
         />
       )}
-      {linkOne != null && <LinkSegmentationDialog key={`one${linkOne}`} id={linkOne} onClose={() => setLinkOne(null)} onChanged={segChanged} onLinked={(image) => navigate(`/images/${image}/planes`)} />}
+      {linkOne != null && <LinkSegmentationDialog key={`one${linkOne}`} id={linkOne} onClose={() => setLinkOne(null)} onChanged={segChanged} onLinked={(image) => navigate(`/images/${image}/planes?seg=${linkOne}`)} />}
       {linkQueue.length > 0 && <LinkSegmentationDialog key={linkQueue[0]} id={linkQueue[0]} onClose={() => setLinkQueue((q) => q.slice(1))} onChanged={segChanged} />}
       {dialog === "export" && <ExportDialog setId={id} canCreate={!!can?.create_export} canDelete={!!can?.edit_set} onClose={() => setDialog(null)} />}
       {dialog === "delete-set" && s && <DeleteSetDialog settings={s} onClose={() => setDialog(null)} onDeleted={() => navigate("/", { replace: true })} />}

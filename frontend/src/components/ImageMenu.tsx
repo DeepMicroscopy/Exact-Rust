@@ -9,6 +9,8 @@ export interface Related {
   set: number;
   set_name: string;
   kind: "crop_of" | "crop" | "registered_to" | "registered_from" | "segmentation";
+  /** a segmentation entry: the file (its `id` is the volume it opens) */
+  file?: number;
 }
 
 const KIND: Record<Related["kind"], string> = {
@@ -96,7 +98,7 @@ export function ImageMenu({ model, onClose, onMove, onConvert }: { model: ImageM
         <div className="ctx-sub">
           {related.isLoading && <div className="muted small">Loading…</div>}
           {links.map((r) => (
-            <button key={`${r.kind}-${r.id}`} role="menuitem" className="ctx-related" onClick={() => navigate(r.kind === "segmentation" ? `/images/${r.id}/planes` : `/images/${r.id}`)} title={`${KIND[r.kind]}: ${r.name} (${r.set_name})`}>
+            <button key={`${r.kind}-${r.id}`} role="menuitem" className="ctx-related" onClick={() => navigate(r.kind === "segmentation" ? `/images/${r.id}/planes?seg=${r.file}` : `/images/${r.id}`)} title={`${KIND[r.kind]}: ${r.name} (${r.set_name})`}>
               <span className="muted small">{KIND[r.kind]}</span>
               <span className="ctx-related-name">{r.name}</span>
               <span className="muted small">{r.set_name}</span>

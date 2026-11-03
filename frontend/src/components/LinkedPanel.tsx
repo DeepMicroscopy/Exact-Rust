@@ -101,6 +101,7 @@ export function LinkedPanel({ files, view, onView, opacity, onOpacity, voxel, on
           </section>
         );
       })}
+      {files.length > 1 && <p className="muted small">{files.length} files are linked to this volume. One is shown; tick another to show it too.</p>}
       <label className="linked-opacity small">
         <span className="muted">Opacity</span>
         <input type="range" min={0.1} max={1} step={0.05} value={opacity} onChange={(e) => onOpacity(Number(e.target.value))} aria-label="Opacity of the segmentation" />
