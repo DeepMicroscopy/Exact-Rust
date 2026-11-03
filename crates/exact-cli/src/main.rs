@@ -45,6 +45,16 @@ enum Cmd {
     RepairImage { file: PathBuf },
     /// Read every stored passkey (`passkeys_userpasskey`) the way the server does and report those it cannot use (reads only).
     AuditPasskeys,
+    /// NRRD files (3D Slicer segmentations) that were uploaded as images cannot be shown; turn them into segmentation files of their
+    /// image set (the file stays, the image row goes). Images with annotations, registrations or crops are left alone and listed.
+    ConvertNrrdImages {
+        /// List what would happen; touch nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Must equal the configured database name unless --dry-run; guards against running against the wrong database.
+        #[arg(long)]
+        confirm_db: Option<String>,
+    },
     /// Create the additive tables the Rust server needs (sessions). Safe to repeat; Django tables are untouched.
     Migrate {
         /// Must equal the configured database name; guards against running against the wrong database.
@@ -154,6 +164,65 @@ async fn main() -> anyhow::Result<()> {
             if bad > 0 {
                 std::process::exit(1);
             }
+        }
+        Cmd::ConvertNrrdImages {
+            dry_run,
+            confirm_db,
+        } => {
+            if !dry_run && confirm_db.as_deref() != Some(cfg.db_name.as_str()) {
+                bail!(
+                    "pass --confirm-db {} to convert for real (or --dry-run to look first)",
+                    cfg.db_name
+                );
+            }
+            let pool = exact_db::connect(&cfg).await?;
+            let ids = exact_api::v2::linked::nrrd_images(&pool).await?;
+            let (mut done, mut left) = (0, 0);
+            for id in &ids {
+                let said = |e: &exact_api::error::ApiError| {
+                    e.body["detail"].as_str().unwrap_or("failed").to_string()
+                };
+                match exact_api::v2::linked::plan_nrrd_conversion(&pool, &cfg.image_path, *id).await
+                {
+                    Err(e) => {
+                        left += 1;
+                        println!("image {id}: left alone: {}", said(&e));
+                    }
+                    Ok(plan) if dry_run => {
+                        done += 1;
+                        println!("image {id} (set {}) {}: would become a segmentation file with {} segment(s)", plan.set, plan.filename, plan.segments.as_array().map_or(0, |a| a.len()));
+                    }
+                    Ok(plan) => match exact_api::v2::linked::convert_nrrd_image(
+                        &pool,
+                        &cfg.image_path,
+                        *id,
+                        None,
+                    )
+                    .await
+                    {
+                        Ok(file) => {
+                            done += 1;
+                            println!(
+                                "image {id} (set {}) {}: now segmentation file {file}",
+                                plan.set, plan.filename
+                            );
+                        }
+                        Err(e) => {
+                            left += 1;
+                            println!("image {id}: left alone: {}", said(&e));
+                        }
+                    },
+                }
+            }
+            println!(
+                "{} NRRD image(s): {done} {}, {left} left alone",
+                ids.len(),
+                if dry_run {
+                    "would be converted"
+                } else {
+                    "converted"
+                }
+            );
         }
         Cmd::Migrate { confirm_db } => {
             if confirm_db != cfg.db_name {

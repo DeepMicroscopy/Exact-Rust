@@ -56,6 +56,10 @@ pub fn routes() -> Router<AppState> {
             get(render_mask_h),
         )
         .route("/api/v2/linked-volumes/{id}/import", post(import_h))
+        .route(
+            "/api/v2/images/{id}/convert-to-segmentation",
+            post(convert_h),
+        )
         .route("/api/v2/linked-volumes/{id}/file", get(file_h))
 }
 
@@ -163,6 +167,173 @@ pub fn segments_json(n: &nrrd::Nrrd) -> Value {
             })
             .collect(),
     )
+}
+
+// ------------------------------------------------------------------------------------------------ old NRRD images
+
+/// What converting an NRRD that was uploaded as an image into a segmentation file would do.
+pub struct Plan {
+    pub image: i64,
+    pub set: i64,
+    pub name: String,
+    pub filename: String,
+    pub segments: Value,
+    pub size: i64,
+    pub creator: Option<i64>,
+}
+
+fn refuse(status: StatusCode, msg: impl Into<String>) -> ApiError {
+    ApiError::detail(status, msg)
+}
+
+/// Ids of the images whose file is an NRRD (they were uploaded before the server knew segmentation files).
+pub async fn nrrd_images(pool: &sqlx::PgPool) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT id::bigint FROM images_image WHERE filename ILIKE '%.nrrd' ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Checks that the image is an NRRD with a readable file that nothing else depends on (annotations, registrations, crops), and
+/// reads its segments. Changes nothing.
+pub async fn plan_nrrd_conversion(
+    pool: &sqlx::PgPool,
+    root: &std::path::Path,
+    image: i64,
+) -> ApiResult<Plan> {
+    let r = sqlx::query("SELECT i.name, i.filename, i.image_set_id::bigint, st.path, i.creator_id::bigint FROM images_image i JOIN images_imageset st ON st.id = i.image_set_id WHERE i.id = $1")
+        .bind(image)
+        .fetch_optional(pool)
+        .await
+        .map_err(db_err)?
+        .ok_or_else(|| ApiError::not_found("No Image matches the given query."))?;
+    let (name, filename): (String, String) = (r.get(0), r.get(1));
+    if !filename.to_lowercase().ends_with(".nrrd") {
+        return Err(refuse(
+            StatusCode::BAD_REQUEST,
+            "This image is not an NRRD file.",
+        ));
+    }
+    let count = |sql: &'static str| async move {
+        sqlx::query_scalar::<_, i64>(sql)
+            .bind(image)
+            .fetch_one(pool)
+            .await
+            .map_err(db_err)
+    };
+    let annotations =
+        count("SELECT count(*) FROM annotations_annotation WHERE image_id = $1 AND NOT deleted")
+            .await?;
+    if annotations > 0 {
+        return Err(refuse(StatusCode::CONFLICT, format!("The image has {annotations} annotation(s). A segmentation file has none: delete them first, or keep the image as it is.")));
+    }
+    let registrations = count("SELECT (SELECT count(*) FROM images_imageregistration WHERE source_image_id = $1 OR target_image_id = $1) + (SELECT count(*) FROM images_pyramidregistration WHERE image_id = $1)").await?;
+    if registrations > 0 {
+        return Err(refuse(
+            StatusCode::CONFLICT,
+            "The image takes part in a registration: delete the registration first.",
+        ));
+    }
+    let crops = count("SELECT count(*) FROM images_image WHERE crop_source_id = $1").await?;
+    if crops > 0 {
+        return Err(refuse(
+            StatusCode::CONFLICT,
+            "Crops were made from the image: delete them first.",
+        ));
+    }
+    let path = root.join(r.get::<String, _>(3)).join(&filename);
+    let size = tokio::fs::metadata(&path)
+        .await
+        .map(|m| m.len() as i64)
+        .map_err(|_| refuse(StatusCode::NOT_FOUND, "The file is missing on the server."))?;
+    let owned = path.to_string_lossy().into_owned();
+    let n = tokio::task::spawn_blocking(move || nrrd::read(&owned))
+        .await
+        .map_err(|e| exact_core::Error::Internal(e.to_string()))?
+        .map_err(|e| {
+            refuse(
+                StatusCode::BAD_REQUEST,
+                format!("The file cannot be read as a segmentation: {}", e.0),
+            )
+        })?;
+    if n.segments.is_empty() {
+        return Err(refuse(
+            StatusCode::BAD_REQUEST,
+            "The file has no labelled voxels.",
+        ));
+    }
+    Ok(Plan {
+        image,
+        set: r.get(2),
+        name,
+        filename,
+        segments: segments_json(&n),
+        size,
+        creator: r.get(4),
+    })
+}
+
+/// Turns an NRRD that is an image into a segmentation file of its image set: the file stays where it is, the image (a row that
+/// can show nothing) goes. `creator` stands in when the image has none. Returns the id of the file.
+pub async fn convert_nrrd_image(
+    pool: &sqlx::PgPool,
+    root: &std::path::Path,
+    image: i64,
+    creator: Option<i64>,
+) -> ApiResult<i64> {
+    let plan = plan_nrrd_conversion(pool, root, image).await?;
+    let mut tx = pool.begin().await.map_err(db_err)?;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO exact_rust_linked_volume (image_set_id, name, filename, size, segments, creator_id) \
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+    )
+    .bind(plan.set)
+    .bind(&plan.name)
+    .bind(&plan.filename)
+    .bind(plan.size)
+    .bind(&plan.segments)
+    .bind(plan.creator.or(creator))
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(d) if d.is_unique_violation() => refuse(
+            StatusCode::CONFLICT,
+            "A segmentation file of this name already exists in the image set.",
+        ),
+        e => db_err(e),
+    })?;
+    crate::cascade::delete_rows(&mut tx, "images_image", &[image]).await?;
+    tx.commit().await.map_err(db_err)?;
+    Ok(id)
+}
+
+/// `POST /api/v2/images/{id}/convert-to-segmentation`: an NRRD that was uploaded as an image becomes a segmentation file (see
+/// `convert_nrrd_image`). Needs the rights to edit the set and delete its images; the set must not be locked.
+async fn convert_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(image): Path<i64>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    let set: Option<(i64, bool)> = sqlx::query_as("SELECT i.image_set_id::bigint, st.image_lock FROM images_image i JOIN images_imageset st ON st.id = i.image_set_id WHERE i.id = $1")
+        .bind(image)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?;
+    let (set, locked) =
+        set.ok_or_else(|| ApiError::not_found("No Image matches the given query."))?;
+    can_read(&s, &p, set).await?;
+    let pm = perms(&s, &p, &set_row(&s, set).await?.expect("checked")).await?;
+    if !(pm.edit_set && pm.delete_images) || locked {
+        return Err(ApiError::detail(
+            StatusCode::FORBIDDEN,
+            "permission for editing this image set and deleting its images missing (or the set is locked).",
+        ));
+    }
+    let id = convert_nrrd_image(&s.pool, s.slides.root(), image, Some(p.user.id)).await?;
+    let f = load(&s, id).await?;
+    Ok((StatusCode::CREATED, Json(json_of(&f))).into_response())
 }
 
 /// The id of the segmentation file with this file name in the set, if there is one.

@@ -137,6 +137,17 @@ dc exec server exact-cli precompute-offsets --jobs 2
 ```
 A file that is replaced later (size or date changed) is measured again by the server on its first opening.
 
+**NRRD files that were uploaded as images.** The old EXACT accepted 3D Slicer segmentations (`.nrrd`, `.seg.nrrd`) as images that it could not show. The Rust server keeps them
+as they are (a broken card, "The slide cannot be read"), and offers the person who clicks one to convert it to a *segmentation file* (see the user guide). To convert
+them all at once:
+```
+dc exec server exact-cli convert-nrrd-images --dry-run                      # lists what would be converted and what is left alone, and why
+dc exec server exact-cli convert-nrrd-images --confirm-db "$SQL_DATABASE"   # does it
+```
+The file stays where it is; the image row (it can show nothing) is replaced by an unlinked segmentation file of the same image set, which is then linked to its
+volume in the browser (the link dialog suggests the volume by name). An NRRD image with annotations, registrations or crops, an unreadable file (not an integer
+label map) or a missing file is left alone and reported. Run the dry run on a copy of the production database first; the command can be repeated.
+
 If the storage is fast (local NVMe) raise `EXACT_THUMBNAIL_JOBS`; on slow network storage keep it low. Each helper process uses about 0.5 GB.
 
 Finding what is slow on the real data: set `EXACT_SLOW_SQL_MS=100` in `exact.env` and restart the server; every database statement slower than that is then logged as a

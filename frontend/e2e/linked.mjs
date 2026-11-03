@@ -39,7 +39,7 @@ const browser = await chromium.launch({ executablePath: chrome, headless: true }
 const errors = [];
 const page = await (await browser.newContext({ viewport: { width: 1500, height: 900 } })).newPage();
 page.on("pageerror", (e) => errors.push(String(e)));
-page.on("console", (m) => m.type() === "error" && !/ 40[0139]|401|409/.test(m.text()) && errors.push(m.text()));
+page.on("console", (m) => m.type() === "error" && !/ 40[0139]|401|409/.test(m.text()) && !(/ 404/.test(m.text()) && /\/thumbnail$/.test(m.location().url)) && errors.push(`${m.text()} (${m.location().url})`)); // a card of an image that has just gone shows its placeholder
 await page.goto(base);
 await page.waitForSelector("form.login");
 await page.fill('input[autocomplete="username"]', "aubreville");
@@ -158,6 +158,37 @@ try {
   const exported = fs.readFileSync(await download.path());
   check(exported.subarray(0, 8).toString() === "NRRD0004" && exported.includes("Segment0_Name:=") && exported.includes("Ball"), "the export is a Slicer segmentation with the segment Ball");
   for (const m of masks) await api("DELETE", `/api/v2/annotations/${m.id}`); // soft delete: the types stay
+
+  // an NRRD that was uploaded as an image (before segmentation files existed): a click offers to convert it; the viewer page does too
+  const legacy = () => JSON.parse(execFileSync(path.join(root, "reference/.venv/bin/python"), ["-c", `import json; import test_v2_linked as t; i, n = t.old_nrrd_image(None); print(json.dumps([i, n]))`], { cwd: path.join(root, "tests/conformance"), env: { ...process.env, EXACT_URL: base } }).toString().trim().split("\n").pop());
+  const [oldId, oldName] = legacy();
+  await page.goto(`${base}/sets/${SET}`);
+  const oldTile = page.locator(".tile:not(.seg-tile)", { hasText: oldName });
+  await oldTile.waitFor();
+  check((await oldTile.locator(".seg-badge").count()) === 1, "an NRRD image is marked as a possible segmentation file");
+  await oldTile.locator("a.tile-link").click();
+  await page.waitForSelector('[data-testid="convert-seg"]');
+  check(page.url().includes(`/sets/${SET}`), "a click on it asks instead of opening a viewer that cannot show it");
+  await page.screenshot({ path: shots ? `${shots}/linked-convert.png` : undefined }).catch(() => null);
+  await page.click('[data-testid="convert-go"]');
+  await page.waitForSelector('[data-testid="link-seg"]');
+  check((await page.locator('[data-testid="link-volume"]').inputValue()) === String(IMAGE), "after converting, the link dialog offers the volume of that name");
+  await page.click('[data-testid="link-go"]');
+  await page.waitForSelector('[data-testid="link-seg"]', { state: "detached" });
+  // linking from here goes on to the volume, as a click on the card of an unlinked file does
+  await page.waitForURL(new RegExp(`/images/${IMAGE}/planes`));
+  await page.goto(`${base}/sets/${SET}`);
+  await waitFor(async () => (await page.locator(".tile:not(.seg-tile)", { hasText: oldName }).count()) === 0 && (await page.locator(".seg-tile", { hasText: oldName }).count()) === 1, "the image entry is a segmentation card now");
+  check(true, "the old NRRD image is a linked segmentation file now");
+  for (const f of (await api("GET", `/api/v2/image-sets/${SET}/linked-volumes`)).body) if (f.filename === oldName) await api("DELETE", `/api/v2/linked-volumes/${f.id}`);
+  // the viewer page of such an image asks too, and "Not now" goes back to the image set
+  const [oldId2, oldName2] = legacy();
+  await page.goto(`${base}/images/${oldId2}`);
+  await page.waitForSelector('[data-testid="convert-seg"]');
+  await page.getByRole("button", { name: "Not now" }).click();
+  await page.waitForURL(new RegExp(`/sets/${SET}$`));
+  check(true, "the viewer page of an NRRD image offers the conversion, Not now returns to the set");
+  await api("DELETE", `/api/v2/images/${oldId2}`);
 
   // deleting a volume asks what becomes of its segmentation file: keep it (unlinked) or delete it too
   const tinyName = `tiny-${Date.now() % 100000}`;

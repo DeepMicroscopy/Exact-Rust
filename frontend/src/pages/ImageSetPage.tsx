@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import type { Product, SetImage, SetSettings, Tag } from "../api/types";
@@ -9,6 +9,7 @@ import { UploadTile } from "../components/UploadTile";
 import { AnnotationCounts } from "../components/AnnotationCounts";
 import { AuxFilesDialog } from "../components/AuxFilesDialog";
 import { LinkSegmentationDialog, type LinkedFile } from "../components/LinkSegmentationDialog";
+import { ConvertSegmentationDialog, isNrrdName } from "../components/ConvertSegmentationDialog";
 import { SegmentationMenu, SegmentationTile, type SegmentationMenuModel } from "../components/SegmentationTile";
 import { ExportDialog } from "../components/ExportDialog";
 import { ManualRegistration } from "../components/ManualRegistration";
@@ -22,15 +23,16 @@ type Sort = "name" | "newest" | "size";
 type Dialog = "export" | "files" | "settings" | "delete-set" | "move" | "delete-images" | "register" | null;
 
 /** One image of the overview: select it, open it, or get its menu (right click, long press). */
-function ImageTile({ image: i, selected, onToggle, onMenu }: { image: SetImage; selected: boolean; onToggle(): void; onMenu(x: number, y: number): void }) {
+function ImageTile({ image: i, selected, onToggle, onMenu, onNrrd }: { image: SetImage; selected: boolean; onToggle(): void; onMenu(x: number, y: number): void; /** the file is an NRRD segmentation: a click asks to convert it instead of opening a viewer that cannot show it */ onNrrd(): void }) {
   const trigger = useMenuTrigger(onMenu);
   return (
     <div className={`tile glass ${selected ? "selected" : ""}`} {...trigger}>
       <label className="tile-check" onClick={(e) => e.stopPropagation()}>
         <input type="checkbox" checked={selected} onChange={onToggle} aria-label={`Select ${i.name}`} />
       </label>
-      <Link to={`/images/${i.id}`} className="tile-link" draggable={false}>
+      <Link to={`/images/${i.id}`} className="tile-link" draggable={false} onClick={isNrrdName(i.name) ? (e) => { e.preventDefault(); onNrrd(); } : undefined}>
         <Thumb imageId={i.id} alt={i.name} />
+        {isNrrdName(i.name) && <span className="badge seg-badge" title="A 3D Slicer segmentation: click to convert it to a segmentation file">▨ segmentation file?</span>}
         <div className="tile-name" title={i.name}>
           {i.name}
         </div>
@@ -126,6 +128,16 @@ export function ImageSetPage() {
   }, [visible, segFiles, sort]);
   const [segMenu, setSegMenu] = useState<SegmentationMenuModel | null>(null);
   const [linkOne, setLinkOne] = useState<number | null>(null);
+  const [convert, setConvert] = useState<{ id: number; name: string } | null>(null);
+  // `?link=<file>`: arriving after a conversion from the viewer page; the link dialog opens for the new file
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const l = Number(params.get("link"));
+    if (l > 0) {
+      setLinkOne(l);
+      setParams({}, { replace: true });
+    }
+  }, [params, setParams]);
   const volumeNames = useMemo(() => new Map((images.data ?? []).map((i) => [i.id, i.name])), [images.data]);
   const segChanged = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ["linked-set", id] });
@@ -351,7 +363,7 @@ export function ImageSetPage() {
             ))}
             {cards.map((c) =>
               c.image ? (
-                <ImageTile key={c.key} image={c.image} selected={selected.has(c.image.id)} onToggle={() => toggle(c.image!.id)} onMenu={(x, y) => openMenu(c.image!, x, y)} />
+                <ImageTile key={c.key} image={c.image} selected={selected.has(c.image.id)} onToggle={() => toggle(c.image!.id)} onMenu={(x, y) => openMenu(c.image!, x, y)} onNrrd={() => setConvert(c.image!)} />
               ) : (
                 <SegmentationTile key={c.key} file={c.file!} volumeName={c.file!.image == null ? null : (volumeNames.get(c.file!.image) ?? null)} onOpen={() => openSeg(c.file!)} onMenu={(x, y) => setSegMenu({ x, y, file: c.file!, canEdit: !!can?.edit_set })} />
               ),
@@ -389,6 +401,18 @@ export function ImageSetPage() {
           }}
         />
       )}
+      {convert && (
+        <ConvertSegmentationDialog
+          image={convert}
+          onClose={() => setConvert(null)}
+          onConverted={(file) => {
+            setConvert(null);
+            refresh();
+            segChanged();
+            setLinkOne(file.id); // the next step: which volume it belongs to
+          }}
+        />
+      )}
       {linkOne != null && <LinkSegmentationDialog key={`one${linkOne}`} id={linkOne} onClose={() => setLinkOne(null)} onChanged={segChanged} onLinked={(image) => navigate(`/images/${image}/planes`)} />}
       {linkQueue.length > 0 && <LinkSegmentationDialog key={linkQueue[0]} id={linkQueue[0]} onClose={() => setLinkQueue((q) => q.slice(1))} onChanged={segChanged} />}
       {dialog === "export" && <ExportDialog setId={id} canCreate={!!can?.create_export} canDelete={!!can?.edit_set} onClose={() => setDialog(null)} />}
@@ -397,6 +421,7 @@ export function ImageSetPage() {
         <ImageMenu
           model={menu}
           onClose={() => setMenu(null)}
+          onConvert={isNrrdName(menu.name) ? () => setConvert({ id: menu.id, name: menu.name }) : undefined}
           onMove={() => {
             setMoveList(menu.moveCount > 1 ? chosen : [menu.image]);
             setMenu(null);

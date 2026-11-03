@@ -11,6 +11,7 @@ path = "src/main.rs"
 exact-core.workspace = true
 exact-db.workspace = true
 exact-wsi.workspace = true
+exact-api.workspace = true
 exact-auth.workspace = true
 sqlx.workspace = true
 anyhow.workspace = true

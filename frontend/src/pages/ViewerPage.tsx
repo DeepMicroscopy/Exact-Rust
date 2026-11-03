@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ConvertSegmentationDialog, isNrrdName } from "../components/ConvertSegmentationDialog";
 import OpenSeadragon from "openseadragon";
 import { api, listAll } from "../api/client";
 import type { Page } from "../api/client";
@@ -149,6 +150,8 @@ export function ViewerPage() {
     queryFn: () => api<ImageSummary>(`/api/v2/images/${id}?fields=id,name,width,height,frames,depth,image_set,mpp,crop_source,crop_x,crop_y,crop_frame`),
   });
   const failed = image.isError || !!error;
+  // an NRRD that was uploaded as an image: the viewer cannot show it, the dialog offers the segmentation file instead
+  const nrrd = isNrrdName(image.data?.name);
   const meta = useQuery({ queryKey: ["image-meta", id], queryFn: () => api<Meta>(`/api/v2/images/${id}/metadata`) });
   const types = useQuery({
     queryKey: ["annotation-types"],
@@ -995,6 +998,13 @@ export function ViewerPage() {
         </button>
       </header>
       <GammaFilter gamma={adjust.gamma} />
+      {nrrd && image.data && (
+        <ConvertSegmentationDialog
+          image={{ id, name: image.data.name }}
+          onClose={() => navigate(image.data?.image_set ? `/sets/${image.data.image_set}` : "/")}
+          onConverted={(file) => navigate(`/sets/${file.set}?link=${file.id}`, { replace: true })}
+        />
+      )}
       {adjustOpen && <ImageAdjustPanel value={adjust} onChange={setAdjust} onClose={() => setAdjustOpen(false)} />}
       <div className={`viewer-body ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />

@@ -149,6 +149,11 @@ its opacity (or choose the *Soft tissue* look) to see them.
 The orientation of the file does not have to match the volume: both are placed in millimetres, so a segmentation saved with other axes (Slicer
 writes LPS and often swaps axes) lands on the same voxels. After linking, EXACT tells you if part of the labelled volume lies outside the
 volume; it cannot tell the segmentation of another scan that happens to overlap, so the file name is the check that matters.
+**NRRD files that are already images.** A segmentation that was uploaded before segmentation files existed shows as a card marked *segmentation file?* with no picture, and
+cannot be opened as an image. Clicking it (or opening its address) asks whether to **convert it to a segmentation file**; then the link dialog opens for the volume. The file is kept,
+the image entry goes. A file with annotations, registrations or crops is not converted (the dialog says why), and it needs the right to edit the set and delete its images. The
+right-click menu of such a card has the same **Convert to segmentation file…**. Your administrator can convert all of them at once.
+
 **Import as annotations.** The **Segmentation** window has **Import as annotations…**: every segment becomes the mask of a segmentation type of the
 volume (nothing is changed in the file, and it stays linked). The dialog proposes the type with the segment's name, or a **new type** with that name
 and the segment's colour in a product of the image set (you need the right to add types to it); you can switch segments off, choose another type for

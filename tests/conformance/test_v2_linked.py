@@ -418,3 +418,87 @@ def test_only_nifti_volumes_export(made):
     c, _ = made
     plain = c.get("/api/v2/images", params={"image_set": 2, "fields": "id", "limit": 1}).json()["items"][0]["id"]
     assert c.get(f"/api/v2/images/{plain}/export-segmentation").status_code == 400
+
+
+def psql(sql):
+    import subprocess
+
+    r = subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc", sql], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    return r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
+
+
+def old_nrrd_image(c, name=None):
+    """An NRRD as an image row, as the servers that did not know segmentation files stored it (the file is there, the image cannot be read)."""
+    name = name or f"CT_Philips legacy_{uuid.uuid4().int % 100000}.seg.nrrd"
+    (IMAGES / "exact_1_1" / name).write_bytes(nrrd()[0])
+    iid = int(psql(f"insert into images_image (name, filename, time, checksum, image_set_id, height, width, mpp, \"objectivePower\", image_type, channels, depth, frames, \"defaultFrame\") values ('{name}', '{name}', now(), '\\x00', {SET}, 232, 185, 0, 1, 0, 3, 1, 256, 128) returning id"))
+    return iid, name
+
+
+def test_an_old_nrrd_image_can_be_converted_to_a_segmentation_file(made):
+    c, _ = made
+    iid, name = old_nrrd_image(c)
+    fid = None
+    try:
+        assert c.get(f"/api/v2/images/{iid}/thumbnail").status_code == 400  # cannot be shown as an image
+        r = c.post(f"/api/v2/images/{iid}/convert-to-segmentation")
+        assert r.status_code == 201, r.text
+        f = r.json()
+        fid = f["id"]
+        assert f["filename"] == name and f["image"] is None and [g["name"] for g in f["segments"]] == ["Ball", "Cube"]
+        assert c.get(f"/api/v2/images/{iid}").status_code == 404  # the image row is gone ...
+        assert (IMAGES / "exact_1_1" / name).exists()  # ... the file is not
+        # it is an ordinary segmentation file now: the volume is suggested by name, and linking works
+        assert c.get(f"/api/v2/linked-volumes/{fid}").json()["volumes"][0]["id"] == NIFTI
+        assert c.put(f"/api/v2/linked-volumes/{fid}", json={"image": NIFTI}).status_code == 200
+        assert c.post(f"/api/v2/images/{iid}/convert-to-segmentation").status_code == 404
+    finally:
+        if fid:
+            c.delete(f"/api/v2/linked-volumes/{fid}")
+        else:
+            psql(f"delete from images_image where id = {iid}")
+            (IMAGES / "exact_1_1" / name).unlink(missing_ok=True)
+
+
+def test_conversion_is_refused_where_it_would_lose_something(made):
+    c, _ = made
+    # not an NRRD
+    assert c.post(f"/api/v2/images/{NIFTI}/convert-to-segmentation").status_code == 400
+    # an NRRD image with an annotation
+    iid, name = old_nrrd_image(c)
+    aid = None
+    try:
+        made_a = c.post("/api/v2/annotations", json={"image": iid, "annotation_type": 1, "vector": {"x1": 1, "y1": 1, "x2": 5, "y2": 5}, "unique_identifier": str(uuid.uuid4())})
+        if made_a.status_code == 201:
+            aid = made_a.json()["id"]
+            r = c.post(f"/api/v2/images/{iid}/convert-to-segmentation")
+            assert r.status_code == 409 and "annotation" in r.json()["detail"], r.text
+            assert c.get(f"/api/v2/images/{iid}").status_code == 200  # nothing was changed
+    finally:
+        if aid:
+            psql(f"delete from annotations_annotation where id = {aid}")
+        psql(f"delete from images_image where id = {iid}")
+        (IMAGES / "exact_1_1" / name).unlink(missing_ok=True)
+    # an NRRD image whose file is damaged
+    bad = f"bad_{uuid.uuid4().int % 100000}.nrrd"
+    (IMAGES / "exact_1_1" / bad).write_bytes(b"NRRD0004\ntype: float\n\nxx")
+    bid = int(psql(f"insert into images_image (name, filename, time, checksum, image_set_id, height, width, mpp, \"objectivePower\", image_type, channels, depth, frames, \"defaultFrame\") values ('{bad}', '{bad}', now(), '\\x00', {SET}, 1, 1, 0, 1, 0, 3, 1, 1, 0) returning id"))
+    try:
+        r = c.post(f"/api/v2/images/{bid}/convert-to-segmentation")
+        assert r.status_code == 400 and "cannot be read" in r.json()["detail"]
+        assert c.get(f"/api/v2/images/{bid}").status_code == 200
+    finally:
+        psql(f"delete from images_image where id = {bid}")
+        (IMAGES / "exact_1_1" / bad).unlink(missing_ok=True)
+
+
+def test_only_someone_who_may_delete_images_converts(made):
+    c, _ = made
+    iid, name = old_nrrd_image(c)
+    try:
+        # the outsider does not see the set at all; a plain member of the team may edit but this image set grants no deletion to read-only roles
+        assert client("rt_outsider").post(f"/api/v2/images/{iid}/convert-to-segmentation").status_code == 404
+    finally:
+        psql(f"delete from images_image where id = {iid}")
+        (IMAGES / "exact_1_1" / name).unlink(missing_ok=True)

@@ -853,6 +853,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "exact-api",
  "exact-auth",
  "exact-core",
  "exact-db",

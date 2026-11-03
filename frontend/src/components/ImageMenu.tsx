@@ -34,7 +34,7 @@ export interface ImageMenuModel {
  * The menu of an image in the image-set overview (right click, or a long press on a touch screen): open, download, move,
  * and the images linked to it (registrations, crops). Closes on a choice, Escape, or a click elsewhere.
  */
-export function ImageMenu({ model, onClose, onMove }: { model: ImageMenuModel; onClose(): void; onMove(): void }) {
+export function ImageMenu({ model, onClose, onMove, onConvert }: { model: ImageMenuModel; onClose(): void; onMove(): void; /** an NRRD segmentation that was uploaded as an image can become a segmentation file */ onConvert?(): void }) {
   const root = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [pos, setPos] = useState({ left: model.x, top: model.y });
@@ -78,6 +78,11 @@ export function ImageMenu({ model, onClose, onMove }: { model: ImageMenuModel; o
       <a role="menuitem" className="ctx-link" href={`/api/v2/images/${model.id}/download`} download onClick={() => window.setTimeout(onClose, 50)} title={packed ? "Slides with a folder are packed into a ZIP file first; the download starts when it is ready" : "Download the original file"}>
         Download{packed ? " (ZIP)" : ""}
       </a>
+      {onConvert && (
+        <button role="menuitem" onClick={onConvert} title="This file is a 3D Slicer segmentation, not an image">
+          Convert to segmentation file…
+        </button>
+      )}
       <button role="menuitem" onClick={onMove} disabled={!model.canMove} title={model.canMove ? "Move to another image set" : model.moveWhy}>
         {model.moveCount > 1 ? `Move ${model.moveCount} selected images…` : "Move…"}
       </button>
