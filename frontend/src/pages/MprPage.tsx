@@ -235,6 +235,7 @@ export function MprPage() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [active, step, segTypeId]);
+  const [dockEl, setDockEl] = useState<HTMLElement | null>(null);
   const editableRef = useRef(editable);
   editableRef.current = editable;
 
@@ -247,6 +248,7 @@ export function MprPage() {
           ← Back
         </Link>
         <span className="viewer-title">{image.data?.name ?? "…"}</span>
+        <span className="seg3d-dock-slot" ref={setDockEl} />
         <span className="spacer" />
         <Dropdown
           items={segItems}
@@ -328,6 +330,7 @@ export function MprPage() {
           onUndo={() => void seg3d.undo()}
           onRedo={() => void seg3d.redo()}
           onClose={() => setSegTypeId(null)}
+          dock={dockEl}
           extra={
             readOnly ? null : (
               <button className="btn" onClick={() => setAutoOpen(true)} data-testid="auto-segment" title="Let a program segment the whole volume">

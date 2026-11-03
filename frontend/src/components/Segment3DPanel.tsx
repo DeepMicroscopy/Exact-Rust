@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { FloatingPanel } from "./FloatingPanel";
 import { copyTargets, formatVolume, sizeRange, type SizeUnit } from "../viewer-core/mpr3d";
 import type { MaskState, Message, Op } from "../hooks/useSegment3D";
@@ -44,6 +45,21 @@ interface Props {
   onClose(): void;
   /** further buttons (the automatic segmentation) go below the others */
   extra?: ReactNode;
+  /** the place in the top bar where the tools can be docked; null while there is none */
+  dock: HTMLElement | null;
+}
+
+/** How much of the tools shows: a small palette, the whole window, or the palette in the top bar. */
+export type PanelView = "compact" | "full" | "docked";
+const VIEW_KEY = "exact.seg3d.view";
+
+function storedView(): PanelView {
+  try {
+    const v = localStorage.getItem(VIEW_KEY);
+    return v === "full" || v === "docked" ? v : "compact";
+  } catch {
+    return "compact";
+  }
 }
 
 const KEYS: Record<SegToolName, string> = { brush: "B", lasso: "L", wand: "W" };
@@ -104,13 +120,23 @@ function useInverting(): boolean {
 }
 
 /** The movable window of the 3D mask tools. */
-export function Segment3DPanel({ type, state, message, busy, tool, onTool, readOnly, z, slices, onOp, onUndo, onRedo, onClose, extra }: Props) {
+export function Segment3DPanel({ type, state, message, busy, tool, onTool, readOnly, z, slices, onOp, onUndo, onRedo, onClose, extra, dock }: Props) {
   const inverting = useInverting();
   const effectiveErase = tool.erase !== inverting;
   const [steps, setSteps] = useState(1);
   const [copyN, setCopyN] = useState(3);
   const [confirmClear, setConfirmClear] = useState(false);
   const count = state?.slices.length ?? 0;
+  const [storedMode, setMode] = useState<PanelView>(storedView);
+  const view: PanelView = storedMode === "docked" && !dock ? "compact" : storedMode;
+  const show = (v: PanelView) => {
+    setMode(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* private mode */
+    }
+  };
   // the size stays about the same when the unit changes (measured with the pixels of the axial plane)
   const switchUnit = (unit: SizeUnit) => {
     if (unit === tool.unit) return;
@@ -123,8 +149,81 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
     const t = copyTargets(z, slices, copyN, dir);
     if (t) onOp({ op: "copy", from: z, to: t.to, through: t.through, add: false });
   };
+  const quick = (
+    <QuickTools tool={tool} onTool={onTool} readOnly={readOnly} busy={busy} state={state} effectiveErase={effectiveErase} inverting={inverting} onUndo={onUndo} onRedo={onRedo} />
+  );
+  if (view === "docked" && dock)
+    return createPortal(
+      <div className="seg3d-dock" data-testid="seg3d-dock" role="group" aria-label="3D segmentation">
+        <span className="swatch" style={{ background: type.color }} title={type.name} />
+        {quick}
+        <button className="btn ghost" onClick={() => show("compact")} title="Float the tools over the planes again" aria-label="Undock" data-testid="seg3d-undock">
+          ⧉
+        </button>
+        <button className="btn ghost" onClick={() => show("full")} title="All options" aria-label="Show all options" data-testid="seg3d-expand">
+          ⤢
+        </button>
+        <button className="btn ghost" onClick={onClose} aria-label="Close" title="Close the tools">
+          ✕
+        </button>
+      </div>,
+      dock,
+    );
+  if (view === "compact")
+    return (
+      <FloatingPanel
+        title="3D segmentation"
+        bare
+        onClose={onClose}
+        storageKey="exact.seg3d.pos"
+        initial={{ right: 16, top: 64 }}
+        className="seg3d-panel compact"
+        actions={
+          <>
+            {dock && (
+              <button className="btn ghost" onClick={() => show("docked")} title="Dock the tools in the top bar" aria-label="Dock in the top bar" data-testid="seg3d-dock-btn">
+                ⇱
+              </button>
+            )}
+            <button className="btn ghost" onClick={() => show("full")} title="All options" aria-label="Show all options" data-testid="seg3d-expand">
+              ⤢
+            </button>
+          </>
+        }
+      >
+        <div className="seg3d-head">
+          <span className="swatch" style={{ background: type.color }} />
+          <strong>{type.name}</strong>
+          {busy && <span className="spinner seg3d-busy" role="status" aria-label="Working" />}
+        </div>
+        {quick}
+        {message && message.kind === "error" && (
+          <p className="error small" role="alert" data-testid="seg3d-message">
+            {message.text}
+          </p>
+        )}
+      </FloatingPanel>
+    );
   return (
-    <FloatingPanel title="3D segmentation" onClose={onClose} storageKey="exact.seg3d.pos" initial={{ right: 16, top: 64 }} className="seg3d-panel">
+    <FloatingPanel
+      title="3D segmentation"
+      onClose={onClose}
+      storageKey="exact.seg3d.pos"
+      initial={{ right: 16, top: 64 }}
+      className="seg3d-panel"
+      actions={
+        <>
+          {dock && (
+            <button className="btn ghost" onClick={() => show("docked")} title="Dock the tools in the top bar" aria-label="Dock in the top bar" data-testid="seg3d-dock-btn">
+              ⇱
+            </button>
+          )}
+          <button className="btn ghost" onClick={() => show("compact")} title="Collapse to the small palette" aria-label="Collapse" data-testid="seg3d-collapse">
+            ⤡
+          </button>
+        </>
+      }
+    >
       <div className="seg3d-head">
         <span className="swatch" style={{ background: type.color }} />
         <strong>{type.name}</strong>
@@ -273,5 +372,46 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
         {extra}
       </div>
     </FloatingPanel>
+  );
+}
+
+/** The few controls that are needed all the time: tool, + / −, undo / redo and the size of the tool. */
+function QuickTools({ tool, onTool, readOnly, busy, state, effectiveErase, inverting, onUndo, onRedo }: { tool: SegTool; onTool(p: Partial<SegTool>): void; readOnly: boolean; busy: boolean; state: MaskState | null; effectiveErase: boolean; inverting: boolean; onUndo(): void; onRedo(): void }) {
+  if (readOnly) return <Slider label="Opacity" value={tool.opacity} min={0.1} max={1} step={0.05} show={`${Math.round(tool.opacity * 100)} %`} onChange={(v) => onTool({ opacity: v })} />;
+  const brush = tool.tool === "brush";
+  const r = sizeRange(tool.unit);
+  return (
+    <div className="seg3d-quick">
+      <div className="seg3d-tools">
+        <div className="seg icons" role="group" aria-label="Tool">
+          {(["brush", "lasso", "wand"] as SegToolName[]).map((t) => (
+            <button key={t} className={tool.tool === t ? "active" : ""} aria-pressed={tool.tool === t} aria-label={NAMES[t]} onClick={() => onTool({ tool: t })} title={`${NAMES[t]} (${KEYS[t]})`} data-testid={`seg3d-${t}`}>
+              <ToolIcon tool={t} />
+            </button>
+          ))}
+        </div>
+        <button
+          className={`pt-round seg3d-mode ${effectiveErase ? "erase" : "add"} ${inverting ? "held" : ""}`}
+          onClick={() => onTool({ erase: !tool.erase })}
+          aria-pressed={tool.erase}
+          aria-label={tool.erase ? "Subtracting (tap to add)" : "Adding (tap to subtract)"}
+          title={tool.erase ? "Subtracting from the mask: click to add (E, or hold Shift)" : "Adding to the mask: click to subtract (E, or hold Shift)"}
+          data-testid="seg3d-mode"
+        >
+          {effectiveErase ? "−" : "+"}
+        </button>
+        <button className="btn" disabled={busy || !state?.can_undo} onClick={onUndo} title="Undo (Ctrl+Z)" aria-label="Undo" data-testid="seg3d-undo">
+          ↶
+        </button>
+        <button className="btn" disabled={busy || !state?.can_redo} onClick={onRedo} title="Redo (Shift+Ctrl+Z)" aria-label="Redo" data-testid="seg3d-redo">
+          ↷
+        </button>
+      </div>
+      {brush ? (
+        <Slider label="Size" value={tool.size} min={r.min} max={r.max} step={r.step} show={`${tool.size} ${tool.unit === "px" ? "px" : "mm"}`} onChange={(v) => onTool({ size: v })} testid="seg3d-size" />
+      ) : tool.tool === "wand" ? (
+        <Slider label="Tolerance" value={tool.tolerance} min={0} max={100} step={1} show={`${tool.tolerance} %`} onChange={(v) => onTool({ tolerance: v })} testid="seg3d-tolerance" />
+      ) : null}
+    </div>
   );
 }

@@ -552,6 +552,22 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 /* 3D segmentation (three-plane view) */
 .seg3d-panel { width: 330px; max-height: calc(100vh - 80px); }
 .seg3d-panel .float-body { overflow-y: auto; }
+/* the small palette, and the same controls docked in the top bar */
+.seg3d-panel.compact { width: 296px; }
+.seg3d-panel.compact .float-head { padding: 2px 4px 2px 8px; }
+.seg3d-panel.compact .float-body { padding: 8px; gap: 6px; }
+.seg3d-quick { display: flex; flex-direction: column; gap: 6px; }
+.seg3d-quick .seg3d-tools { gap: 6px; }
+.seg3d-quick .seg3d-tools .seg { flex: none; }
+.seg3d-quick .seg3d-tools .seg.icons button { min-height: 38px; min-width: 38px; }
+.seg3d-quick .seg3d-tools > .btn { min-width: 36px; min-height: 38px; padding: 0 6px; font-size: 1.1rem; }
+.seg3d-panel.compact .pt-round.seg3d-mode { width: 38px; height: 38px; font-size: 1.5rem; }
+.seg3d-dock-slot { display: contents; }
+.seg3d-dock { display: flex; align-items: center; gap: 6px; }
+.seg3d-dock .seg3d-quick { flex-direction: row; align-items: center; }
+.seg3d-dock .adjust-row { grid-template-columns: 90px auto; }
+.seg3d-dock .adjust-label { display: none; }
+.seg3d-dock .pt-round.seg3d-mode { width: 38px; height: 38px; font-size: 1.5rem; flex: none; box-shadow: none; }
 .seg3d-head { display: flex; align-items: center; gap: 8px; }
 .seg3d-readout { margin: 0; display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .seg3d-busy { width: 14px; height: 14px; }
@@ -632,3 +648,4 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .seg-choice legend { padding: 0 6px; font-size: 0.9rem; }
 .seg-choice label { display: flex; align-items: center; gap: 8px; }
 .seg-choice input[type="radio"] { width: auto; min-height: 0; padding: 0; flex: none; }
+.mpr .viewer-bar { flex-wrap: wrap; }

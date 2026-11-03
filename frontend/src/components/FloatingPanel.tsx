@@ -15,7 +15,7 @@ function remembered(key: string): { x: number; y: number } | null {
  * A small window that floats over the page and can be moved by its title (mouse, pen or finger). It stays inside the
  * window, remembers where it was put (`storageKey`) and does not block the page behind it.
  */
-export function FloatingPanel({ title, onClose, storageKey, initial, children, className = "" }: { title: string; onClose(): void; storageKey: string; initial: { right: number; top: number }; children: ReactNode; className?: string }) {
+export function FloatingPanel({ title, onClose, storageKey, initial, children, className = "", actions, bare = false }: { title: string; onClose(): void; storageKey: string; initial: { right: number; top: number }; children: ReactNode; className?: string; actions?: ReactNode; bare?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(() => remembered(storageKey));
   const drag = useRef<{ dx: number; dy: number } | null>(null);
@@ -36,6 +36,14 @@ export function FloatingPanel({ title, onClose, storageKey, initial, children, c
     const resize = () => setPos((p) => (p ? keep(p.x, p.y) : p));
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
+  }, [keep]);
+  // a panel that grows or shrinks (expanded, collapsed) must not end up partly outside the window
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setPos((p) => (p ? keep(p.x, p.y) : p)));
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [keep]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -74,7 +82,8 @@ export function FloatingPanel({ title, onClose, storageKey, initial, children, c
         <span className="float-grip" aria-hidden="true">
           ⋮⋮
         </span>
-        <h2>{title}</h2>
+        {bare ? <span className="spacer" /> : <h2>{title}</h2>}
+        {actions}
         <button className="btn ghost" onClick={onClose} aria-label="Close">
           ✕
         </button>

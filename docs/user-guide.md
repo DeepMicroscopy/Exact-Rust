@@ -107,6 +107,10 @@ belongs to a *segmentation* type, and see and edit it on the axial, coronal and 
 top bar lists the segmentation types of the image set (marked ▨; the set needs a product that has one). Choosing a type opens the tool window
 and lays that type's mask over all three planes; the first use creates the mask in the image. **Escape** or the window's ✕ leaves the mode.
 
+The tools open as a **small palette** (tool, + / −, undo / redo and the size of the brush) that floats over the planes and can be moved
+by its top edge. **⤢** opens the whole window with all options (slices, shape, opacity, automatic segmentation), **⤡** collapses it again,
+and **⇱** docks the palette in the top bar, where it takes no room from the images (**⧉** floats it again). The choice is remembered.
+
 Everything is measured in millimetres, so a brush of 8 mm is round in the picture of every plane, also when the slices are thicker than
 the pixels. The window can be moved by its title, and it shows the volume of the mask (mm³, from 1000 mm³ in ml) and the number of axial slices
 that hold some of it.

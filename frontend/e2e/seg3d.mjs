@@ -68,6 +68,8 @@ try {
   // the image set needs a product with a segmentation type
   await apiCall(root, "PUT", `/api/v2/image-sets/${SET}/products/${SEG_PRODUCT}`);
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 } });
+  // the tests below use the whole window of the tools; the small palette and the dock are tried first
+  await ctx.addInitScript(() => { if (!localStorage.getItem("exact.seg3d.view")) localStorage.setItem("exact.seg3d.view", "full"); });
   const page = await login(ctx, "rt_teamadmin");
   shotPage = page;
 
@@ -95,6 +97,33 @@ try {
   annotationId = (list.body.items.find((a) => a.annotation_type === 2 && !setAside.includes(a.id)) ?? {}).id ?? 0;
   check(annotationId > 0, `the mask annotation of the type was made (${annotationId})`);
   await shot("1-segment");
+
+  // ------------------------------------------------------------------------------------------ small palette, whole window, docked
+  const panelBox = () => page.locator(".seg3d-panel").boundingBox();
+  const fullHeight = (await panelBox()).height;
+  await page.locator('[data-testid="seg3d-collapse"]').click();
+  await waitFor(async () => (await page.locator('[data-testid="seg3d-grow"]').count()) === 0, "collapsing hides the shape and slice options");
+  const small = await panelBox();
+  check(small.height < fullHeight / 2 && small.width < 300, `the small palette is much smaller than the window (${Math.round(small.width)}x${Math.round(small.height)} against height ${Math.round(fullHeight)})`);
+  check((await page.locator('[data-testid="seg3d-brush"]').count()) === 1 && (await page.locator('[data-testid="seg3d-mode"]').count()) === 1 && (await page.locator('[data-testid="seg3d-undo"]').count()) === 1, "...and keeps tool, + / − and undo");
+  await page.locator('[data-testid="seg3d-lasso"]').click();
+  await page.locator('[data-testid="seg3d-brush"]').click();
+  await page.locator('[data-testid="seg3d-dock-btn"]').click();
+  await page.waitForSelector('.viewer-bar [data-testid="seg3d-dock"]');
+  check((await page.locator(".seg3d-panel").count()) === 0, "docking moves the tools into the top bar");
+  check((await page.locator('.viewer-bar [data-testid="seg3d-brush"]').count()) === 1 && (await page.locator('.viewer-bar [data-testid="seg3d-size"]').count()) === 1, "...with the tools and the brush size");
+  await page.reload();
+  await page.waitForSelector('.viewer-bar [data-testid="seg3d-dock"]', { timeout: 15000 }).catch(() => null);
+  // after a reload the type has to be chosen again: the dock is remembered
+  await page.locator('.dropdown[data-name="segment"] .trigger').click();
+  await page.locator(".dd-item", { hasText: "▨" }).first().click();
+  await page.waitForSelector('.viewer-bar [data-testid="seg3d-dock"]');
+  check(true, "the dock is remembered");
+  await page.locator('[data-testid="seg3d-undock"]').click();
+  await page.waitForSelector(".seg3d-panel.compact");
+  await page.locator('[data-testid="seg3d-expand"]').click();
+  await waitFor(async () => (await page.locator('[data-testid="seg3d-grow"]').count()) === 1, "expanding shows all options again");
+  await waitFor(async () => (await page.locator('[data-testid="mask-overlay"]').count()) === 3, "the mask is laid over all three planes again");
 
   // ------------------------------------------------------------------------------------------ painting a sphere
   const overlay = (n) => pane(n).locator('[data-testid="mask-overlay"]');
@@ -347,7 +376,9 @@ try {
   const made = await apiCall(root, "POST", "/api/v2/admin/users", { username: `e2e-ro-${Date.now() % 100000}`, teams: [1], read_only: true });
   check(made.status === 201, `a read-only account was made (${made.status})`);
   readOnlyUser = made.body;
-  const reader = await login(await browser.newContext({ viewport: { width: 1500, height: 900 } }), readOnlyUser.username, readOnlyUser.password, { quiet: true });
+  const readerCtx = await browser.newContext({ viewport: { width: 1500, height: 900 } });
+  await readerCtx.addInitScript(() => { if (!localStorage.getItem("exact.seg3d.view")) localStorage.setItem("exact.seg3d.view", "full"); });
+  const reader = await login(readerCtx, readOnlyUser.username, readOnlyUser.password, { quiet: true });
   await reader.waitForSelector('[data-testid="welcome"]', { timeout: 5000 }).catch(() => null);
   if (await reader.locator('[data-testid="welcome-close"]').count()) await reader.click('[data-testid="welcome-close"]');
   await openPlanes(reader);
