@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SearchInput } from "../components/SearchInput";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
@@ -351,7 +352,7 @@ export function ImageSetPage() {
               <option value="newest">Newest first</option>
               <option value="size">Largest first</option>
             </select>
-            <input className="search" placeholder="Filter images…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <SearchInput history="images" className="search" placeholder="Filter images…" aria-label="Filter images" value={search} onChange={setSearch} />
           </div>
           {images.isLoading && <p className="muted">Loading…</p>}
           {images.error && <p className="error">Could not load images.</p>}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { SearchInput } from "./SearchInput";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { Modal } from "./Modal";
@@ -268,7 +269,7 @@ export function NewUserDialog({ teams, superuser, onClose, onCreated }: { teams:
             Teams ({picked.size} chosen){!person ? ". A worker is offered jobs for images of its own teams only." : ". The account sees the image sets of its teams."}
           </span>
           <div className="row-inline">
-            <input placeholder="Filter teams…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter teams" />
+            <SearchInput history="teams" placeholder="Filter teams…" value={filter} onChange={setFilter} aria-label="Filter teams" />
             <button type="button" className="btn ghost small" onClick={() => setPicked(new Set([...picked, ...shown.map((t) => t.id)]))}>
               Choose all shown
             </button>

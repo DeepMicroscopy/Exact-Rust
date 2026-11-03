@@ -214,3 +214,8 @@ with the error. Failed jobs can be restarted, queued or running ones cancelled.
 
 ## Damaged images
 If a TIFF's pyramid is damaged the viewer offers a **one-time repair**; the original is kept as a backup that can be restored.
+
+## Search history and the overview
+
+- Every search or filter field (image sets, images of a set, users, teams) remembers the last eight terms you finished with Enter or by leaving the field, and offers them as suggestions when you click into the field. The history is kept per field in your browser.
+- The overview (the small map of the slide at the bottom right of the viewer) has a **×** to hide it. The **▣** button in the viewer bar shows it again; the choice is remembered in the browser.

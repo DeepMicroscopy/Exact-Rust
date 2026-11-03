@@ -140,6 +140,20 @@ try {
     }
   }
 
+  // the overview (navigator): a button on it hides it, the viewer bar brings it back
+  {
+    const shown = () => page.evaluate(() => { const n = document.querySelector(".openseadragon-container .navigator"); return !!n && getComputedStyle(n).display !== "none"; });
+    await waitFor(shown, "the overview is shown by default");
+    await page.locator('[data-testid="overview-hide"]').click();
+    await waitFor(async () => !(await shown()), "the button on the overview hides it");
+    check((await page.locator('[data-testid="overview-toggle"]').getAttribute("aria-pressed")) === "false", "...and the viewer bar shows that it is hidden");
+    await page.reload();
+    await page.waitForSelector(".openseadragon-canvas");
+    check(!(await shown()), "...it stays hidden after a reload");
+    await page.locator('[data-testid="overview-toggle"]').click();
+    await waitFor(shown, "the viewer bar button shows it again");
+  }
+
   // image adjustments: a movable window behind an icon at the right of the top bar
   const tileFilter = () => page.evaluate(() => window.__viewer.drawer.canvas.style.filter);
   const overlayFilters = () => page.evaluate(() => [...document.querySelectorAll(".openseadragon-canvas canvas")].filter((c) => c !== window.__viewer.drawer.canvas).map((c) => c.style.filter).join(""));

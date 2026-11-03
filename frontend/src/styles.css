@@ -175,6 +175,8 @@ code { font-size: 0.85em; background: var(--glass-h); padding: 1px 5px; border-r
 .zslider-current { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 0.85rem; text-align: center; }
 .viewer-body.with-z .viewer-side { left: 12px; }
 .viewer-body.with-z .openseadragon-container .navigator { right: 118px !important; }
+.viewer-body.no-overview .openseadragon-container .navigator { display: none !important; }
+.overview-hide { position: absolute; top: 2px; right: 2px; z-index: 5; width: 22px; height: 22px; padding: 0; line-height: 1; border: 0; border-radius: 4px; background: rgba(15, 15, 20, 0.75); color: var(--text, #fff); cursor: pointer; }
 .time-end { min-width: 44px; text-align: center; }
 .time-current { min-width: 150px; text-align: right; }
 

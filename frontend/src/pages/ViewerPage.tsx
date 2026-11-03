@@ -200,6 +200,21 @@ export function ViewerPage() {
       return false;
     }
   });
+  const [overviewShown, setOverviewShown] = useState(() => {
+    try {
+      return localStorage.getItem("exact.viewer.overview") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const showOverview = useCallback((on: boolean) => {
+    setOverviewShown(on);
+    try {
+      localStorage.setItem("exact.viewer.overview", on ? "1" : "0");
+    } catch {
+      /* not remembered */
+    }
+  }, []);
   const [toolsOpen, setToolsOpen] = useState(() => window.innerWidth >= 760); // phones view first: the tools open on demand
   const notify = useCallback((msg: string) => {
     setToast(msg);
@@ -376,6 +391,17 @@ export function ViewerPage() {
       e.preventDefaultAction = true;
     });
     viewerRef.current = viewer;
+    // a button on the overview (the navigator) folds it away; the viewer bar brings it back
+    const fold = document.createElement("button");
+    fold.className = "overview-hide";
+    fold.type = "button";
+    fold.textContent = "×";
+    fold.title = "Hide the overview";
+    fold.setAttribute("aria-label", "Hide the overview");
+    fold.setAttribute("data-testid", "overview-hide");
+    fold.addEventListener("click", () => showOverview(false));
+    for (const ev of ["pointerdown", "mousedown", "touchstart"]) fold.addEventListener(ev, (e) => e.stopPropagation());
+    viewer.navigator?.element?.appendChild(fold);
     // the address bar follows the view (centre and zoom in image pixels, frame, plane), so that the link shows what is seen
     let urlTimer = 0;
     const writeUrl = () => {
@@ -999,6 +1025,16 @@ export function ViewerPage() {
           </button>
         )}
         <button
+          className={`btn icon-btn ${overviewShown ? "on" : ""}`}
+          aria-pressed={overviewShown}
+          aria-label="Overview"
+          onClick={() => showOverview(!overviewShown)}
+          title={overviewShown ? "Hide the overview (the small map of the slide)" : "Show the overview (the small map of the slide)"}
+          data-testid="overview-toggle"
+        >
+          ▣
+        </button>
+        <button
           className={`btn icon-btn ${prefs.legacy_navigation ? "on" : ""}`}
           aria-pressed={prefs.legacy_navigation}
           aria-label="Old navigation"
@@ -1022,7 +1058,7 @@ export function ViewerPage() {
         />
       )}
       {adjustOpen && <ImageAdjustPanel value={adjust} onChange={setAdjust} onClose={() => setAdjustOpen(false)} />}
-      <div className={`viewer-body ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
+      <div className={`viewer-body ${overviewShown ? "" : "no-overview"} ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
         {!failed && <ScaleBar viewerRef={viewerRef} mpp={mpp} />}
         {opening && !failed && <OpeningSpinner name={image.data?.name} />}

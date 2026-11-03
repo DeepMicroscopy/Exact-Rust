@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { SearchInput } from "../components/SearchInput";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -103,7 +104,7 @@ export function Index() {
         </select>
         <div className="toolbar">
           <span className="spacer" />
-          <input className="search" placeholder="Search all teams…" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <SearchInput history="index" className="search" placeholder="Search all teams…" aria-label="Search" value={search} onChange={setSearch} />
           {teamId !== null && (
             <button className="btn" onClick={() => setStats(true)}>
               Statistics

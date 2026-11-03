@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { SearchInput } from "../components/SearchInput";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -474,7 +475,7 @@ function UsersTab({ me }: { me: AdminMe }) {
   return (
     <div className="admin-main">
       <div className="toolbar">
-        <input className="search" placeholder="Filter users…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter users" />
+        <SearchInput history="users" className="search" placeholder="Filter users…" value={q} onChange={setQ} aria-label="Filter users" />
         <span className="muted small">{shown.length} of {users.data?.length ?? 0}</span>
         <span className="spacer" />
         <button className="btn primary" onClick={() => setNewUser(true)} title="An account for a person or a worker: names, teams, read only or not, and a password in one go">
