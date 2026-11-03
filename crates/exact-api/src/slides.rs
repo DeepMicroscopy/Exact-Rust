@@ -963,8 +963,15 @@ fn vsi_scanner_dir(file: &std::path::Path) -> Option<std::path::PathBuf> {
         .filter_map(Result::ok)
         .map(|e| e.path())
         .find(|p| {
-            let n = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            p.is_dir() && n.len() > 2 && n.starts_with('_') && n.ends_with('_') && flat(&n[1..n.len() - 1]) == flat(&stem)
+            let n = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            p.is_dir()
+                && n.len() > 2
+                && n.starts_with('_')
+                && n.ends_with('_')
+                && flat(&n[1..n.len() - 1]) == flat(&stem)
         })
 }
 
@@ -1056,8 +1063,14 @@ mod tests {
             .file_names()
             .map(String::from)
             .collect();
-        assert!(names.contains(&"_slide_1_/stack1/frame_t.ets".to_string()), "{names:?}");
-        assert!(names.contains(&"_slide_1_/slide-1.vsi".to_string()), "{names:?}");
+        assert!(
+            names.contains(&"_slide_1_/stack1/frame_t.ets".to_string()),
+            "{names:?}"
+        );
+        assert!(
+            names.contains(&"_slide_1_/slide-1.vsi".to_string()),
+            "{names:?}"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

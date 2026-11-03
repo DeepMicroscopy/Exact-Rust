@@ -79,7 +79,13 @@ impl Level {
     }
 }
 
-fn check(id: &str, name: &str, level: Level, value: impl Into<String>, detail: impl Into<String>) -> (Level, Value) {
+fn check(
+    id: &str,
+    name: &str,
+    level: Level,
+    value: impl Into<String>,
+    detail: impl Into<String>,
+) -> (Level, Value) {
     (
         level,
         json!({"id": id, "name": name, "status": level.name(), "value": value.into(), "detail": detail.into()}),
@@ -128,7 +134,9 @@ async fn cpu_percent() -> Option<f64> {
 }
 
 fn cpu_count() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
 }
 
 /// The hottest sensor of `/sys/class/hwmon` as (label, degrees Celsius).
@@ -136,19 +144,32 @@ fn hottest_sensor() -> Option<(String, f64)> {
     let mut best: Option<(String, f64)> = None;
     for hw in std::fs::read_dir("/sys/class/hwmon").ok()?.flatten() {
         let dir = hw.path();
-        let chip = std::fs::read_to_string(dir.join("name")).unwrap_or_default().trim().to_string();
+        let chip = std::fs::read_to_string(dir.join("name"))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
         for e in std::fs::read_dir(&dir).ok()?.flatten() {
             let file = e.file_name().to_string_lossy().into_owned();
-            let Some(stem) = file.strip_suffix("_input").filter(|s| s.starts_with("temp")) else {
+            let Some(stem) = file
+                .strip_suffix("_input")
+                .filter(|s| s.starts_with("temp"))
+            else {
                 continue;
             };
-            let Some(milli) = std::fs::read_to_string(e.path()).ok().and_then(|t| t.trim().parse::<f64>().ok()) else {
+            let Some(milli) = std::fs::read_to_string(e.path())
+                .ok()
+                .and_then(|t| t.trim().parse::<f64>().ok())
+            else {
                 continue;
             };
-            let label = std::fs::read_to_string(dir.join(format!("{stem}_label"))).unwrap_or_default();
+            let label =
+                std::fs::read_to_string(dir.join(format!("{stem}_label"))).unwrap_or_default();
             let degrees = milli / 1000.0;
-            if degrees > 0.0 && best.as_ref().map_or(true, |(_, d)| degrees > *d) {
-                best = Some((format!("{chip} {}", label.trim()).trim().to_string(), degrees));
+            if degrees > 0.0 && best.as_ref().is_none_or(|(_, d)| degrees > *d) {
+                best = Some((
+                    format!("{chip} {}", label.trim()).trim().to_string(),
+                    degrees,
+                ));
             }
         }
     }
@@ -165,10 +186,16 @@ struct Gpu {
 
 async fn gpus() -> Option<Vec<Gpu>> {
     let run = tokio::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"])
+        .args([
+            "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ])
         .kill_on_drop(true)
         .output();
-    let out = tokio::time::timeout(Duration::from_secs(5), run).await.ok()?.ok()?;
+    let out = tokio::time::timeout(Duration::from_secs(5), run)
+        .await
+        .ok()?
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -228,7 +255,8 @@ fn host_status() -> Result<Option<HostStatus>, String> {
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let value = serde_json::from_str(&text).map_err(|e| format!("{}: not JSON ({e})", path.display()))?;
+    let value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: not JSON ({e})", path.display()))?;
     Ok(Some(HostStatus { value, age }))
 }
 
@@ -248,32 +276,71 @@ fn level_of(s: &str) -> Level {
 async fn health_h(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
     let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
     if !users::is_site_admin(&s.pool, p.user.id).await? {
-        return Err(ApiError::detail(StatusCode::FORBIDDEN, "Site admin permission required."));
+        return Err(ApiError::detail(
+            StatusCode::FORBIDDEN,
+            "Site admin permission required.",
+        ));
     }
     let mut checks: Vec<(Level, Value)> = vec![];
 
     // CPU: the load of all cores over a third of a second
     checks.push(match cpu_percent().await {
         Some(c) => {
-            let level = if c >= 95.0 { Level::Critical } else if c >= 85.0 { Level::Warning } else { Level::Ok };
-            check("cpu", "CPU utilization", level, format!("{c:.0} %"), format!("{} cores; warning from 85 %, critical from 95 %", cpu_count()))
+            let level = if c >= 95.0 {
+                Level::Critical
+            } else if c >= 85.0 {
+                Level::Warning
+            } else {
+                Level::Ok
+            };
+            check(
+                "cpu",
+                "CPU utilization",
+                level,
+                format!("{c:.0} %"),
+                format!(
+                    "{} cores; warning from 85 %, critical from 95 %",
+                    cpu_count()
+                ),
+            )
         }
-        None => check("cpu", "CPU utilization", Level::Unknown, "n/a", "The server cannot read /proc/stat on this system."),
+        None => check(
+            "cpu",
+            "CPU utilization",
+            Level::Unknown,
+            "n/a",
+            "The server cannot read /proc/stat on this system.",
+        ),
     });
 
     // GPU
     let gpu_list = gpus().await;
     checks.push(match &gpu_list {
         Some(list) => {
-            let value = list.iter().map(|g| format!("{:.0} %", g.util)).collect::<Vec<_>>().join(", ");
+            let value = list
+                .iter()
+                .map(|g| format!("{:.0} %", g.util))
+                .collect::<Vec<_>>()
+                .join(", ");
             let detail = list
                 .iter()
-                .map(|g| format!("{}: {:.0} of {:.0} MiB memory, {:.0} °C", g.name, g.mem_used, g.mem_total, g.temp))
+                .map(|g| {
+                    format!(
+                        "{}: {:.0} of {:.0} MiB memory, {:.0} °C",
+                        g.name, g.mem_used, g.mem_total, g.temp
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join("; ");
             check("gpu", "GPU utilization", Level::Ok, value, detail)
         }
-        None => check("gpu", "GPU utilization", Level::Unknown, "n/a", "No NVIDIA GPU is visible to the server (nvidia-smi)."),
+        None => check(
+            "gpu",
+            "GPU utilization",
+            Level::Unknown,
+            "n/a",
+            "No NVIDIA GPU is visible to the server (nvidia-smi).",
+        ),
     });
 
     // active users
@@ -283,7 +350,11 @@ async fn health_h(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Re
         "Active users",
         Level::Ok,
         active.len().to_string(),
-        if active.is_empty() { "Nobody in the last 5 minutes.".to_string() } else { format!("{} (last 5 minutes)", active.join(", ")) },
+        if active.is_empty() {
+            "Nobody in the last 5 minutes.".to_string()
+        } else {
+            format!("{} (last 5 minutes)", active.join(", "))
+        },
     ));
 
     // the host's file: RAID and, when the container sees no sensors, the temperature
@@ -322,37 +393,101 @@ async fn health_h(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Re
     }
     checks.push(match temps.iter().max_by(|a, b| a.1.total_cmp(&b.1)) {
         Some((_, t)) => {
-            let level = if *t >= 90.0 { Level::Critical } else if *t >= 80.0 { Level::Warning } else { Level::Ok };
-            let detail = format!("{}; warning from 80 °C, critical from 90 °C", temps.iter().map(|(l, t)| format!("{l} {t:.0} °C")).collect::<Vec<_>>().join(", "));
-            check("temperature", "Temperature", level, format!("{t:.0} °C"), detail)
+            let level = if *t >= 90.0 {
+                Level::Critical
+            } else if *t >= 80.0 {
+                Level::Warning
+            } else {
+                Level::Ok
+            };
+            let detail = format!(
+                "{}; warning from 80 °C, critical from 90 °C",
+                temps
+                    .iter()
+                    .map(|(l, t)| format!("{l} {t:.0} °C"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            check(
+                "temperature",
+                "Temperature",
+                level,
+                format!("{t:.0} °C"),
+                detail,
+            )
         }
-        None => check("temperature", "Temperature", Level::Unknown, "n/a", "No sensor is visible to the server; the host can report one in its status file."),
+        None => check(
+            "temperature",
+            "Temperature",
+            Level::Unknown,
+            "n/a",
+            "No sensor is visible to the server; the host can report one in its status file.",
+        ),
     });
 
     // storage: the volumes of the image store, the media files and the cache (one line per file system)
     let mut seen = vec![];
     let mut storage = vec![];
     let mut disk_level = Level::Ok;
-    for (name, path) in [("Images", s.slides.root().to_path_buf()), ("Media", s.media_root.clone()), ("Cache", s.slides.cache_dir().to_path_buf())] {
-        let Some((total, free, dev)) = volume(&path) else { continue };
+    for (name, path) in [
+        ("Images", s.slides.root().to_path_buf()),
+        ("Media", s.media_root.clone()),
+        ("Cache", s.slides.cache_dir().to_path_buf()),
+    ] {
+        let Some((total, free, dev)) = volume(&path) else {
+            continue;
+        };
         if seen.contains(&dev) {
             continue;
         }
         seen.push(dev);
-        let share = if total > 0 { free as f64 / total as f64 } else { 1.0 };
-        let level = if share < 0.05 { Level::Critical } else if share < 0.10 { Level::Warning } else { Level::Ok };
+        let share = if total > 0 {
+            free as f64 / total as f64
+        } else {
+            1.0
+        };
+        let level = if share < 0.05 {
+            Level::Critical
+        } else if share < 0.10 {
+            Level::Warning
+        } else {
+            Level::Ok
+        };
         disk_level = disk_level.max(level);
         storage.push(json!({"name": name, "path": path.to_string_lossy(), "total": total, "free": free, "used": total - free, "status": level.name()}));
     }
     checks.push(if storage.is_empty() {
-        check("storage", "Free space", Level::Unknown, "n/a", "The volumes cannot be read.")
+        check(
+            "storage",
+            "Free space",
+            Level::Unknown,
+            "n/a",
+            "The volumes cannot be read.",
+        )
     } else {
         let detail = storage
             .iter()
-            .map(|v| format!("{}: {} free of {}", v["name"].as_str().unwrap_or(""), gib(v["free"].as_u64().unwrap_or(0)), gib(v["total"].as_u64().unwrap_or(0))))
+            .map(|v| {
+                format!(
+                    "{}: {} free of {}",
+                    v["name"].as_str().unwrap_or(""),
+                    gib(v["free"].as_u64().unwrap_or(0)),
+                    gib(v["total"].as_u64().unwrap_or(0))
+                )
+            })
             .collect::<Vec<_>>()
             .join("; ");
-        check("storage", "Free space", disk_level, if storage.len() == 1 { "1 volume".to_string() } else { format!("{} volumes", storage.len()) }, format!("{detail}; warning below 10 % free, critical below 5 %"))
+        check(
+            "storage",
+            "Free space",
+            disk_level,
+            if storage.len() == 1 {
+                "1 volume".to_string()
+            } else {
+                format!("{} volumes", storage.len())
+            },
+            format!("{detail}; warning below 10 % free, critical below 5 %"),
+        )
     });
 
     let overall = checks.iter().map(|(l, _)| *l).fold(Level::Ok, Level::max);
@@ -373,7 +508,8 @@ mod tests {
     #[test]
     fn cpu_times_leave_out_idle_and_iowait() {
         // user nice system idle iowait irq softirq steal guest guest_nice
-        let (busy, total) = parse_cpu_times("cpu  100 0 50 800 40 5 5 0 0 0\ncpu0 1 1 1 1 1 1 1 1\n").unwrap();
+        let (busy, total) =
+            parse_cpu_times("cpu  100 0 50 800 40 5 5 0 0 0\ncpu0 1 1 1 1 1 1 1 1\n").unwrap();
         assert_eq!((busy, total), (160, 1000));
         assert!(parse_cpu_times("garbage").is_none());
     }
@@ -382,13 +518,26 @@ mod tests {
     fn nvidia_smi_lines() {
         let g = parse_gpus("NVIDIA GeForce RTX 2060, 37, 2134, 6144, 61\n");
         assert_eq!(g.len(), 1);
-        assert_eq!((g[0].name.as_str(), g[0].util, g[0].mem_used, g[0].mem_total, g[0].temp), ("NVIDIA GeForce RTX 2060", 37.0, 2134.0, 6144.0, 61.0));
+        assert_eq!(
+            (
+                g[0].name.as_str(),
+                g[0].util,
+                g[0].mem_used,
+                g[0].mem_total,
+                g[0].temp
+            ),
+            ("NVIDIA GeForce RTX 2060", 37.0, 2134.0, 6144.0, 61.0)
+        );
         assert!(parse_gpus("No devices were found\n").is_empty());
     }
 
     #[test]
     fn raid_words_map_to_levels() {
-        assert!(level_of("Optimal") == Level::Ok && level_of("Degraded") == Level::Warning && level_of("Failed") == Level::Critical);
+        assert!(
+            level_of("Optimal") == Level::Ok
+                && level_of("Degraded") == Level::Warning
+                && level_of("Failed") == Level::Critical
+        );
         assert!(level_of("whatever") == Level::Unknown);
     }
 
