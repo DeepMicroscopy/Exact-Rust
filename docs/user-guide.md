@@ -52,7 +52,7 @@ download is unaffected. Your settings are remembered for the next image.
 * **Z-stacks and movies** get a frame slider; `Shift+E` / `Shift+Q` or `Page Up` / `Page Down` step through frames, `Space`
   plays a movie (right click on the play button chooses the speed).
 * **NIfTI and DICOM volumes** open in a **three-plane view** (axial, coronal, sagittal) with a crosshair. Click in a plane to
-  move it, scroll to step through slices. *Single plane* switches back to the ordinary viewer.
+  move it, scroll to zoom (**Shift** + scroll steps through the slices; the button **Wheel: zoom / slices** in the top bar swaps the two, and the choice is remembered). *Single plane* switches back to the ordinary viewer.
 
 ![Three-plane view](assets/screenshots/planes.png)
 
@@ -133,7 +133,7 @@ that hold some of it.
   **Clear mask** (click twice) empties it.
 * **Undo** and **Redo** (`Ctrl/Cmd+Z`, `Shift+Ctrl/Cmd+Z`) go back and forth through these steps; the steps are kept while the mask is open in the server.
 * A click or stroke also moves the crosshair to that point, so the other two planes show it. `Ctrl` (`Cmd`) + click moves the crosshair without painting;
-  the mouse wheel and Page Up / Down still step through the slices. Accounts that are read-only see the mask and have no tools.
+  Shift + mouse wheel (or the wheel, in "Wheel: slices" mode) and Page Up / Down still step through the slices. Accounts that are read-only see the mask and have no tools.
 
 The single-plane view of a volume paints masks on the axial plane only; for the other planes its toolbox points to the three-plane view.
 

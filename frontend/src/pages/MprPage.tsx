@@ -48,6 +48,24 @@ export function rememberThreePlanes(on: boolean): void {
   }
 }
 
+/** What a mouse wheel does in the planes: zoom (as everywhere else in EXACT) or step through the slices (as in radiology programs). */
+export type WheelMode = "zoom" | "slices";
+const WHEEL_PREFERENCE = "exact.mpr.wheel";
+export function wheelMode(): WheelMode {
+  try {
+    return localStorage.getItem(WHEEL_PREFERENCE) === "slices" ? "slices" : "zoom";
+  } catch {
+    return "zoom";
+  }
+}
+function rememberWheelMode(m: WheelMode): void {
+  try {
+    localStorage.setItem(WHEEL_PREFERENCE, m);
+  } catch {
+    /* private window */
+  }
+}
+
 interface PlaneInfo {
   plane: number;
   name: string;
@@ -90,6 +108,7 @@ export function MprPage() {
   }, [annotations.data, types.data, styles, voxel]);
   const [active, setActive] = useState<Plane>(0);
   const [maxed, setMaxed] = useState<Plane | null>(null);
+  const [wheelModeState, setWheelModeState] = useState<WheelMode>(wheelMode);
   const [render3d, setRender3d] = useState(false);
   useEffect(() => setRender3d(false), [id]);
 
@@ -279,6 +298,18 @@ export function MprPage() {
             Export masks
           </Dropdown>
         )}
+        <button
+          className="btn"
+          onClick={() => {
+            const m: WheelMode = wheelModeState === "zoom" ? "slices" : "zoom";
+            rememberWheelMode(m);
+            setWheelModeState(m);
+          }}
+          title={wheelModeState === "zoom" ? "The mouse wheel zooms; Shift + wheel steps through the slices. Click to let the wheel step through the slices instead." : "The mouse wheel steps through the slices; Ctrl + wheel zooms. Click to let the wheel zoom instead."}
+          data-testid="wheel-mode"
+        >
+          Wheel: {wheelModeState}
+        </button>
         {linkedAll.length > 0 && (
           <button className={`btn ${linkedPanel ? "on" : ""}`} onClick={() => setLinkedPanel((o) => !o)} title="Segmentation files linked to this volume (read-only)" data-testid="linked-toggle">
             Segmentation ({linkedAll.length})
@@ -387,7 +418,7 @@ function Info({ voxel, shape, planes, segmenting, onRender3D }: { voxel: Voxel; 
           Show 3D render
         </button>
       </p>
-      <p className="muted small">Click in a plane to set the crosshair. Scroll or Page Up / Down steps the slices of the plane you used last. Drag moves the image, Ctrl + scroll or a pinch zooms.</p>
+      <p className="muted small">Click in a plane to set the crosshair. Page Up / Down steps the slices of the plane you used last, and so does the mouse wheel when the top bar says "Wheel: slices" (Shift + wheel in the other mode). Drag moves the image, a pinch zooms.</p>
     </>
   );
 }
@@ -438,7 +469,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
     v.addHandler("canvas-key", (e) => {
       e.preventDefaultAction = true;
     });
-    // a plain mouse wheel steps through the slices (a pinch and Ctrl + wheel zoom, a track pad swipe moves the image)
+    // the mouse wheel zooms or steps through the slices, as chosen in the top bar
     const el = v.canvas as HTMLElement;
     const stepper = new WheelStepper();
     const wheel = (e: WheelEvent) => {
@@ -451,11 +482,15 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
         if (d) sg.onSize(d < 0 ? 1 : -1);
         return;
       }
-      if (classifyWheel(e, performance.now(), -Infinity) !== "wheel") return;
+      // zoom mode: the wheel zooms and Shift + wheel steps; slices mode: the wheel steps and Ctrl + wheel or a pinch zooms. A track pad swipe
+      // moves the image in both (and a pinch zooms), only a wheel is told from it
+      const zoomMode = wheelMode() === "zoom";
+      const kind = classifyWheel(e, performance.now(), -Infinity);
+      if (zoomMode ? !e.shiftKey || e.ctrlKey : kind !== "wheel") return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      // a notch of a wheel is 100 or so pixels, finer wheels and line-mode events add up to the same
-      const d = stepper.push(e, performance.now());
+      // a notch of a wheel is 100 or so pixels, finer wheels and line-mode events add up to the same (Shift turns a wheel sideways on a Mac)
+      const d = stepper.push({ deltaY: e.deltaY || e.deltaX, deltaMode: e.deltaMode }, performance.now());
       if (d) live.current.onStep(d);
     };
     el.addEventListener("wheel", wheel, { passive: false, capture: true });

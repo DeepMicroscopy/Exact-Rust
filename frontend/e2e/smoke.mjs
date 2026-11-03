@@ -195,10 +195,26 @@ try {
   await shot("6-three-planes");
   const sag = await page.locator('[data-testid="mpr-sagittal"]').boundingBox();
   await page.mouse.move(sag.x + sag.width / 2, sag.y + sag.height / 2);
+  // by default the wheel zooms, as everywhere in EXACT; Shift + wheel steps through the slices
+  const zoomOf = () => page.evaluate(() => window.__mpr_2.viewport.getZoom());
+  const zoom0 = await zoomOf();
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(700);
+  const [xz, , , , zz] = await voxelText();
+  check((await zoomOf()) > zoom0 && xz === x1 && zz === z1, "the mouse wheel zooms the plane under it and keeps the slices");
+  await page.keyboard.down("Shift");
   await page.mouse.wheel(0, 100);
+  await page.keyboard.up("Shift");
+  await page.waitForTimeout(400);
+  const [xs, , , , zs] = await voxelText();
+  check(xs === x1 + 1 && zs === z1, `Shift + wheel steps through the slices (x ${x1} -> ${xs})`);
+  await page.click('[data-testid="wheel-mode"]');
+  check((await page.locator('[data-testid="wheel-mode"]').innerText()).includes("slices"), "the top bar offers the wheel for the slices");
+  await page.mouse.move(sag.x + sag.width / 2, sag.y + sag.height / 2);
+  await page.mouse.wheel(0, -100);
   await page.waitForTimeout(400);
   const [x2, , , , z2] = await voxelText();
-  check(x2 === x1 + 1 && z2 === z1, `the mouse wheel steps through the slices of the plane under it (x ${x1} -> ${x2})`);
+  check(x2 === x1 && z2 === z1, `in "slices" mode the mouse wheel steps through the slices of the plane under it (x ${xs} -> ${x2})`);
   const shot3 = new URL(page.url());
   check(["vx", "vy", "vz"].every((k) => shot3.searchParams.has(k)), "the address bar carries the crosshair");
   await page.goto(page.url());
