@@ -107,6 +107,8 @@ export function MprPage() {
     [types.data, imageSet.data],
   );
   const [segTypeId, setSegTypeId] = useState<number | null>(null);
+  // the volume has masks (segmentation annotations) that can be exported
+  const hasMasks = (annotations.data ?? []).some((a) => !a.deleted && a.id > 0 && segTypes.some((t) => t.id === a.annotation_type));
   const [tool, setTool] = useState<SegTool>(DEFAULT_TOOL);
   const [segError, setSegError] = useState<string | null>(null);
   const segType = segTypes.find((t) => t.id === segTypeId) ?? null;
@@ -242,6 +244,24 @@ export function MprPage() {
         >
           {segType ? `▨ ${segType.name}` : "Segment"}
         </Dropdown>
+        {hasMasks && (
+          <Dropdown
+            items={[
+              { id: "nrrd", label: "3D Slicer segmentation (.seg.nrrd)" },
+              { id: "nifti", label: "NIfTI label map (.nii.gz)" },
+            ]}
+            onPick={(f) => {
+              const a = document.createElement("a");
+              a.href = `/api/v2/images/${id}/export-segmentation?format=${f}`;
+              a.download = "";
+              a.click();
+            }}
+            title="Download the masks of this volume for 3D Slicer and other programs: one segment per segmentation type, in the volume's own position"
+            name="export-masks"
+          >
+            Export masks
+          </Dropdown>
+        )}
         {linkedAll.length > 0 && (
           <button className={`btn ${linkedPanel ? "on" : ""}`} onClick={() => setLinkedPanel((o) => !o)} title="Segmentation files linked to this volume (read-only)" data-testid="linked-toggle">
             Segmentation ({linkedAll.length})

@@ -59,9 +59,14 @@ def made():
     c = client("aubreville")
     ids = []
 
-    def make(swap=False, shift=(0.0, 0.0, 0.0), name=None):
-        body, center = nrrd(swap, shift)
-        name = name or f"CT_Philips segmentation_{uuid.uuid4().int % 100000}.seg.nrrd"
+    def make(swap=False, shift=(0.0, 0.0, 0.0), name=None, volume=None):
+        """Uploads a segmentation file made for the volume file `volume` (CT_Philips unless given)."""
+        import nibabel as nib
+
+        img = nib.load(IMAGES / "exact_1_1" / volume) if volume else None
+        body, center = nrrd(swap, shift, img)
+        stem = volume.split(".")[0] if volume else "CT_Philips"
+        name = name or f"{stem} segmentation_{uuid.uuid4().int % 100000}.seg.nrrd"
         r = c.post(f"/api/v2/image-sets/{SET}/images", files={"file": (name, body)})
         assert r.status_code == 201, r.text
         item = r.json()["items"][0]
@@ -326,3 +331,90 @@ def test_a_mask_of_another_image_is_refused(made):
     finally:
         c.delete(f"/api/v2/annotations/{aid}")
         c.delete(f"/api/v2/image-sets/{SET}/products/{SEG_PRODUCT}")
+
+
+def read_seg_nrrd(body):
+    """Header fields, key/value pairs, sizes, the voxel-to-RAS affine and the data (x fastest) of a .seg.nrrd."""
+    cut = body.index(b"\n\n")
+    lines = body[:cut].decode().splitlines()
+    f = dict(line.split(":", 1) for line in lines[1:] if ":" in line and not line.startswith("#") and ":=" not in line)
+    kv = dict(line.split(":=", 1) for line in lines if ":=" in line)
+    f = {k.strip(): v.strip() for k, v in f.items()}
+    sizes = [int(v) for v in f["sizes"].split()]
+    dirs = [tuple(float(x) for x in d.strip("()").split(",")) for d in f["space directions"].replace(") (", ")|(").split("|") if d != "none"]
+    origin = np.array([float(x) for x in f["space origin"].strip("()").split(",")])
+    lps = np.diag([-1.0, -1.0, 1.0])
+    aff = np.eye(4)
+    aff[:3, :3] = lps @ np.array(dirs).T
+    aff[:3, 3] = lps @ origin
+    raw = np.frombuffer(gzip.decompress(body[cut + 2 :]), np.uint8 if "char" in f["type"] else np.uint16)
+    return f, kv, sizes, aff, raw
+
+
+def test_the_masks_of_a_volume_export_as_a_slicer_segmentation_and_come_back(made):
+    import nibabel as nib
+
+    c, make = made
+    # a volume without masks of its own (80 has one in the test data); its picture is not the voxel grid (845 rows for 512 voxels)
+    volume, vname = 81, "TallCanyon_c6_1b9ev.nii.gz"
+    fid, (cx, cy, cz) = make(volume=vname)
+    assert c.put(f"/api/v2/linked-volumes/{fid}", json={"image": volume}).status_code == 200
+    ball_voxels = c.get(f"/api/v2/linked-volumes/{fid}").json()["segments"][0]["voxels"]
+    aid = make_mask(c, volume)
+    try:
+        assert c.get(f"/api/v2/images/{volume}/export-segmentation").status_code == 404  # no voxels yet
+        assert c.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 0, "annotation": aid}).status_code == 200
+        r = c.get(f"/api/v2/images/{volume}/export-segmentation")
+        assert r.status_code == 200 and "TallCanyon_c6_1b9ev-segmentation.seg.nrrd" in r.headers["content-disposition"]
+        img = nib.load(IMAGES / "exact_1_1" / vname)
+        canon = nib.as_closest_canonical(img)
+        head, kv, sizes, aff, raw = read_seg_nrrd(r.content)
+        assert sizes == list(canon.shape) and head["space"] == "left-posterior-superior" and head["kinds"] == "domain domain domain"
+        assert kv["Segment0_Name"] == "TestSegmentation" and kv["Segment0_Color"] == "1.000000 0.400000 0.000000" and kv["Segment0_LabelValue"] == "1"
+        assert kv["Segmentation_MasterRepresentation"] == "Binary labelmap"
+        assert np.allclose(aff, canon.affine, atol=1e-3)
+        ball = np.argwhere(raw.reshape(sizes[::-1]) > 0)
+        assert abs(len(ball) - ball_voxels) <= 0.15 * ball_voxels, (len(ball), ball_voxels)
+        # in the right place: the centre of the exported ball is the centre of the ball of the segmentation file
+        want = canon.affine @ np.array([cx, cy, cz, 1.0])
+        got = aff @ np.append(ball[:, ::-1].mean(0), 1.0)
+        assert np.linalg.norm(got[:3] - want[:3]) < 2.0, (got, want)
+
+        # comes back: uploaded again it links to the volume and finds the ball where it was
+        name = f"TallCanyon_c6_1b9ev roundtrip_{uuid.uuid4().int % 100000}.seg.nrrd"
+        up = c.post(f"/api/v2/image-sets/{SET}/images", files={"file": (name, r.content)}).json()["items"][0]
+        assert up["type"] == "segmentation", up
+        try:
+            back = c.put(f"/api/v2/linked-volumes/{up['id']}", json={"image": volume})
+            assert back.status_code == 200 and back.json()["geometry"]["fits"] is True
+            assert [g["name"] for g in back.json()["segments"]] == ["TestSegmentation"]
+            at = c.get(f"/api/v2/linked-volumes/{up['id']}/at", params={"x": cx, "y": cy, "z": cz}).json()
+            assert at["segment"]["name"] == "TestSegmentation"
+        finally:
+            c.delete(f"/api/v2/linked-volumes/{up['id']}")
+
+        # as a NIfTI label map
+        n = c.get(f"/api/v2/images/{volume}/export-segmentation", params={"format": "nifti"})
+        assert n.status_code == 200 and "TallCanyon_c6_1b9ev-labels.nii.gz" in n.headers["content-disposition"]
+        path = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / f"labels-{uuid.uuid4().hex[:6]}.nii.gz"
+        path.write_bytes(n.content)
+        try:
+            lab = nib.load(path)
+            vox = np.argwhere(np.asarray(lab.dataobj) > 0)
+            assert lab.shape == canon.shape and np.allclose(lab.affine, canon.affine, atol=1e-3)
+            assert np.linalg.norm((lab.affine @ np.append(vox.mean(0), 1.0))[:3] - want[:3]) < 2.0
+        finally:
+            path.unlink(missing_ok=True)
+
+        assert c.get(f"/api/v2/images/{volume}/export-segmentation", params={"format": "x"}).status_code == 400
+        assert c.get(f"/api/v2/images/{volume}/export-segmentation", params={"types": "999999"}).status_code == 404
+        assert client("rt_outsider").get(f"/api/v2/images/{volume}/export-segmentation").status_code == 404
+    finally:
+        c.delete(f"/api/v2/annotations/{aid}")
+        c.delete(f"/api/v2/image-sets/{SET}/products/{SEG_PRODUCT}")
+
+
+def test_only_nifti_volumes_export(made):
+    c, _ = made
+    plain = c.get("/api/v2/images", params={"image_set": 2, "fields": "id", "limit": 1}).json()["items"][0]["id"]
+    assert c.get(f"/api/v2/images/{plain}/export-segmentation").status_code == 400

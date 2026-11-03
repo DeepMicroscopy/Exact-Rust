@@ -150,8 +150,14 @@ try {
   const ball = types.find((t) => t.name === "Ball");
   const vol = (await api("GET", `/api/v2/segmentation/${masks.find((m) => m.annotation_type === ball.id).id}/volume`)).body;
   check(vol.count > 500, `the Ball mask holds its voxels (${vol.count})`);
-  for (const m of masks) await api("DELETE", `/api/v2/annotations/${m.id}`); // soft delete: the types stay
+  // export: the masks of the volume as a Slicer segmentation
   await page.locator(".modal-actions button", { hasText: "Close" }).click();
+  await page.locator('[data-testid="dropdown-export-masks"], button:has-text("Export masks")').first().click();
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByText("3D Slicer segmentation (.seg.nrrd)").click()]);
+  check(download.suggestedFilename() === "CT_Philips-segmentation.seg.nrrd", `the export is named after the volume (${download.suggestedFilename()})`);
+  const exported = fs.readFileSync(await download.path());
+  check(exported.subarray(0, 8).toString() === "NRRD0004" && exported.includes("Segment0_Name:=") && exported.includes("Ball"), "the export is a Slicer segmentation with the segment Ball");
+  for (const m of masks) await api("DELETE", `/api/v2/annotations/${m.id}`); // soft delete: the types stay
 
   // deleting a volume asks what becomes of its segmentation file: keep it (unlinked) or delete it too
   const tinyName = `tiny-${Date.now() % 100000}`;

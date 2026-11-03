@@ -157,6 +157,13 @@ From then on the masks are ordinary annotations (edit them with the Segment tool
 The masks are made on the volume's axial picture (its mask grid), so for a volume whose pixels are not square the voxel counts of a small structure
 differ by a row or a column from the file's, the volumes agree. Where segments overlap (Slicer layers) the overlapping voxels go to the later layer.
 
+**Export back.** **Export masks** in the top bar of the three-plane view (it appears when the volume has masks) downloads the masks of the volume for
+3D Slicer and other programs, on the volume's own voxel grid and in its position in space: **3D Slicer segmentation (.seg.nrrd)** has a segment
+per segmentation type with its name and colour (masks that overlap are put in separate layers, as Slicer does, so nothing is lost), **NIfTI label map
+(.nii.gz)** has one label per type, numbered in the order of the types (where masks overlap the later type wins; the names are not in the file).
+Several masks of one type are united. Only NIfTI volumes export for now. A file exported here can be uploaded to an image set again and links to the volume
+like any other segmentation file.
+
 Deleting a volume asks what becomes of its segmentation files: they stay in the image set, not linked (the default), or are deleted with it. Moving a volume to another image set unlinks them.
 The linked file is read-only. Overlapping segments (Slicer layers) are drawn in layer order. Only NIfTI volumes can carry a file for now, and a file
 only belongs to a volume of its own image set.

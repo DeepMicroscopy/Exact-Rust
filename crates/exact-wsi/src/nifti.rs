@@ -195,6 +195,51 @@ fn map(f: &std::fs::File) -> std::io::Result<memmap2::Mmap> {
     unsafe { memmap2::Mmap::map(f) }
 }
 
+/// A NIfTI-1 label volume (`.nii`, uncompressed) on the grid `dims` whose voxel (x, y, z) sits at `affine` (voxel to RAS mm):
+/// one unsigned byte (or 16 bit value when a label is above 255) per voxel, x fastest, the position as sform.
+pub fn write_labels(dims: [usize; 3], affine: &M4, labels: &[u16]) -> Vec<u8> {
+    let wide = labels.iter().any(|v| *v > 255);
+    let mut h = vec![0u8; 352];
+    h[0..4].copy_from_slice(&348i32.to_le_bytes());
+    for (i, d) in [3i16, dims[0] as i16, dims[1] as i16, dims[2] as i16]
+        .iter()
+        .enumerate()
+    {
+        h[40 + 2 * i..42 + 2 * i].copy_from_slice(&d.to_le_bytes());
+    }
+    for i in 4..8 {
+        h[40 + 2 * i..42 + 2 * i].copy_from_slice(&1i16.to_le_bytes());
+    }
+    let (dtype, bits) = if wide { (512i16, 16i16) } else { (2i16, 8i16) };
+    h[70..72].copy_from_slice(&dtype.to_le_bytes());
+    h[72..74].copy_from_slice(&bits.to_le_bytes());
+    let zoom = |a: usize| (0..3).map(|i| affine[i][a].powi(2)).sum::<f64>().sqrt() as f32;
+    h[76..80].copy_from_slice(&1f32.to_le_bytes()); // qfac
+    for a in 0..3 {
+        h[80 + 4 * a..84 + 4 * a].copy_from_slice(&zoom(a).to_le_bytes());
+    }
+    h[108..112].copy_from_slice(&352f32.to_le_bytes());
+    h[112..116].copy_from_slice(&1f32.to_le_bytes()); // scl_slope
+    h[123] = 10; // xyzt_units: mm
+    h[254..256].copy_from_slice(&1i16.to_le_bytes()); // sform_code: scanner
+    for (r, row) in affine.iter().take(3).enumerate() {
+        for (c, v) in row.iter().enumerate() {
+            let o = 280 + 16 * r + 4 * c;
+            h[o..o + 4].copy_from_slice(&(*v as f32).to_le_bytes());
+        }
+    }
+    h[344..348].copy_from_slice(b"n+1\0");
+    h.reserve(labels.len() * if wide { 2 } else { 1 });
+    for v in labels {
+        if wide {
+            h.extend_from_slice(&v.to_le_bytes());
+        } else {
+            h.push(*v as u8);
+        }
+    }
+    h
+}
+
 /// Where the inflated copy of a `.nii.gz` lives: `$EXACT_NIFTI_CACHE` or the system temp directory, keyed by the path,
 /// size and modification time of the source.
 fn sidecar(path: &str) -> Result<PathBuf> {
@@ -710,6 +755,29 @@ mod tests {
         // the second open of the gz finds the inflated sidecar
         assert!(sidecar(gz.to_str().unwrap()).unwrap().exists());
         assert!(Nifti::open(gz.to_str().unwrap()).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_written_label_volume_reads_back_in_place() {
+        let dir = std::env::temp_dir().join(format!("exact-nifti-write-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let affine: M4 = [
+            [1.5, 0.0, 0.0, -20.0],
+            [0.0, 2.0, 0.0, 4.0],
+            [0.0, 0.0, 3.0, 9.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let mut labels = vec![0u16; 4 * 3 * 2];
+        labels[(3 + 2) * 4 + 3] = 7; // x 3, y 2, z 1: (z * ny + y) * nx + x
+        let p = dir.join("labels.nii");
+        std::fs::write(&p, write_labels([4, 3, 2], &affine, &labels)).unwrap();
+        let v = Nifti::open(p.to_str().unwrap()).unwrap();
+        let g = v.grid().unwrap();
+        assert_eq!(g.shape, [4, 3, 2]);
+        assert_eq!(g.affine, affine);
+        assert_eq!(v.vox.at(3, 2, 1), 7.0);
+        assert_eq!(v.vox.at(0, 0, 0), 0.0);
         std::fs::remove_dir_all(&dir).ok();
     }
 

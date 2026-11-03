@@ -7,6 +7,7 @@ pub mod annotation_writes;
 pub mod catalog;
 pub mod crop;
 pub mod export;
+pub mod export_seg;
 pub mod image_sets;
 mod invitations;
 pub mod jobs;
@@ -58,6 +59,7 @@ pub fn routes() -> Router<AppState> {
         .merge(crop::v2_routes())
         .merge(related::routes())
         .merge(linked::routes())
+        .merge(export_seg::routes())
         .merge(image_sets::v2_routes())
         .merge(jobs::v2_routes())
         .merge(plugins::v2_routes())
