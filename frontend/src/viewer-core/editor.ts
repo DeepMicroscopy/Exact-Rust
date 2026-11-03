@@ -69,6 +69,8 @@ export interface EditorHost {
   onContext(shape: Shape, clientX: number, clientY: number): void;
   /** a read-only account: the editor only selects (the server refuses every write anyway) */
   readOnly(): boolean;
+  /** the account navigates as the old EXACT did: a click on the background zooms in, a drag moves the slide */
+  legacyNavigation(): boolean;
   /** the type the pen annotates with when no tool is chosen (the toolbox's "Annotate with"), null when there is none */
   penType(): number | null;
   /** something the user should know ("select a polygon first", ...) */
@@ -678,6 +680,7 @@ export class AnnotationEditor {
    * a finger always moves the image.
    */
   private startMarquee(e: Ev, p: Pt, additive: boolean): void {
+    if (this.host.legacyNavigation()) return; // the old way: a drag on the background moves the slide (Ctrl / Cmd + drag still frames)
     if (this.isTouch(e) || this.spaceDown || (e as unknown as { originalEvent?: MouseEvent }).originalEvent?.button === 1) return;
     this.session = { kind: "marquee", start: p, cur: p, additive };
     e.preventDefaultAction = true;
@@ -855,6 +858,7 @@ export class AnnotationEditor {
       if (hit && (oe?.shiftKey || oe?.ctrlKey || oe?.metaKey)) this.toggle(hit.id);
       else this.select(hit?.id ?? null);
       e.preventDefaultAction = true;
+      if (!hit && this.host.legacyNavigation() && this.kind(e) === "mouse") this.zoomAt(e, !!oe?.shiftKey);
       return;
     }
     const info = this.host.type(this.tool.typeId);
@@ -869,6 +873,14 @@ export class AnnotationEditor {
     if (this.debounced(this.at(e))) return;
     this.placeByClick(info, at);
     e.preventDefaultAction = true;
+  }
+
+  /** The old EXACT: a click on the background zooms in about the pointer, Shift + click out. */
+  private zoomAt(e: Ev, out: boolean): void {
+    const at = this.at(e);
+    const vp = this.viewer.viewport;
+    vp.zoomBy(out ? 0.5 : 2, vp.pointFromPixel(new OpenSeadragon.Point(at.x, at.y)));
+    vp.applyConstraints();
   }
 
   private doubleClick(e: Ev): void {

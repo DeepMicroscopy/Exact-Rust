@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use exact_core::Result;
 use sqlx::PgPool;
 
-pub const MIGRATIONS: [&str; 12] = [
+pub const MIGRATIONS: [&str; 13] = [
     include_str!("../migrations/0001_sessions.sql"),
     include_str!("../migrations/0002_session_impersonation.sql"),
     include_str!("../migrations/0003_challenges_invitations.sql"),
@@ -19,13 +19,14 @@ pub const MIGRATIONS: [&str; 12] = [
     include_str!("../migrations/0010_user_welcomed.sql"),
     include_str!("../migrations/0011_segmentation_jobs.sql"),
     include_str!("../migrations/0012_linked_volumes.sql"),
+    include_str!("../migrations/0013_user_prefs.sql"),
 ];
 
 /// Whether the tables that every request needs exist: the account flags (`exact_rust_user_flags` with `welcomed_at`, read by each
 /// authentication) and the sessions. When not, `exact-cli migrate` has not been run for this version.
 pub async fn schema_ready(pool: &PgPool) -> Result<bool> {
     sqlx::query_scalar(
-        "SELECT to_regclass('exact_rust_session') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'exact_rust_user_flags' AND column_name = 'welcomed_at') AND to_regclass('exact_rust_segmentation_job') IS NOT NULL AND to_regclass('exact_rust_linked_volume') IS NOT NULL",
+        "SELECT to_regclass('exact_rust_session') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'exact_rust_user_flags' AND column_name = 'welcomed_at') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'exact_rust_user_flags' AND column_name = 'prefs') AND to_regclass('exact_rust_segmentation_job') IS NOT NULL AND to_regclass('exact_rust_linked_volume') IS NOT NULL",
     )
     .fetch_one(pool)
     .await

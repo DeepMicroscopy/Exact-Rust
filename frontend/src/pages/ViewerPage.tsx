@@ -39,6 +39,7 @@ import { boxVector, centeredBox, isBoxType } from "../viewer-core/geometry";
 import { visibleOnFrame } from "../viewer-core/frames";
 import { prefersThreePlanes, rememberThreePlanes } from "./MprPage";
 import { ContextMenu } from "../components/ContextMenu";
+import { usePreferences } from "../hooks/usePreferences";
 import { CropDialog } from "../components/CropDialog";
 import { VectorType, type Shape, type TypeStyle } from "../viewer-core/types";
 
@@ -87,6 +88,7 @@ function hostProxy(ref: { current: EditorHost }): EditorHost {
     onState: () => ref.current.onState(),
     penType: () => ref.current.penType(),
     readOnly: () => ref.current.readOnly(),
+    legacyNavigation: () => ref.current.legacyNavigation(),
   };
 }
 
@@ -276,6 +278,9 @@ export function ViewerPage() {
   const readOnly = !!me?.read_only;
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
+  const { prefs, set: setPref } = usePreferences();
+  const legacyRef = useRef(prefs.legacy_navigation);
+  legacyRef.current = prefs.legacy_navigation;
   const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
   hostState.current = { shapes, info, hiddenAll, image: image.data, actions };
   const editorHost: EditorHost = useMemo(
@@ -295,6 +300,7 @@ export function ViewerPage() {
       onState: () => setTick((n) => n + 1),
       penType: () => currentTypeRef.current,
       readOnly: () => readOnlyRef.current,
+      legacyNavigation: () => legacyRef.current,
     }),
     [notify],
   );
@@ -992,6 +998,16 @@ export function ViewerPage() {
             Three planes
           </button>
         )}
+        <button
+          className={`btn icon-btn ${prefs.legacy_navigation ? "on" : ""}`}
+          aria-pressed={prefs.legacy_navigation}
+          aria-label="Old navigation"
+          onClick={() => void setPref({ legacy_navigation: !prefs.legacy_navigation })}
+          title={prefs.legacy_navigation ? "Old navigation is on: a click on the background zooms in (Shift + click out), a drag moves the slide. Click to switch it off." : "Switch on the navigation of the old EXACT: a click on the background zooms in (Shift + click out), a drag always moves the slide. A setting of your account."}
+          data-testid="legacy-navigation"
+        >
+          ⊕
+        </button>
         <AdjustButton open={adjustOpen} active={!isNeutral(adjust)} onClick={() => setAdjustOpen((o) => !o)} />
         <button className="btn ghost" onClick={() => navigate("/")}>
           Image sets

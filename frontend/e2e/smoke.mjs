@@ -88,6 +88,58 @@ try {
   await waitPainted("first image of the set renders tiles");
   await shot("4-viewer");
 
+  // old navigation (a personal setting, off by default): a click on the background zooms in, Shift + click out, a drag moves the slide
+  {
+    // the first image of the set is small: it could not be zoomed in any further than it is shown, so the limit is lifted for the test
+    await page.evaluate(() => { window.__viewer.viewport.maxZoomLevel = 20; });
+    const zoomRaw = () => page.evaluate(() => window.__viewer.viewport.getZoom());
+    /** the zoom once the animation has settled */
+    const zoomNow = async () => {
+      let a = await zoomRaw();
+      for (let i = 0; i < 20; i++) {
+        await page.waitForTimeout(250);
+        const b = await zoomRaw();
+        if (Math.abs(b / a - 1) < 1e-4) return b;
+        a = b;
+      }
+      return a;
+    };
+    const centre = () => page.evaluate(() => { const c = window.__viewer.viewport.getCenter(); return [c.x, c.y]; });
+    const corner = await page.evaluate(() => { const p = window.__viewer.viewport.imageToViewerElementCoordinates(new window.__osd.Point(8, 8)); const r = window.__viewer.canvas.getBoundingClientRect(); return [r.left + p.x, r.top + p.y]; }).catch(() => null);
+    if (!corner) check(false, "the viewer exposes OpenSeadragon for the navigation test");
+    else {
+      const [cx, cy] = corner;
+      const z0 = await zoomNow();
+      await page.mouse.click(cx, cy);
+      await page.waitForTimeout(300);
+      check(Math.abs((await zoomNow()) / z0 - 1) < 0.01, "by default a click on the background does not zoom");
+      await page.locator('[data-testid="legacy-navigation"]').click();
+      await waitFor(async () => (await page.locator('[data-testid="legacy-navigation"]').getAttribute("aria-pressed")) === "true", "the old navigation is switched on with the button of the viewer");
+      const saved = await page.evaluate(async () => (await (await fetch("/api/v2/me/preferences")).json()).legacy_navigation);
+      check(saved === true, "...and saved with the account");
+      const zOn = await zoomNow();
+      await page.mouse.click(cx, cy);
+      await page.waitForTimeout(900);
+      const z1 = await zoomNow();
+      check(Math.abs(z1 / zOn - 2) < 0.05, `old navigation: a click on the background zooms in (x${(z1 / zOn).toFixed(2)}, before the switch ${zOn.toFixed(3)} / ${z0.toFixed(3)})`);
+      await page.keyboard.down("Shift");
+      await page.mouse.click(cx, cy);
+      await page.keyboard.up("Shift");
+      await page.waitForTimeout(900);
+      check(Math.abs((await zoomNow()) / z1 - 0.5) < 0.05, "...and Shift + click zooms out");
+      const c0 = await centre();
+      await page.mouse.move(cx + 60, cy + 60);
+      await page.mouse.down();
+      await page.mouse.move(cx + 120, cy + 100, { steps: 6 });
+      await page.mouse.up();
+      await page.waitForTimeout(900);
+      const c1 = await centre();
+      check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) > 1e-4 && (await page.locator(".openseadragon-canvas").count()) > 0, "...and a drag on the background moves the slide (no selection frame)");
+      await page.locator('[data-testid="legacy-navigation"]').click();
+      await waitFor(async () => (await page.locator('[data-testid="legacy-navigation"]').getAttribute("aria-pressed")) === "false", "the old navigation is switched off again");
+    }
+  }
+
   // image adjustments: a movable window behind an icon at the right of the top bar
   const tileFilter = () => page.evaluate(() => window.__viewer.drawer.canvas.style.filter);
   const overlayFilters = () => page.evaluate(() => [...document.querySelectorAll(".openseadragon-canvas canvas")].filter((c) => c !== window.__viewer.drawer.canvas).map((c) => c.style.filter).join(""));

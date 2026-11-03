@@ -7,11 +7,13 @@ import { useAuth } from "../auth/AuthContext";
 import { Logo } from "./Logo";
 import { useAdminMe } from "../pages/AdminPage";
 import { SystemHealth } from "./SystemHealth";
+import { usePreferences } from "../hooks/usePreferences";
 import { OPEN_WELCOME } from "./WelcomeDialog";
 
 export function Layout() {
   const { user, logout } = useAuth();
   const [menu, setMenu] = useState(false);
+  const { prefs, set: setPref } = usePreferences();
   const nav = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
@@ -46,6 +48,18 @@ export function Layout() {
               Administration
             </Link>
           )}
+          <button
+            className={`btn ghost ${prefs.legacy_navigation ? "on" : ""}`}
+            aria-pressed={prefs.legacy_navigation}
+            onClick={(e) => {
+              e.stopPropagation();
+              void setPref({ legacy_navigation: !prefs.legacy_navigation });
+            }}
+            title="Navigate slides as the old EXACT did: a click on the background zooms in (Shift + click out) and a drag always moves the slide. Applies to your account."
+            data-testid="legacy-navigation"
+          >
+            Old navigation: {prefs.legacy_navigation ? "on" : "off"}
+          </button>
           <button className="btn ghost" onClick={() => window.dispatchEvent(new Event(OPEN_WELCOME))} data-testid="whats-new">
             What's new
           </button>

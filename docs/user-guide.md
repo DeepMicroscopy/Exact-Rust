@@ -43,6 +43,8 @@ Inside an image set you can:
 Click a thumbnail to open an image. Drag to pan, scroll to zoom. The left panel lists the annotation types with their counts;
 untick a type to hide it. **Hide** (or `Y`) hides all annotations.
 
+**Old navigation (a personal setting, off by default).** The button **⊕** in the top bar of the viewer (or **Old navigation** in the ☰ menu of the other pages) switches the navigation of the old EXACT on for your account: a click on the background zooms in about the pointer, **Shift** + click zooms out, and a drag on the background always moves the slide (no selection frame; Ctrl / Cmd + drag still frames annotations). A click on an annotation still selects it, and drawing tools work as before. It applies to a mouse; a tap of a finger or pen never zooms, so that tablets are not affected.
+
 The round icon at the right of the top bar opens **Image adjustments**: brightness, contrast, gamma, saturation, hue, grayscale
 and invert. The window can be moved by its title (and stays where you put it), double-clicking a slider's name resets it, and a dot
 on the icon shows that something is changed. Only the display changes: not the file, not the annotations, and a crop or
