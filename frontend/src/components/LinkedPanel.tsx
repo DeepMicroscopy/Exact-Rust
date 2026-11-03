@@ -48,7 +48,7 @@ function Here({ file, voxel }: { file: LinkedFile; voxel: Voxel }) {
  * The segmentation files linked to the volume, read-only: switch a file or single segments on and off, the opacity of the
  * overlay, the segment under the crosshair. The overlay itself is drawn by the planes.
  */
-export function LinkedPanel({ files, view, onView, opacity, onOpacity, voxel, onClose }: { files: LinkedFile[]; view: Record<number, LinkedView>; onView(id: number, v: LinkedView): void; opacity: number; onOpacity(o: number): void; voxel: Voxel | null; onClose(): void }) {
+export function LinkedPanel({ files, view, onView, opacity, onOpacity, voxel, onImport, onClose }: { files: LinkedFile[]; view: Record<number, LinkedView>; onView(id: number, v: LinkedView): void; opacity: number; onOpacity(o: number): void; voxel: Voxel | null; /** turn the segments into annotations (absent: not allowed here) */ onImport?(file: LinkedFile): void; onClose(): void }) {
   return (
     <FloatingPanel title="Segmentation" onClose={onClose} storageKey="exact.linkedpanel" initial={{ right: Math.max(12, window.innerWidth - 300), top: 70 }} className="linked-panel">
       {files.map((f) => {
@@ -91,6 +91,13 @@ export function LinkedPanel({ files, view, onView, opacity, onOpacity, voxel, on
               </p>
             )}
             {voxel && !v.off && <Here file={f} voxel={voxel} />}
+            {onImport && (
+              <p className="linked-all">
+                <button className="btn small" onClick={() => onImport(f)} data-testid="import-open" title="Make annotations (masks) of the segments: they can then be edited">
+                  Import as annotations…
+                </button>
+              </p>
+            )}
           </section>
         );
       })}
@@ -98,7 +105,7 @@ export function LinkedPanel({ files, view, onView, opacity, onOpacity, voxel, on
         <span className="muted">Opacity</span>
         <input type="range" min={0.1} max={1} step={0.05} value={opacity} onChange={(e) => onOpacity(Number(e.target.value))} aria-label="Opacity of the segmentation" />
       </label>
-      <p className="muted small">Read-only: the file is linked to this volume, not imported as annotations.</p>
+      <p className="muted small">The file itself is read-only. Importing makes annotations (masks) of its segments; the file stays linked.</p>
     </FloatingPanel>
   );
 }

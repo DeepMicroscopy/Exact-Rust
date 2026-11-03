@@ -261,3 +261,68 @@ def test_deleting_the_volume_can_delete_its_segmentation_files_with_it(made):
     assert c.get(f"/api/v2/linked-volumes/{fid}").status_code == 404
     assert not (IMAGES / "exact_1_1" / f"{name} segmentation_1.seg.nrrd").exists()
     assert c.delete(f"/api/v2/images/{image}", params={"segmentations": "nonsense"}).status_code in (400, 404)
+
+
+SEG_TYPE, SEG_PRODUCT = 2, 2  # a segmentation type of the test products
+
+
+def make_mask(c, image=NIFTI):
+    c.put(f"/api/v2/image-sets/{SET}/products/{SEG_PRODUCT}")
+    made = c.post("/api/v2/annotations", json={"image": image, "annotation_type": SEG_TYPE, "vector": {"tile_size": 256, "width": 185, "height": 232}, "unique_identifier": str(uuid.uuid4())})
+    assert made.status_code == 201, made.text
+    return made.json()["id"]
+
+
+def test_a_segment_is_imported_into_a_mask_annotation(made):
+    c, make = made
+    fid, (cx, cy, cz) = make()
+    assert c.put(f"/api/v2/linked-volumes/{fid}", json={"image": NIFTI}).status_code == 200
+    segs = c.get(f"/api/v2/linked-volumes/{fid}").json()["segments"]
+    aid = make_mask(c)
+    try:
+        assert c.get(f"/api/v2/segmentation/{aid}/volume").json()["count"] == 0
+        r = c.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 0, "annotation": aid})
+        assert r.status_code == 200, r.text
+        state = c.get(f"/api/v2/segmentation/{aid}/volume").json()
+        # the ball of the file is in the mask. The mask grid is the axial picture of the volume (here 185 x 233 for 185 x 232 voxels: one
+        # row is repeated), so the count of a ball only 12 voxels wide is off by a row; the volumes agree
+        n0 = state["count"]
+        assert abs(n0 - segs[0]["voxels"]) <= 0.15 * segs[0]["voxels"] and abs(state["volume_mm3"] - segs[0]["volume_mm3"]) <= 0.15 * segs[0]["volume_mm3"]
+        # and where the file's plane picture shows it
+        from PIL import Image
+        mask_px = Image.open(io.BytesIO(c.get(f"/api/v2/segmentation/{aid}/slice/0/{cz}").content)).convert("RGBA")
+        lab_px = Image.open(io.BytesIO(c.get(f"/api/v2/linked-volumes/{fid}/slice/0/{cz}", params={"hide": "1"}).content)).convert("RGBA")
+        assert mask_px.size == lab_px.size
+        assert {(x, y) for y in range(mask_px.height) for x in range(mask_px.width) if mask_px.getpixel((x, y))[3]} == {(x, y) for y in range(lab_px.height) for x in range(lab_px.width) if lab_px.getpixel((x, y))[3]}
+        # replace is repeatable, add unites the second segment
+        c.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 0, "annotation": aid, "mode": "replace"})
+        assert c.get(f"/api/v2/segmentation/{aid}/volume").json()["count"] == n0
+        c.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 1, "annotation": aid, "mode": "add"})
+        assert c.get(f"/api/v2/segmentation/{aid}/volume").json()["count"] > n0
+        # one undo step takes the last import back
+        assert c.post(f"/api/v2/segmentation/{aid}/undo").status_code == 200
+        assert c.get(f"/api/v2/segmentation/{aid}/volume").json()["count"] == n0
+        # refusals
+        assert c.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 7, "annotation": aid}).status_code == 400
+        assert c.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 0, "annotation": aid, "mode": "x"}).status_code == 400
+        other = client("rt_outsider")
+        assert other.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 0, "annotation": aid}).status_code == 404
+        c.put(f"/api/v2/linked-volumes/{fid}", json={"image": None})
+        assert c.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 0, "annotation": aid}).status_code == 409
+    finally:
+        c.delete(f"/api/v2/annotations/{aid}")
+        c.delete(f"/api/v2/image-sets/{SET}/products/{SEG_PRODUCT}")
+
+
+def test_a_mask_of_another_image_is_refused(made):
+    c, make = made
+    fid, _ = make()
+    assert c.put(f"/api/v2/linked-volumes/{fid}", json={"image": NIFTI}).status_code == 200
+    other_nifti = 81  # TallCanyon_c6_1b9ev.nii.gz
+    aid = make_mask(c, other_nifti)
+    try:
+        r = c.post(f"/api/v2/linked-volumes/{fid}/import", json={"segment": 0, "annotation": aid})
+        assert r.status_code == 400 and "another image" in r.json()["detail"]
+    finally:
+        c.delete(f"/api/v2/annotations/{aid}")
+        c.delete(f"/api/v2/image-sets/{SET}/products/{SEG_PRODUCT}")

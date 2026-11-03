@@ -149,6 +149,14 @@ its opacity (or choose the *Soft tissue* look) to see them.
 The orientation of the file does not have to match the volume: both are placed in millimetres, so a segmentation saved with other axes (Slicer
 writes LPS and often swaps axes) lands on the same voxels. After linking, EXACT tells you if part of the labelled volume lies outside the
 volume; it cannot tell the segmentation of another scan that happens to overlap, so the file name is the check that matters.
+**Import as annotations.** The **Segmentation** window has **Import as annotations…**: every segment becomes the mask of a segmentation type of the
+volume (nothing is changed in the file, and it stays linked). The dialog proposes the type with the segment's name, or a **new type** with that name
+and the segment's colour in a product of the image set (you need the right to add types to it); you can switch segments off, choose another type for
+a segment, and decide whether a mask that the type already has in this image is **replaced** or **added to**. Two segments sent to the same type are united.
+From then on the masks are ordinary annotations (edit them with the Segment tools, they appear in the counts and in exports, **undo** takes an import back).
+The masks are made on the volume's axial picture (its mask grid), so for a volume whose pixels are not square the voxel counts of a small structure
+differ by a row or a column from the file's, the volumes agree. Where segments overlap (Slicer layers) the overlapping voxels go to the later layer.
+
 Deleting a volume asks what becomes of its segmentation files: they stay in the image set, not linked (the default), or are deleted with it. Moving a volume to another image set unlinks them.
 The linked file is read-only. Overlapping segments (Slicer layers) are drawn in layer order. Only NIfTI volumes can carry a file for now, and a file
 only belongs to a volume of its own image set.

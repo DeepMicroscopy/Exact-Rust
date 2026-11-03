@@ -13,11 +13,12 @@ import { useSegment3D, type Op } from "../hooks/useSegment3D";
 import { BrushLayer } from "../viewer-core/brushLayer";
 import { MaskOverlay } from "../viewer-core/maskOverlay";
 import { LinkedPanel, type LinkedView } from "../components/LinkedPanel";
+import { ImportSegmentsDialog } from "../components/ImportSegmentsDialog";
 import type { LinkedFile } from "../components/LinkSegmentationDialog";
 import { brushDiameterMm, brushRadii, dropClose, hexDigits, resized, thin, toleranceOf, type Extent } from "../viewer-core/mpr3d";
 import { pen } from "../viewer-core/pen";
 import { isTypingTarget } from "../viewer-core/shortcuts";
-import type { Annotation, AnnotationType } from "../api/types";
+import type { Annotation, AnnotationType, Product } from "../api/types";
 import { AnnotationLayer } from "../viewer-core/annotationLayer";
 import { visibleOnFrame } from "../viewer-core/frames";
 import { toShape } from "../viewer-core/shapes";
@@ -117,6 +118,8 @@ export function MprPage() {
   const [linkedView, setLinkedView] = useState<Record<number, LinkedView>>({});
   const [linkedOpacity, setLinkedOpacity] = useState(0.6);
   const [linkedPanel, setLinkedPanel] = useState(true);
+  const [importing, setImporting] = useState<LinkedFile | null>(null);
+  const allProducts = useQuery({ queryKey: ["products"], queryFn: () => listAll<Product>("/api/v2/products", { fields: "id,name,team" }) });
   const linkedAll = linkedFiles.data ?? [];
   const linked: LinkedPane[] = linkedAll.filter((f) => !linkedView[f.id]?.off).map((f) => ({ id: f.id, hide: linkedView[f.id]?.hidden ?? [] }));
   useEffect(() => setLinkedView({}), [id]);
@@ -275,7 +278,7 @@ export function MprPage() {
           {segError && <p className="error small" role="alert">{segError}</p>}
         </div>
       </div>
-      {linkedPanel && linkedAll.length > 0 && <LinkedPanel files={linkedAll} view={linkedView} onView={(fid, v) => setLinkedView((m) => ({ ...m, [fid]: v }))} opacity={linkedOpacity} onOpacity={setLinkedOpacity} voxel={voxel} onClose={() => setLinkedPanel(false)} />}
+      {linkedPanel && linkedAll.length > 0 && <LinkedPanel files={linkedAll} view={linkedView} onView={(fid, v) => setLinkedView((m) => ({ ...m, [fid]: v }))} opacity={linkedOpacity} onOpacity={setLinkedOpacity} voxel={voxel} onImport={readOnly ? undefined : setImporting} onClose={() => setLinkedPanel(false)} />}
       {segType && shape && voxel && (
         <Segment3DPanel
           type={{ name: segType.name, color: segType.color_code }}
@@ -298,6 +301,23 @@ export function MprPage() {
               </button>
             )
           }
+        />
+      )}
+      {importing && planes && (
+        <ImportSegmentsDialog
+          imageId={id}
+          file={importing}
+          size={{ width: planes[0].width, height: planes[0].height }}
+          segTypes={segTypes}
+          products={(allProducts.data ?? []).filter((p) => imageSet.data?.product_set.includes(p.id))}
+          annotations={annotations.data ?? []}
+          onClose={() => setImporting(null)}
+          onDone={(typeId) => {
+            void qc.invalidateQueries({ queryKey: ["annotation-types"] });
+            void qc.invalidateQueries({ queryKey: ["annotations", id] });
+            void qc.invalidateQueries({ queryKey: ["annotation-counts"] });
+            if (typeId != null) window.setTimeout(() => setSegTypeId(typeId), 300);
+          }}
         />
       )}
       {autoOpen && (

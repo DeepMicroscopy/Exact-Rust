@@ -130,8 +130,28 @@ try {
   await waitFor(async () => (await overlays().count()) === 0, "the overlays go when the file is switched off");
   check(true, "switching the file off removes its overlays");
 
-  // read-only: no tool for the linked segmentation (the mask tools belong to annotations)
-  check((await page.locator('[data-testid="linked-file"] button:has-text("Import")').count()) === 0, "nothing in the panel changes the file");
+  // step two: the segments become mask annotations, in new types named after them
+  await page.getByRole("checkbox", { name: /^Show / }).check();
+  await page.locator('[data-testid="import-open"]').click();
+  await page.waitForSelector('[data-testid="import-seg"]');
+  check((await page.locator('[data-testid="import-row"]').count()) === 2, "the import dialog lists the two segments");
+  // a type of the segment's name is chosen when there is one (an earlier run leaves its types behind: a type used by an annotation, also a
+  // deleted one, cannot be deleted), else a new type is offered
+  const known = (await api("GET", "/api/v2/annotation-types?fields=id,name&limit=500")).body.items.filter((t) => ["Ball", "Cube"].includes(t.name));
+  check((await page.getByLabel("Type for Ball").inputValue()) === (known.find((t) => t.name === "Ball")?.id.toString() ?? "new"), "a segment gets the type of its name, or a new type");
+  await page.screenshot({ path: shots ? `${shots}/linked-import.png` : undefined }).catch(() => null);
+  await page.locator('[data-testid="import-go"]').click();
+  await waitFor(async () => (await page.locator('[data-testid="import-row"] .ok').count()) === 2, "both segments are imported", 60000);
+  check(true, "both segments were imported");
+  const types = (await api("GET", "/api/v2/annotation-types?fields=id,name&limit=500")).body.items.filter((t) => ["Ball", "Cube"].includes(t.name));
+  check(types.length === 2, "the types Ball and Cube exist now");
+  const masks = (await api("GET", `/api/v2/annotations?image=${IMAGE}&fields=id,annotation_type,deleted&limit=500`)).body.items.filter((a) => !a.deleted && types.some((t) => t.id === a.annotation_type));
+  check(masks.length === 2, "each has a mask annotation in the volume");
+  const ball = types.find((t) => t.name === "Ball");
+  const vol = (await api("GET", `/api/v2/segmentation/${masks.find((m) => m.annotation_type === ball.id).id}/volume`)).body;
+  check(vol.count > 500, `the Ball mask holds its voxels (${vol.count})`);
+  for (const m of masks) await api("DELETE", `/api/v2/annotations/${m.id}`); // soft delete: the types stay
+  await page.locator(".modal-actions button", { hasText: "Close" }).click();
 
   // deleting a volume asks what becomes of its segmentation file: keep it (unlinked) or delete it too
   const tinyName = `tiny-${Date.now() % 100000}`;

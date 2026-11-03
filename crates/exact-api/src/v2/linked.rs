@@ -24,7 +24,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use exact_wsi::nrrd;
@@ -55,6 +55,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/linked-volumes/{id}/render-mask",
             get(render_mask_h),
         )
+        .route("/api/v2/linked-volumes/{id}/import", post(import_h))
         .route("/api/v2/linked-volumes/{id}/file", get(file_h))
 }
 
@@ -784,6 +785,84 @@ async fn render_mask_h(
     resp.headers_mut()
         .insert("x-channels", header::HeaderValue::from_static("2"));
     Ok(resp)
+}
+
+#[derive(Deserialize)]
+struct ImportBody {
+    /// the segment (index in the file's list) ...
+    segment: usize,
+    /// ... and the segmentation annotation (mask) of the volume that receives it
+    annotation: i64,
+    /// `replace` (default) or `add` (unite with what the mask holds)
+    mode: Option<String>,
+}
+
+/// Step two of linking: writes one segment of the file into a mask annotation of the volume (the masks are then ordinary
+/// annotations: editable, counted, exported). The mask has to exist (the client creates the annotation of the type first) and
+/// belong to the linked volume; needs `edit_annotation`. Answers with the state of the mask as `GET /segmentation/{a}/volume`.
+async fn import_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(b): Json<ImportBody>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    let r = load(&s, id).await?;
+    can_read(&s, &p, r.set).await?;
+    let image = r.image.ok_or_else(|| {
+        ApiError::detail(
+            StatusCode::CONFLICT,
+            "The segmentation file is not linked to a volume.",
+        )
+    })?;
+    let count = r.segments.as_array().map_or(0, |a| a.len());
+    if b.segment >= count {
+        return Err(ApiError::detail(
+            StatusCode::BAD_REQUEST,
+            format!("The file has {count} segments."),
+        ));
+    }
+    let replace = match b.mode.as_deref() {
+        None | Some("replace") => true,
+        Some("add") => false,
+        Some(_) => {
+            return Err(ApiError::detail(
+                StatusCode::BAD_REQUEST,
+                "mode is \"replace\" or \"add\".",
+            ))
+        }
+    };
+    let t = crate::v2::segmentation::annotation_for(&s, &p, b.annotation, true).await?;
+    if t.image != image {
+        return Err(ApiError::detail(
+            StatusCode::BAD_REQUEST,
+            "The mask belongs to another image than the volume this file is linked to.",
+        ));
+    }
+    let e = entry(&s, &r).await?;
+    let (w, h) = e.planes[0];
+    let n = e.shape[2];
+    let seg = (b.segment + 1) as u16;
+    // the segment on the mask grid (the axial pixel grid of the volume), one byte per voxel
+    let mask = tokio::task::spawn_blocking(move || {
+        let mut m = vec![0u8; w * h * n];
+        for z in 0..n {
+            if let Some(px) = nrrd::plane_labels(&e.labels, e.shape, 0, z, (w, h)) {
+                for (i, l) in px.iter().enumerate() {
+                    if *l == seg {
+                        m[z * w * h + i] = 1;
+                    }
+                }
+            }
+        }
+        m
+    })
+    .await
+    .map_err(|e| exact_core::Error::Internal(e.to_string()))?;
+    crate::v2::seg3d::import_with(&s, b.annotation, image, replace, move |c, r, z| {
+        mask[(z * h + r) * w + c] != 0
+    })
+    .await
 }
 
 #[derive(Deserialize)]

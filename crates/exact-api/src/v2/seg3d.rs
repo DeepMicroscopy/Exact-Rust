@@ -836,6 +836,32 @@ async fn labels_h(
     commit(&s, annotation, guard, j, None, t.image).await
 }
 
+/// Writes the voxels of the mask grid where `pick(column, row, slice)` holds into the mask of `annotation` (`replace`, or unite
+/// with it), as `PUT labels` does with a body: for masks that are made on the server, such as a segment of a linked segmentation
+/// file. The permission is checked by the caller.
+pub(crate) async fn import_with(
+    s: &AppState,
+    annotation: i64,
+    image: i64,
+    replace: bool,
+    pick: impl Fn(usize, usize, usize) -> bool + Send + 'static,
+) -> ApiResult<Response> {
+    let open = load_entry(s, annotation, &Target { image }).await?;
+    let guard = open.clone().lock_owned().await;
+    let (guard, j) = tokio::task::spawn_blocking(move || {
+        let mut guard = guard;
+        let g = guard.geom.clone();
+        let mut j = Journal::default();
+        volmask::import(&mut guard.vol, &mut j, &g, replace, &|c, r, z| {
+            pick(c, r, z)
+        });
+        (guard, j)
+    })
+    .await
+    .map_err(|e| exact_core::Error::Internal(e.to_string()))?;
+    commit(s, annotation, guard, j, None, image).await
+}
+
 /// Reads the whole mask of an annotation as raw voxels of the mask grid (the form `labels` takes), for the programs that
 /// make masks: used by the segmentation job code.
 pub async fn mask_bytes(s: &AppState, annotation: i64) -> ApiResult<(Geometry, Vec<u8>)> {
