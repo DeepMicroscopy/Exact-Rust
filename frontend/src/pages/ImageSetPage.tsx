@@ -8,6 +8,8 @@ import { NameConflictDialog } from "../components/NameConflictDialog";
 import { UploadTile } from "../components/UploadTile";
 import { AnnotationCounts } from "../components/AnnotationCounts";
 import { AuxFilesDialog } from "../components/AuxFilesDialog";
+import { LinkSegmentationDialog, type LinkedFile } from "../components/LinkSegmentationDialog";
+import { SegmentationMenu, SegmentationTile, type SegmentationMenuModel } from "../components/SegmentationTile";
 import { ExportDialog } from "../components/ExportDialog";
 import { ManualRegistration } from "../components/ManualRegistration";
 import { NewRegistrationDialog, RegistrationPanel } from "../components/Registrations";
@@ -84,9 +86,13 @@ export function ImageSetPage() {
     void qc.invalidateQueries({ queryKey: ["set-settings", id] });
     void qc.invalidateQueries({ queryKey: ["image-sets"] });
   }, [qc, id]);
-  const uploads = useUploads(id, uploaded, existingNames);
-  // a finished upload gives way to the real card as soon as the list has the image
-  const shownUploads = uploads.items.filter((u) => !(u.state === "done" && u.imageId != null && (images.data ?? []).some((i) => i.id === u.imageId)));
+  // a segmentation file that has arrived asks which volume it belongs to (the best name match is chosen); several wait in turn
+  const [linkQueue, setLinkQueue] = useState<number[]>([]);
+  const onSegmentation = useCallback((fileId: number) => setLinkQueue((q) => [...q, fileId]), []);
+  const linkedFiles = useQuery({ queryKey: ["linked-set", id], queryFn: () => api<LinkedFile[]>(`/api/v2/image-sets/${id}/linked-volumes`) });
+  const uploads = useUploads(id, uploaded, existingNames, onSegmentation);
+  // a finished upload gives way to the real card as soon as the list has the image; a segmentation file has no card
+  const shownUploads = uploads.items.filter((u) => u.segmentationId == null && !(u.state === "done" && u.imageId != null && (images.data ?? []).some((i) => i.id === u.imageId)));
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -98,6 +104,30 @@ export function ImageSetPage() {
     };
     return [...list].sort(by[sort]);
   }, [images.data, search, sort]);
+  // segmentation files are in the grid beside the images (filtered and sorted with them)
+  const segFiles = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (linkedFiles.data ?? [])
+      .filter((f) => !q || f.name.toLowerCase().includes(q))
+      .sort(sort === "newest" ? (a, b) => b.time.localeCompare(a.time) : (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  }, [linkedFiles.data, search, sort]);
+  const cards = useMemo(() => {
+    type Card = { key: string; name: string; time: string; image?: SetImage; file?: LinkedFile };
+    const all: Card[] = [...visible.map((i) => ({ key: `i${i.id}`, name: i.name, time: i.time, image: i })), ...segFiles.map((f) => ({ key: `s${f.id}`, name: f.name, time: f.time, file: f }))];
+    // images keep their order for "largest first" (files have no size in pixels and come last)
+    if (sort === "name") all.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    else if (sort === "newest") all.sort((a, b) => b.time.localeCompare(a.time));
+    return all;
+  }, [visible, segFiles, sort]);
+  const [segMenu, setSegMenu] = useState<SegmentationMenuModel | null>(null);
+  const [linkOne, setLinkOne] = useState<number | null>(null);
+  const volumeNames = useMemo(() => new Map((images.data ?? []).map((i) => [i.id, i.name])), [images.data]);
+  const segChanged = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["linked-set", id] });
+    void qc.invalidateQueries({ queryKey: ["linked-image"] });
+    void qc.invalidateQueries({ queryKey: ["related"] });
+  }, [qc, id]);
+  const openSeg = (f: LinkedFile) => (f.image != null ? navigate(`/images/${f.image}/planes`) : setLinkOne(f.id));
   const chosen = useMemo(() => (images.data ?? []).filter((i) => selected.has(i.id)), [images.data, selected]);
   // the menu of an image; Move acts on the whole selection when the image is part of it, otherwise on this one image
   const [menu, setMenu] = useState<(ImageMenuModel & { image: SetImage }) | null>(null);
@@ -304,7 +334,7 @@ export function ImageSetPage() {
           </div>
           {images.isLoading && <p className="muted">Loading…</p>}
           {images.error && <p className="error">Could not load images.</p>}
-          {images.data && images.data.length === 0 && shownUploads.length === 0 && (
+          {images.data && images.data.length === 0 && segFiles.length === 0 && shownUploads.length === 0 && (
             <div className="empty glass">
               <p>This image set is empty.</p>
               {canUpload ? <p className="muted">Drop image files here, or use “Upload images”. ZIP files are unpacked.</p> : <p className="muted">{locked ? "It is locked." : "You cannot add images to it."}</p>}
@@ -314,9 +344,13 @@ export function ImageSetPage() {
             {shownUploads.map((u) => (
               <UploadTile key={`u${u.key}`} item={u} onDismiss={() => uploads.dismiss(u.key)} />
             ))}
-            {visible.map((i) => (
-              <ImageTile key={i.id} image={i} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} onMenu={(x, y) => openMenu(i, x, y)} />
-            ))}
+            {cards.map((c) =>
+              c.image ? (
+                <ImageTile key={c.key} image={c.image} selected={selected.has(c.image.id)} onToggle={() => toggle(c.image!.id)} onMenu={(x, y) => openMenu(c.image!, x, y)} />
+              ) : (
+                <SegmentationTile key={c.key} file={c.file!} volumeName={c.file!.image == null ? null : (volumeNames.get(c.file!.image) ?? null)} onOpen={() => openSeg(c.file!)} onMenu={(x, y) => setSegMenu({ x, y, file: c.file!, canEdit: !!can?.edit_set })} />
+              ),
+            )}
           </div>
         </div>
         <AnnotationCounts setId={id} />
@@ -338,6 +372,20 @@ export function ImageSetPage() {
       {dragging && <div className="drop-hint">Drop the files to upload them</div>}
       {dialog === "settings" && s && <SetSettingsDialog settings={s} onClose={() => setDialog(null)} onSaved={refresh} />}
       {dialog === "files" && <AuxFilesDialog setId={id} onChanged={refresh} onClose={() => setDialog(null)} />}
+      {segMenu && (
+        <SegmentationMenu
+          model={segMenu}
+          onClose={() => setSegMenu(null)}
+          onOpen={() => openSeg(segMenu.file)}
+          onLink={() => setLinkOne(segMenu.file.id)}
+          onUnlink={() => void act(() => api(`/api/v2/linked-volumes/${segMenu.file.id}`, { method: "PUT", json: { image: null } }), segChanged)}
+          onDelete={() => {
+            if (window.confirm(`Delete ${segMenu.file.filename}?`)) void act(() => api(`/api/v2/linked-volumes/${segMenu.file.id}`, { method: "DELETE" }), segChanged);
+          }}
+        />
+      )}
+      {linkOne != null && <LinkSegmentationDialog key={`one${linkOne}`} id={linkOne} onClose={() => setLinkOne(null)} onChanged={segChanged} onLinked={(image) => navigate(`/images/${image}/planes`)} />}
+      {linkQueue.length > 0 && <LinkSegmentationDialog key={linkQueue[0]} id={linkQueue[0]} onClose={() => setLinkQueue((q) => q.slice(1))} onChanged={segChanged} />}
       {dialog === "export" && <ExportDialog setId={id} canCreate={!!can?.create_export} canDelete={!!can?.edit_set} onClose={() => setDialog(null)} />}
       {dialog === "delete-set" && s && <DeleteSetDialog settings={s} onClose={() => setDialog(null)} onDeleted={() => navigate("/", { replace: true })} />}
       {menu && (

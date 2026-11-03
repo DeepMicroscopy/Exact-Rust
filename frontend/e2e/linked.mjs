@@ -1,0 +1,138 @@
+// End-to-end test of segmentation files linked to a volume, in the system Chrome: drop a .seg.nrrd into an image set, the dialog
+// offers the volume its name says (CT_Philips), link it, then the three-plane view draws it read-only: overlays on all planes, the
+// segment panel, a segment switched off, the segment under the crosshair. Needs a freshly restored scratch database and the
+// reference Python (nibabel) to write the NRRD. Usage: node e2e/linked.mjs [baseUrl]   (env: CHROME, SHOTS=dir)
+import { chromium } from "playwright-core";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+
+const base = process.argv[2] ?? "http://127.0.0.1:8002";
+const chrome = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const shots = process.env.SHOTS;
+if (shots) fs.mkdirSync(shots, { recursive: true });
+const IMAGE = 80; // CT_Philips.nii.gz of image set 1
+const SET = 1;
+
+const check = (cond, msg) => {
+  if (!cond) throw new Error("FAILED: " + msg);
+  console.log("ok  -", msg);
+};
+const waitFor = async (fn, msg, ms = 15000) => {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() - t0 > ms) throw new Error("FAILED (timeout): " + msg);
+    await new Promise((r) => setTimeout(r, 120));
+  }
+};
+
+const here = path.dirname(new URL(import.meta.url).pathname);
+const root = path.resolve(here, "../..");
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "exact-linked-"));
+const file = path.join(dir, `CT_Philips segmentation_${Date.now() % 100000}.seg.nrrd`);
+execFileSync(path.join(root, "reference/.venv/bin/python"), ["-c", `import sys; import test_v2_linked as t; open(sys.argv[1], 'wb').write(t.nrrd()[0])`, file], { cwd: path.join(root, "tests/conformance"), env: { ...process.env, EXACT_URL: base } });
+
+const browser = await chromium.launch({ executablePath: chrome, headless: true });
+const errors = [];
+const page = await (await browser.newContext({ viewport: { width: 1500, height: 900 } })).newPage();
+page.on("pageerror", (e) => errors.push(String(e)));
+page.on("console", (m) => m.type() === "error" && !/ 40[0139]|401|409/.test(m.text()) && errors.push(m.text()));
+await page.goto(base);
+await page.waitForSelector("form.login");
+await page.fill('input[autocomplete="username"]', "aubreville");
+await page.fill('input[type="password"]', "rust-test-pw");
+await page.click("button.primary");
+await page.waitForSelector(".cards .card");
+const api = (method, url) =>
+  page.evaluate(
+    async ([method, url]) => {
+      const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+      const r = await fetch(url, { method, headers: { "x-csrf-token": csrf } });
+      return { status: r.status, body: r.status === 204 ? null : await r.json().catch(() => null) };
+    },
+    [method, url],
+  );
+let fileId = null;
+try {
+  await page.goto(`${base}/sets/${SET}`);
+  await page.waitForSelector(".tile");
+  await page.setInputFiles('input[type="file"]', file);
+  await page.waitForSelector('[data-testid="link-seg"]');
+  check((await page.locator('[data-testid="link-seg"] .seg-list li').count()) === 2, "the dialog lists the two segments of the file");
+  const picked = await page.locator('[data-testid="link-volume"]').inputValue();
+  check(picked === String(IMAGE), "the volume the file name says is chosen (CT_Philips)");
+  await page.screenshot({ path: shots ? `${shots}/linked-dialog.png` : undefined }).catch(() => null);
+  await page.click('[data-testid="link-go"]');
+  await page.waitForSelector('[data-testid="link-seg"]', { state: "detached" });
+  await page.waitForSelector('[data-testid="seg-tile"]');
+  const tile = page.locator('[data-testid="seg-tile"]');
+  check(/on CT_Philips\.nii\.gz/.test((await tile.textContent()) ?? ""), "the file is a card in the image grid, on its volume");
+  await waitFor(() => tile.locator("img.thumb").evaluate((i) => i.complete && i.naturalWidth > 0), "the card has a picture");
+  fileId = (await api("GET", `/api/v2/image-sets/${SET}/linked-volumes`)).body[0].id;
+  if (shots) await page.screenshot({ path: `${shots}/linked-card.png` });
+
+  // a click on the card opens the three planes of its volume
+  await tile.locator("button.seg-open").click();
+  await page.waitForURL(new RegExp(`/images/${IMAGE}/planes`));
+  await page.waitForSelector('[data-testid="linked-file"]');
+  const overlays = () => page.locator('img[data-testid="mask-overlay"][data-url*="/linked-volumes/"]');
+  await waitFor(async () => (await overlays().count()) === 3 && (await page.evaluate(() => [...document.querySelectorAll('img[data-testid="mask-overlay"]')].every((i) => i.complete && i.naturalWidth > 0))), "three overlays, one per plane, are loaded");
+  check(true, "the linked file is drawn over all three planes");
+  await waitFor(async () => /Ball/.test((await page.locator('[data-testid="linked-here"]').textContent()) ?? ""), "the segment under the crosshair is named");
+  check(true, "the panel names the segment under the crosshair (Ball)");
+  if (shots) await page.screenshot({ path: `${shots}/linked-planes.png` });
+
+  // the 3D render draws the segments in their colours
+  await page.locator('[data-testid="show-render3d"]').click();
+  await page.waitForSelector('[data-testid="render3d-canvas"]');
+  await waitFor(async () => (await page.locator(".render3d-note").count()) === 0, "the 3D render has its volume", 90000);
+  const seg3d = page.locator('[data-testid="render3d-seg"]');
+  await waitFor(async () => (await seg3d.count()) === 1 && (await seg3d.isEnabled()) && (await seg3d.isChecked()), "the Segmentation checkbox of the 3D render is on", 60000);
+  check((await page.locator('[data-testid="render3d-mask"]').count()) === 0, "no dead Mask checkbox beside it while no annotation mask is chosen");
+  const cb = await page.locator('[data-testid="render3d-canvas"]').boundingBox();
+  const painted = (box) => page.evaluate(({ x, y, w, h }) => {
+    const c = document.querySelector('[data-testid="render3d-canvas"]');
+    const r = c.getBoundingClientRect();
+    const t = document.createElement("canvas");
+    t.width = c.width; t.height = c.height;
+    t.getContext("2d").drawImage(c, 0, 0);
+    const d = t.getContext("2d").getImageData(0, 0, t.width, t.height).data;
+    let red = 0, blue = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] > 150 && d[i + 1] < 90 && d[i + 2] < 90) red++;
+      if (d[i + 2] > 150 && d[i] < 90 && d[i + 1] < 90) blue++;
+    }
+    return { red, blue };
+  }, box);
+  if (shots) await page.screenshot({ path: `${shots}/linked-3d-image.png` });
+  // the ball lies inside the head: with the image on, the bone is in front of it
+  await page.getByRole("checkbox", { name: "Image" }).uncheck();
+  await new Promise((r) => setTimeout(r, 1500));
+  if (shots) await page.screenshot({ path: `${shots}/linked-3d-noimage.png` });
+  const withSeg = await waitFor(async () => { const p = await painted(cb); return p.red > 3 ? p : null; }, "the ball is drawn in red in 3D", 30000);
+  check(withSeg.red > 3, `the red ball is in the 3D render (${withSeg.red} px)`);
+  if (shots) await page.screenshot({ path: `${shots}/linked-3d.png` });
+  await seg3d.uncheck();
+  await waitFor(async () => (await painted(cb)).red === 0, "the ball goes when the checkbox is off");
+  check(true, "the Segmentation checkbox switches the 3D labels off");
+  await seg3d.check();
+
+  await page.getByRole("checkbox", { name: "Ball" }).uncheck();
+  await waitFor(async () => (await page.locator('img[data-testid="mask-overlay"][data-url*="hide=0"]').count()) === 3, "all planes reload without the Ball");
+  check(true, "a segment switched off in the panel is hidden on every plane");
+  await page.getByRole("checkbox", { name: /^Show / }).uncheck();
+  await waitFor(async () => (await overlays().count()) === 0, "the overlays go when the file is switched off");
+  check(true, "switching the file off removes its overlays");
+
+  // read-only: no tool for the linked segmentation (the mask tools belong to annotations)
+  check((await page.locator('[data-testid="linked-file"] button:has-text("Import")').count()) === 0, "nothing in the panel changes the file");
+} finally {
+  if (fileId != null) await api("DELETE", `/api/v2/linked-volumes/${fileId}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+  await browser.close();
+}
+check(errors.length === 0, "no console errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+console.log("linked: all ok");

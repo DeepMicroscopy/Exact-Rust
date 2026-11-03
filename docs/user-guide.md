@@ -128,6 +128,30 @@ that hold some of it.
 
 The single-plane view of a volume paints masks on the axial plane only; for the other planes its toolbox points to the three-plane view.
 
+## Segmentation files (3D Slicer)
+A segmentation made elsewhere, for example in 3D Slicer or TotalSegmentator (a `.seg.nrrd`, or any NRRD label map), can be
+**linked to a NIfTI volume** and drawn over it without becoming annotations. Nothing has to exist in EXACT for it: no annotation types, no masks.
+
+1. **Upload** the file into the image set that holds the volume: drop it on the page like an image. A dialog lists the segments in the file
+   (name, colour and volume as Slicer stores them) and offers the volumes of the set, the one whose name matches the file's name first
+   (Slicer calls the file `<volume> segmentation`); that volume is already chosen. Press **Link**, or **Later**.
+2. The file is a **card in the image grid**, next to the images, with a picture of its busiest slice (over the volume's own slice once it is linked) and
+   the volume it belongs to. **Click it** to open the three-plane view of its volume; a file that is not linked yet asks for a volume first.
+   Right click (long press on a touch screen) opens its menu: open, download, link to another volume, unlink, delete.
+3. In the **three-plane view** the **Segmentation** window shows the file: switch the whole file or single segments on and off,
+   change the opacity, and read which segment is under the crosshair. The segments are drawn in their own colours on all three planes.
+   The volume's **Related images** (right-click the volume in the overview) lists its segmentation files too.
+
+In the **3D render** (**Show 3D render**) the file has its own **Segmentation** checkbox: every segment is drawn in its colour, and switching segments
+off in the Segmentation window changes the render too. The segments usually lie inside the head or body, so switch **Image** off or lower
+its opacity (or choose the *Soft tissue* look) to see them.
+
+The orientation of the file does not have to match the volume: both are placed in millimetres, so a segmentation saved with other axes (Slicer
+writes LPS and often swaps axes) lands on the same voxels. After linking, EXACT tells you if part of the labelled volume lies outside the
+volume; it cannot tell the segmentation of another scan that happens to overlap, so the file name is the check that matters.
+The linked file is read-only. Overlapping segments (Slicer layers) are drawn in layer order. Only NIfTI volumes can carry a file for now, and a file
+only belongs to a volume of its own image set.
+
 ## Automatic segmentation
 In the three-plane view of a volume (NIfTI, or a multi-frame CT / MR DICOM) **Auto segment…** asks a worker to compute the mask of the whole volume:
 

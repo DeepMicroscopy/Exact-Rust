@@ -200,6 +200,18 @@ async fn single(
     if let Some(id) = dup {
         return Err((id, "This image already exists in the imageset!".into()));
     }
+    // a segmentation file of the same name owns the file on disk: neither overwrite nor remove it
+    if name.to_lowercase().ends_with(".nrrd") {
+        if let Some(_id) = crate::v2::linked::existing(s, t.set_id, name)
+            .await
+            .map_err(|e| (-1, e))?
+        {
+            return Err((
+                -1,
+                "This segmentation file already exists in the imageset!".into(),
+            ));
+        }
+    }
     let dest = t.root.join(name);
     tokio::fs::copy(tmp, &dest)
         .await
@@ -344,6 +356,18 @@ async fn register(
         .await
         .map_err(|e| (-1, e.to_string()))?;
         return Ok(("auxfile", id));
+    }
+    if ext == "nrrd" {
+        // a segmentation: stored as a file that waits to be linked to a volume (v2/linked.rs)
+        return match crate::v2::linked::register_file(s, p, t.set_id, path, name, filename).await {
+            Ok(id) => Ok(("segmentation", id)),
+            Err((e, remove)) => {
+                if remove {
+                    let _ = tokio::fs::remove_file(path).await;
+                }
+                Err((-1, e))
+            }
+        };
     }
     let owned = path.to_string_lossy().to_string();
     let info = tokio::task::spawn_blocking(move || {

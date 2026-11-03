@@ -342,6 +342,12 @@ async fn do_move(s: &AppState, p: &Principal, image_id: i64, set_id: i64) -> Res
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+        // segmentation files stay in their set: the moved volume is no longer the one they are drawn over
+        sqlx::query("UPDATE exact_rust_linked_volume SET image_id = NULL, geometry = NULL WHERE image_id = $1")
+            .bind(img.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
         sqlx::query("UPDATE images_imageset SET zip_state = 0 WHERE id = ANY($1)")
             .bind(vec![source.id, target.id])
             .execute(&mut *tx)

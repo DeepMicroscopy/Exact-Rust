@@ -95,6 +95,18 @@ pub struct Nifti {
     sag: (u32, u32),
     wmin: f32,
     wmax: f32,
+    /// voxel (x, y, z) of the reoriented volume to RAS millimetres
+    canon: M4,
+}
+
+/// Where the voxels of a volume are, as `Nifti` renders them: the reoriented grid with its position in RAS millimetres and the
+/// sizes of the three plane images.
+#[derive(Clone, Debug)]
+pub struct Grid {
+    pub shape: [usize; 3],
+    pub affine: M4,
+    /// axial, coronal and sagittal plane image sizes
+    pub planes: [(usize, usize); 3],
 }
 
 struct Reader<'a> {
@@ -424,7 +436,27 @@ impl Nifti {
         if wmax <= wmin {
             wmax = wmin + 1.0;
         }
+        // the reoriented axis o runs along input axis j (backwards when flipped): column j of the file affine, negated and
+        // moved to the last voxel for a flipped axis
+        let mut canon = [[0.0; 4]; 4];
+        canon[3][3] = 1.0;
+        for o in 0..3 {
+            let j = src_of[o];
+            for i in 0..3 {
+                if flip[o] {
+                    canon[i][o] = -affine[i][j];
+                    canon[i][3] += affine[i][j] * (in_dims[j] - 1) as f64;
+                } else {
+                    canon[i][o] = affine[i][j];
+                }
+            }
+        }
+        // the translation of the file affine comes on top once
+        for i in 0..3 {
+            canon[i][3] += affine[i][3];
+        }
         Ok(Self {
+            canon,
             shape: (nx, ny, nz),
             vox,
             slices: Cache::builder()
@@ -489,6 +521,15 @@ impl Nifti {
             img
         };
         image::DynamicImage::ImageLuma8(img).to_rgba8()
+    }
+
+    /// The grid of the volume, or None for a series with extra (time) volumes.
+    pub fn grid(&self) -> Option<Grid> {
+        (self.vox.extra == 1).then(|| Grid {
+            shape: [self.shape.0, self.shape.1, self.shape.2],
+            affine: self.canon,
+            planes: [self.ax, self.cor, self.sag].map(|p| (p.0 as usize, p.1 as usize)),
+        })
     }
 
     pub fn default_frame(&self) -> u32 {
@@ -669,6 +710,33 @@ mod tests {
         // the second open of the gz finds the inflated sidecar
         assert!(sidecar(gz.to_str().unwrap()).unwrap().exists());
         assert!(Nifti::open(gz.to_str().unwrap()).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_grid_is_the_reoriented_volume_in_ras_millimetres() {
+        let dir = std::env::temp_dir().join(format!("exact-nifti-grid-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let open = |bytes: Vec<u8>, name: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, bytes).unwrap();
+            Nifti::open(p.to_str().unwrap()).unwrap().grid().unwrap()
+        };
+        let g = open(volume(), "ras.nii");
+        assert_eq!(g.shape, [4, 3, 2]);
+        assert_eq!(g.affine[0], [1.0, 0.0, 0.0, 0.0]);
+        // x runs backwards in the file (x = 3 - i): the reoriented grid starts at the other end and runs forwards
+        let mut las = volume();
+        las[280..284].copy_from_slice(&(-1f32).to_le_bytes());
+        las[292..296].copy_from_slice(&3f32.to_le_bytes());
+        let g = open(las, "las.nii");
+        assert_eq!(g.affine[0], [1.0, 0.0, 0.0, 0.0]);
+        // a shifted origin
+        let mut shifted = volume();
+        shifted[292..296].copy_from_slice(&10f32.to_le_bytes());
+        shifted[308..312].copy_from_slice(&5f32.to_le_bytes()); // srow_y offset (row 1, column 3)
+        let g = open(shifted, "shifted.nii");
+        assert_eq!((g.affine[0][3], g.affine[1][3]), (10.0, 5.0));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

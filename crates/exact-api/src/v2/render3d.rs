@@ -53,7 +53,7 @@ pub(crate) fn render_dims(g: &Geometry, max: usize) -> (usize, usize, usize) {
     )
 }
 
-fn answer(g: &Geometry, dims: (usize, usize, usize), body: Vec<u8>) -> Response {
+pub(crate) fn answer(g: &Geometry, dims: (usize, usize, usize), body: Vec<u8>) -> Response {
     let hv = |v: String| header::HeaderValue::from_str(&v).expect("ascii");
     let mut r = Response::new(axum::body::Body::from(body));
     let h = r.headers_mut();

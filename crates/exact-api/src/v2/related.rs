@@ -97,10 +97,21 @@ async fn related(
     ))
     .await
     .map_err(db_err)?;
+    // segmentation files linked to this volume (visible() has checked the image): `id` is the volume, so that the entry opens it
+    let files = sqlx::query(
+        "SELECT i.id::bigint, lv.name, st.id::bigint, st.name FROM exact_rust_linked_volume lv \
+         JOIN images_image i ON i.id = lv.image_id JOIN images_imageset st ON st.id = i.image_set_id \
+         WHERE lv.image_id = $1 ORDER BY lv.name",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(db_err)?;
     let mut out: Vec<Value> = Vec::new();
     out.extend(crop_of.iter().map(|r| entry(r, "crop_of")));
     out.extend(crops.iter().map(|r| entry(r, "crop")));
     out.extend(registered_to.iter().map(|r| entry(r, "registered_to")));
     out.extend(registered_from.iter().map(|r| entry(r, "registered_from")));
+    out.extend(files.iter().map(|r| entry(r, "segmentation")));
     Ok(Json(out).into_response())
 }

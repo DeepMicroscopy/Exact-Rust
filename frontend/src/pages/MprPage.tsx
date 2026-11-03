@@ -12,6 +12,8 @@ import { Render3D } from "../components/Render3D";
 import { useSegment3D, type Op } from "../hooks/useSegment3D";
 import { BrushLayer } from "../viewer-core/brushLayer";
 import { MaskOverlay } from "../viewer-core/maskOverlay";
+import { LinkedPanel, type LinkedView } from "../components/LinkedPanel";
+import type { LinkedFile } from "../components/LinkSegmentationDialog";
 import { brushDiameterMm, brushRadii, dropClose, hexDigits, resized, thin, toleranceOf, type Extent } from "../viewer-core/mpr3d";
 import { pen } from "../viewer-core/pen";
 import { isTypingTarget } from "../viewer-core/shortcuts";
@@ -110,6 +112,17 @@ export function MprPage() {
   const segAnnotation = segTypeId == null ? null : (annotations.data ?? []).find((a) => a.annotation_type === segTypeId && !a.deleted && a.id > 0) ?? null;
   const seg3d = useSegment3D(segAnnotation?.id ?? null);
   const [autoOpen, setAutoOpen] = useState(false);
+  // ---- segmentation files linked to the volume (read-only overlay, see v2/linked.rs) ----
+  const linkedFiles = useQuery({ queryKey: ["linked-image", id], queryFn: () => api<LinkedFile[]>(`/api/v2/images/${id}/linked-volumes`) });
+  const [linkedView, setLinkedView] = useState<Record<number, LinkedView>>({});
+  const [linkedOpacity, setLinkedOpacity] = useState(0.6);
+  const [linkedPanel, setLinkedPanel] = useState(true);
+  const linkedAll = linkedFiles.data ?? [];
+  const linked: LinkedPane[] = linkedAll.filter((f) => !linkedView[f.id]?.off).map((f) => ({ id: f.id, hide: linkedView[f.id]?.hidden ?? [] }));
+  useEffect(() => setLinkedView({}), [id]);
+  // the 3D render shows the first linked file that is switched on
+  const firstLinked = linkedAll.find((f) => !linkedView[f.id]?.off);
+  const renderLinked = firstLinked ? { id: firstLinked.id, name: firstLinked.name, hide: linkedView[firstLinked.id]?.hidden ?? [], colors: firstLinked.segments.map((g) => g.color) } : null;
   // the one mask annotation of the type is made with the first use of the type in this image
   const creating = useRef(false);
   useEffect(() => {
@@ -226,6 +239,11 @@ export function MprPage() {
         >
           {segType ? `▨ ${segType.name}` : "Segment"}
         </Dropdown>
+        {linkedAll.length > 0 && (
+          <button className={`btn ${linkedPanel ? "on" : ""}`} onClick={() => setLinkedPanel((o) => !o)} title="Segmentation files linked to this volume (read-only)" data-testid="linked-toggle">
+            Segmentation ({linkedAll.length})
+          </button>
+        )}
         <button
           className="btn"
           onClick={() => {
@@ -243,12 +261,12 @@ export function MprPage() {
       <div className="mpr-grid">
         {shape && planes && voxel
           ? ([0, 1, 2] as Plane[]).map((p) => (
-              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} />
+              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} linked={linked} linkedOpacity={linkedOpacity} />
             ))
           : null}
         <div className={`mpr-info glass ${render3d ? "has-render" : ""}`} data-testid="mpr-info">
           {render3d ? (
-            <Render3D imageId={id} mask={segAnnotation && segType ? { annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version } : null} onHide={() => setRender3d(false)} />
+            <Render3D imageId={id} mask={segAnnotation && segType ? { annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version } : null} linked={renderLinked} onHide={() => setRender3d(false)} />
           ) : voxel && shape ? (
             <Info voxel={voxel} shape={shape} planes={planes ?? []} segmenting={segTypeId != null && editable} onRender3D={() => setRender3d(true)} />
           ) : (
@@ -257,6 +275,7 @@ export function MprPage() {
           {segError && <p className="error small" role="alert">{segError}</p>}
         </div>
       </div>
+      {linkedPanel && linkedAll.length > 0 && <LinkedPanel files={linkedAll} view={linkedView} onView={(fid, v) => setLinkedView((m) => ({ ...m, [fid]: v }))} opacity={linkedOpacity} onOpacity={setLinkedOpacity} voxel={voxel} onClose={() => setLinkedPanel(false)} />}
       {segType && shape && voxel && (
         <Segment3DPanel
           type={{ name: segType.name, color: segType.color_code }}
@@ -330,7 +349,13 @@ interface SegPane {
   onSize(steps: number): void;
 }
 
-function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onActivate, onPick, onStep, seg }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null }) {
+/** A linked segmentation file as the planes draw it: which one and which of its segments are hidden. */
+interface LinkedPane {
+  id: number;
+  hide: number[];
+}
+
+function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onActivate, onPick, onStep, seg, linked, linkedOpacity }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null; linked: LinkedPane[]; linkedOpacity: number }) {
   const host = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null);
   const blender = useRef<ZBlender | null>(null);
@@ -338,10 +363,11 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
   const notes = useRef<AnnotationLayer | null>(null);
   const brush = useRef<BrushLayer | null>(null);
   const overlay = useRef<MaskOverlay | null>(null);
+  const linkedOverlays = useRef<Map<number, MaskOverlay>>(new Map());
   /** the frame of the image on display: the mask of another frame waits until it is */
   const shownFrame = useRef<number | null>(null);
-  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info });
-  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info };
+  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked });
+  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked };
   const pointer = useRef<[number, number] | null>(null);
   const [busy, setBusy] = useState(false);
   const frame = frameOf(plane, voxel);
@@ -500,6 +526,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       onShown: (f) => {
         shownFrame.current = f;
         overlay.current?.setDisplayed(f);
+        linkedOverlays.current.forEach((o) => o.setDisplayed(f));
       },
     });
     blender.current = b;
@@ -542,6 +569,33 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       overlay.current = null;
     };
   }, [annotationId, info.width, info.height, imageId, plane, info.frames]);
+  // the linked segmentation files: one read-only overlay each, below the mask being edited
+  const linkedKey = linked.map((l) => l.id).join(",");
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+    const made = new Map<number, MaskOverlay>();
+    for (const id of linkedKey ? linkedKey.split(",").map(Number) : []) {
+      const o = new MaskOverlay(v, info.width, info.height);
+      if (shownFrame.current != null) o.setDisplayed(shownFrame.current);
+      made.set(id, o);
+    }
+    linkedOverlays.current = made;
+    return () => {
+      made.forEach((o) => o.destroy());
+      linkedOverlays.current = new Map();
+    };
+  }, [linkedKey, info.width, info.height, imageId, plane, info.frames]);
+  const linkedHides = linked.map((l) => `${l.id}:${l.hide.join(".")}`).join("|");
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      for (const l of live.current.linked) linkedOverlays.current.get(l.id)?.load(`/api/v2/linked-volumes/${l.id}/slice/${plane}/${frame}?hide=${l.hide.join(",")}&alpha=255&v=${imageId}`, frame);
+    }, 30);
+    return () => window.clearTimeout(t);
+  }, [linkedKey, linkedHides, plane, frame, imageId, info.frames]);
+  useEffect(() => {
+    linkedOverlays.current.forEach((o) => o.setOpacity(linkedOpacity));
+  }, [linkedOpacity, linkedKey, imageId, info.frames, info.width, info.height, plane]);
   const color = seg?.color;
   const version = seg?.version;
   useEffect(() => {

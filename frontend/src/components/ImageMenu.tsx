@@ -8,7 +8,7 @@ export interface Related {
   name: string;
   set: number;
   set_name: string;
-  kind: "crop_of" | "crop" | "registered_to" | "registered_from";
+  kind: "crop_of" | "crop" | "registered_to" | "registered_from" | "segmentation";
 }
 
 const KIND: Record<Related["kind"], string> = {
@@ -16,6 +16,7 @@ const KIND: Record<Related["kind"], string> = {
   crop: "Crop of this image",
   registered_to: "Registered onto",
   registered_from: "Registered from",
+  segmentation: "Segmentation file",
 };
 
 export interface ImageMenuModel {
@@ -90,7 +91,7 @@ export function ImageMenu({ model, onClose, onMove }: { model: ImageMenuModel; o
         <div className="ctx-sub">
           {related.isLoading && <div className="muted small">Loading…</div>}
           {links.map((r) => (
-            <button key={`${r.kind}-${r.id}`} role="menuitem" className="ctx-related" onClick={() => navigate(`/images/${r.id}`)} title={`${KIND[r.kind]}: ${r.name} (${r.set_name})`}>
+            <button key={`${r.kind}-${r.id}`} role="menuitem" className="ctx-related" onClick={() => navigate(r.kind === "segmentation" ? `/images/${r.id}/planes` : `/images/${r.id}`)} title={`${KIND[r.kind]}: ${r.name} (${r.set_name})`}>
               <span className="muted small">{KIND[r.kind]}</span>
               <span className="ctx-related-name">{r.name}</span>
               <span className="muted small">{r.set_name}</span>

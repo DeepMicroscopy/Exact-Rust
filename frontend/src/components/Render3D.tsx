@@ -5,6 +5,8 @@ interface Props {
   imageId: number;
   /** the mask to show with the volume (none: only the volume) */
   mask: { annotationId: number; color: string; version: number } | null;
+  /** the linked segmentation file to show with the volume (none: no file), the segments switched off and the colour of every segment */
+  linked?: { id: number; name: string; hide: number[]; colors: string[] } | null;
   onHide(): void;
 }
 
@@ -33,6 +35,20 @@ async function fetchGrid(url: string, signal: AbortSignal): Promise<Grid> {
   return { data, dims, extent };
 }
 
+/** The labels of a linked file: two bytes per cell (coverage, segment + 1) on the grid of the volume. */
+async function fetchLabels(url: string, signal: AbortSignal): Promise<Uint8Array> {
+  const r = await fetch(url, { credentials: "same-origin", signal });
+  if (!r.ok) {
+    const j = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(j?.detail ?? `HTTP ${r.status}`);
+  }
+  const dims = triple(r.headers.get("x-dims"));
+  if (!dims || r.headers.get("x-channels") !== "2") throw new Error("The server's answer has no size.");
+  const data = new Uint8Array(await r.arrayBuffer());
+  if (data.length !== 2 * dims[0] * dims[1] * dims[2]) throw new Error("The server's answer is incomplete.");
+  return data;
+}
+
 const SIZES = [
   { n: 128, label: "Fast (128)" },
   { n: 192, label: "Medium (192)" },
@@ -44,7 +60,7 @@ const SIZES = [
  * The 3D render in the fourth panel. It only loads and draws when it is switched on: the server averages the volume onto a coarse
  * grid first (the longest side gets the chosen number of cells), which takes a few seconds on a large volume.
  */
-export function Render3D({ imageId, mask, onHide }: Props) {
+export function Render3D({ imageId, mask, linked = null, onHide }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<VolumeRenderer | null>(null);
   const [size, setSize] = useState(192);
@@ -53,6 +69,8 @@ export function Render3D({ imageId, mask, onHide }: Props) {
   const [params, setParams] = useState<RenderParams>({ ...DEFAULT_RENDER });
   const [preset, setPreset] = useState("Bone");
   const [maskThere, setMaskThere] = useState(false);
+  const [labelsThere, setLabelsThere] = useState(false);
+  const [labelsError, setLabelsError] = useState<string | null>(null);
   const patch = useCallback((p: Partial<RenderParams>) => {
     setParams((q) => ({ ...q, ...p }));
     renderer.current?.setParams(p);
@@ -119,6 +137,44 @@ export function Render3D({ imageId, mask, onHide }: Props) {
       ac.abort();
     };
   }, [status, annotationId, version, size]);
+
+  // the linked segmentation: its labels on the grid of the volume, again when a segment is switched on or off
+  const linkedId = linked?.id;
+  const hideKey = linked?.hide.join(",") ?? "";
+  const colorKey = linked?.colors.join(",") ?? "";
+  useEffect(() => {
+    if (status !== "ready") return;
+    const r = renderer.current;
+    if (!r) return;
+    if (linkedId == null) {
+      r.setLabels(null);
+      setLabelsThere(false);
+      setLabelsError(null);
+      return;
+    }
+    const ac = new AbortController();
+    const t = window.setTimeout(() => {
+      fetchLabels(`/api/v2/linked-volumes/${linkedId}/render-mask?max=${size}&hide=${hideKey}`, ac.signal)
+        .then((data) => {
+          r.setLabels(
+            data,
+            colorKey.split(",").map((c) => {
+              const v = parseInt(c.replace("#", ""), 16) || 0;
+              return [(v >> 16) & 255, (v >> 8) & 255, v & 255] as [number, number, number];
+            }),
+          );
+          setLabelsThere(true);
+          setLabelsError(null);
+        })
+        .catch((e: Error) => {
+          if (!ac.signal.aborted) setLabelsError(e.message);
+        });
+    }, 300);
+    return () => {
+      window.clearTimeout(t);
+      ac.abort();
+    };
+  }, [status, linkedId, hideKey, colorKey, size]);
 
   useEffect(() => {
     if (mask) patch({ maskColor: rgbOf(mask.color) });
@@ -200,10 +256,22 @@ export function Render3D({ imageId, mask, onHide }: Props) {
           <label>
             <input type="checkbox" checked={params.showImage} onChange={(e) => patch({ showImage: e.target.checked })} /> Image
           </label>
-          <label title={mask ? "" : "Choose a segmentation type to see its mask here"}>
-            <input type="checkbox" checked={params.showMask && !!mask && maskThere} disabled={!mask || !maskThere} onChange={(e) => patch({ showMask: e.target.checked })} data-testid="render3d-mask" /> Mask
-          </label>
+          {linked && (
+            <label title={labelsError ?? `The linked segmentation ${linked.name}, in the colours of its segments`}>
+              <input type="checkbox" checked={params.showLabels && labelsThere} disabled={!labelsThere} onChange={(e) => patch({ showLabels: e.target.checked })} data-testid="render3d-seg" /> Segmentation
+            </label>
+          )}
+          {(mask || !linked) && (
+            <label title={mask ? "" : "Choose a segmentation type to see its mask here"}>
+              <input type="checkbox" checked={params.showMask && !!mask && maskThere} disabled={!mask || !maskThere} onChange={(e) => patch({ showMask: e.target.checked })} data-testid="render3d-mask" /> Mask
+            </label>
+          )}
           <span className="muted small">Drag turns, scroll zooms.</span>
+          {labelsError && (
+            <span className="error small" role="alert">
+              {labelsError}
+            </span>
+          )}
         </div>
       </div>
     </div>

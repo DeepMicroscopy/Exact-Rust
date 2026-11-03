@@ -10,6 +10,8 @@ export interface UploadItem {
   state: "waiting" | "sending" | "processing" | "done" | "error";
   message?: string;
   imageId?: number;
+  /** a segmentation file (NRRD): it is not an image, it waits to be linked to a volume (`/api/v2/linked-volumes/{id}`) */
+  segmentationId?: number;
 }
 
 /** A file whose name is taken in the image set (or by an earlier file of the same drop): rename it or leave it out. */
@@ -33,7 +35,7 @@ export function freeName(name: string, taken: Set<string>): string {
  * Uploads files to an image set one after the other (two at a time) with progress; the server answers per file. Files whose
  * name exists in the set (`existing()`) wait for a decision (`conflict`, `resolve`) before they are sent.
  */
-export function useUploads(setId: number, onFinished: () => void, existing: () => string[] = () => []) {
+export function useUploads(setId: number, onFinished: () => void, existing: () => string[] = () => [], onSegmentation: (id: number) => void = () => undefined) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [conflicts, setConflicts] = useState<NameConflict[]>([]);
   const waiting = useRef<File[]>([]);
@@ -61,7 +63,10 @@ export function useUploads(setId: number, onFinished: () => void, existing: () =
           const body = JSON.parse(xhr.responseText);
           const item = body.items?.[0];
           if (xhr.status >= 400 || item?.error) patch(key, { state: "error", message: item?.error ?? body.detail ?? `Error ${xhr.status}`, imageId: item?.id > 0 ? item.id : undefined });
-          else {
+          else if (item?.type === "segmentation") {
+            patch(key, { state: "done", progress: 1, segmentationId: item.id });
+            onSegmentation(item.id);
+          } else {
             patch(key, { state: "done", progress: 1, imageId: item?.id });
             ok = true;
           }
@@ -81,7 +86,7 @@ export function useUploads(setId: number, onFinished: () => void, existing: () =
       patch(key, { state: "sending" });
       xhr.send(fd);
     }
-  }, [setId, patch, onFinished]);
+  }, [setId, patch, onFinished, onSegmentation]);
 
   const enqueue = useCallback(
     (files: File[]) => {

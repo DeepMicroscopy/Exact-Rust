@@ -604,3 +604,24 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .health-pop .dot.warning { background: #e0a800; }
 .health-pop .dot.critical { background: #ff4d5e; }
 .health-pop .dot.unknown { background: rgba(255, 255, 255, 0.28); }
+
+/* segmentation files linked to a volume */
+.seg-list { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; }
+.seg-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.seg-list li.dim { opacity: 0.5; }
+.seg-id { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.seg-list label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.seg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.35); flex: none; }
+.linked-panel { width: 290px; max-height: calc(100vh - 90px); }
+.linked-panel .float-body { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.linked-file { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.linked-title { display: flex; align-items: center; gap: 8px; font-weight: 600; min-width: 0; }
+.linked-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linked-all { margin: 0; display: flex; gap: 6px; }
+.linked-here { margin: 0; display: flex; align-items: center; gap: 6px; }
+.linked-opacity { display: flex; align-items: center; gap: 10px; }
+.linked-opacity input { flex: 1; }
+.seg-open { width: 100%; background: none; border: 0; text-align: left; cursor: pointer; font: inherit; position: relative; }
+.seg-badge { position: absolute; top: 16px; left: 16px; font-size: 0.72rem; background: rgba(0, 0, 0, 0.6); }
+.seg-unlinked { color: #e0a040; }

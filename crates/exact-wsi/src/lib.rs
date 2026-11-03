@@ -9,6 +9,7 @@ pub mod generator;
 pub mod generic_tiff;
 pub mod mkt;
 pub mod nifti;
+pub mod nrrd;
 pub mod ome;
 pub mod openslide;
 pub mod registration;

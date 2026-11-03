@@ -18,9 +18,12 @@ export interface RenderParams {
   showMask: boolean;
   maskColor: [number, number, number];
   maskOpacity: number;
+  /** the labels of a linked segmentation file, each segment in its own colour */
+  showLabels: boolean;
+  labelOpacity: number;
 }
 
-export const DEFAULT_RENDER: RenderParams = { low: 0.45, high: 0.75, density: 0.9, mip: false, showImage: true, showMask: true, maskColor: [1, 0.2, 0.2], maskOpacity: 0.85 };
+export const DEFAULT_RENDER: RenderParams = { low: 0.45, high: 0.75, density: 0.9, mip: false, showImage: true, showMask: true, maskColor: [1, 0.2, 0.2], maskOpacity: 0.85, showLabels: true, labelOpacity: 0.85 };
 
 export interface Presets {
   [name: string]: Pick<RenderParams, "low" | "high" | "density" | "mip">;
@@ -44,6 +47,9 @@ in vec2 ndc;
 out vec4 outColor;
 uniform sampler3D vol;
 uniform sampler3D msk;
+uniform sampler3D lbl;   // RG8: how much of the cell is labelled, which segment
+uniform sampler2D pal;   // 256 x 1 segment colours
+uniform vec3 size3;      // cells
 uniform vec3 ext;        // mm
 uniform vec3 camPos;
 uniform vec3 camRight;
@@ -59,6 +65,8 @@ uniform bool showImage;
 uniform bool showMask;
 uniform vec3 maskColor;
 uniform float maskOpacity;
+uniform bool showLabels;
+uniform float labelOpacity;
 uniform vec3 texel;      // 1 / texture size
 
 vec3 toTex(vec3 p) { return vec3(p.x / ext.x + 0.5, 0.5 - p.z / ext.y, p.y / ext.z + 0.5); }
@@ -70,6 +78,12 @@ vec3 gradV(vec3 t) {
   return vec3(gv(t + vec3(texel.x, 0, 0)) - gv(t - vec3(texel.x, 0, 0)),
               gv(t + vec3(0, texel.y, 0)) - gv(t - vec3(0, texel.y, 0)),
               gv(t + vec3(0, 0, texel.z)) - gv(t - vec3(0, 0, texel.z)));
+}
+float labCover(vec3 t) { return texture(lbl, t).r; }
+vec3 gradL(vec3 t) {
+  return vec3(labCover(t + vec3(texel.x, 0, 0)) - labCover(t - vec3(texel.x, 0, 0)),
+              labCover(t + vec3(0, texel.y, 0)) - labCover(t - vec3(0, texel.y, 0)),
+              labCover(t + vec3(0, 0, texel.z)) - labCover(t - vec3(0, 0, texel.z)));
 }
 vec3 gradM(vec3 t) {
   return vec3(gm(t + vec3(texel.x, 0, 0)) - gm(t - vec3(texel.x, 0, 0)),
@@ -135,6 +149,18 @@ void main() {
         alpha += (1.0 - alpha) * a;
       }
     }
+    if (showLabels) {
+      float m = labCover(t);
+      if (m > 0.2) {
+        float a = clamp((m - 0.2) * 3.0, 0.0, 1.0) * labelOpacity;
+        a = 1.0 - pow(1.0 - min(a, 0.999), stepScale);
+        float lit = shade(gradL(t), dir);
+        float idx = texelFetch(lbl, ivec3(clamp(floor(t * size3), vec3(0.0), size3 - 1.0)), 0).g * 255.0;
+        vec3 c = texelFetch(pal, ivec2(int(idx + 0.5), 0), 0).rgb;
+        col += (1.0 - alpha) * a * c * lit;
+        alpha += (1.0 - alpha) * a;
+      }
+    }
     if (alpha > 0.97) break;
   }
   if (mip && showImage) {
@@ -158,12 +184,15 @@ export class VolumeRenderer {
   private prog: WebGLProgram;
   private vtex: WebGLTexture;
   private mtex: WebGLTexture;
+  private ltex: WebGLTexture;
+  private ptex: WebGLTexture;
   private loc = new Map<string, WebGLUniformLocation | null>();
   private ext: [number, number, number] = [1, 1, 1];
   private dims: [number, number, number] = [1, 1, 1];
   private params: RenderParams = { ...DEFAULT_RENDER };
   private haveVolume = false;
   private haveMask = false;
+  private haveLabels = false;
   private yaw = 0.5;
   private pitch = 0.25;
   private dist = 1.1;
@@ -191,6 +220,12 @@ export class VolumeRenderer {
     gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
     this.vtex = this.texture();
     this.mtex = this.texture();
+    this.ltex = this.texture();
+    const pt = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, pt);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    this.ptex = pt;
   }
 
   private texture(): WebGLTexture {
@@ -224,6 +259,28 @@ export class VolumeRenderer {
   setMask(data: Uint8Array | null) {
     if (data) this.upload(this.mtex, 1, data, this.dims);
     this.haveMask = !!data;
+    this.draw();
+  }
+
+  /**
+   * The labels of a linked segmentation file on the same grid, two bytes per cell (coverage, segment + 1), and the colours of the
+   * segments (`colors[i]` is segment i, as 0..255 RGB); or none.
+   */
+  setLabels(data: Uint8Array | null, colors: [number, number, number][] = []) {
+    const gl = this.gl;
+    if (data) {
+      gl.activeTexture(gl.TEXTURE0 + 2);
+      gl.bindTexture(gl.TEXTURE_3D, this.ltex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RG8, this.dims[0], this.dims[1], this.dims[2], 0, gl.RG, gl.UNSIGNED_BYTE, data);
+      const pal = new Uint8Array(256 * 4);
+      colors.slice(0, 255).forEach((c, i) => pal.set([c[0], c[1], c[2], 255], (i + 1) * 4));
+      gl.activeTexture(gl.TEXTURE0 + 3);
+      gl.bindTexture(gl.TEXTURE_2D, this.ptex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pal);
+    }
+    this.haveLabels = !!data;
     this.draw();
   }
 
@@ -302,6 +359,8 @@ export class VolumeRenderer {
     const p = this.params;
     gl.uniform1i(this.u("vol"), 0);
     gl.uniform1i(this.u("msk"), 1);
+    gl.uniform1i(this.u("lbl"), 2);
+    gl.uniform1i(this.u("pal"), 3);
     gl.uniform3f(this.u("ext"), ex, ey, ez);
     gl.uniform3f(this.u("camPos"), ...eye);
     gl.uniform3f(this.u("camRight"), ...right);
@@ -317,6 +376,9 @@ export class VolumeRenderer {
     gl.uniform1i(this.u("showMask"), p.showMask && this.haveMask ? 1 : 0);
     gl.uniform3f(this.u("maskColor"), ...p.maskColor);
     gl.uniform1f(this.u("maskOpacity"), p.maskOpacity);
+    gl.uniform1i(this.u("showLabels"), p.showLabels && this.haveLabels ? 1 : 0);
+    gl.uniform1f(this.u("labelOpacity"), p.labelOpacity);
+    gl.uniform3f(this.u("size3"), this.dims[0], this.dims[1], this.dims[2]);
     gl.uniform3f(this.u("texel"), 1 / this.dims[0], 1 / this.dims[1], 1 / this.dims[2]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
@@ -327,6 +389,8 @@ export class VolumeRenderer {
     const gl = this.gl;
     gl.deleteTexture(this.vtex);
     gl.deleteTexture(this.mtex);
+    gl.deleteTexture(this.ltex);
+    gl.deleteTexture(this.ptex);
     gl.deleteProgram(this.prog);
     gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
