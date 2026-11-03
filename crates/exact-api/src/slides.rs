@@ -869,7 +869,13 @@ async fn download(
             .into_response());
     }
     let file = if q.get("original_image").map(String::as_str) == Some("True") {
-        s.slides.root.join(&img.set_path).join(&img.name)
+        // an image renamed after it was made has the original under the old name: the file of the viewers is the best there is
+        let named = s.slides.root.join(&img.set_path).join(&img.name);
+        if named.is_file() {
+            named
+        } else {
+            img.path(&s, 1, 1)
+        }
     } else {
         img.path(&s, 1, 1)
     };

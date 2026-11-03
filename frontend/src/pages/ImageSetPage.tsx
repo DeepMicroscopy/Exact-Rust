@@ -15,7 +15,7 @@ import { ExportDialog } from "../components/ExportDialog";
 import { ManualRegistration } from "../components/ManualRegistration";
 import { NewRegistrationDialog, RegistrationPanel } from "../components/Registrations";
 import { ImageMenu, useMenuTrigger, type ImageMenuModel } from "../components/ImageMenu";
-import { DeleteImagesDialog, DeleteSetDialog, MoveImagesDialog, SetSettingsDialog } from "../components/SetDialogs";
+import { DeleteImagesDialog, DeleteSetDialog, MoveImagesDialog, RenameImageDialog, SetSettingsDialog } from "../components/SetDialogs";
 import { Thumb } from "../components/Thumb";
 import { useUploads } from "../hooks/useUploads";
 
@@ -149,6 +149,7 @@ export function ImageSetPage() {
   // the menu of an image; Move acts on the whole selection when the image is part of it, otherwise on this one image
   const [menu, setMenu] = useState<(ImageMenuModel & { image: SetImage }) | null>(null);
   const [moveList, setMoveList] = useState<SetImage[] | null>(null);
+  const [renaming, setRenaming] = useState<SetImage | null>(null);
   const openMenu = (image: SetImage, x: number, y: number) => {
     const group = selected.has(image.id) && chosen.length > 1 ? chosen : [image];
     setMenu({ x, y, id: image.id, name: image.name, image, moveCount: group.length, canMove: !!can?.delete_images && !locked, moveWhy: locked ? "The image set is locked." : "You may not move images out of this image set." });
@@ -425,6 +426,10 @@ export function ImageSetPage() {
           model={menu}
           onClose={() => setMenu(null)}
           onConvert={isNrrdName(menu.name) ? () => setConvert({ id: menu.id, name: menu.name }) : undefined}
+          onRename={() => {
+            setRenaming(menu.image);
+            setMenu(null);
+          }}
           onMove={() => {
             setMoveList(menu.moveCount > 1 ? chosen : [menu.image]);
             setMenu(null);
@@ -432,6 +437,7 @@ export function ImageSetPage() {
           }}
         />
       )}
+      {renaming && <RenameImageDialog image={renaming} onClose={() => setRenaming(null)} onDone={refresh} />}
       {dialog === "move" && <MoveImagesDialog images={moveList ?? chosen} from={id} onClose={() => setDialog(null)} onDone={refresh} />}
       {dialog === "delete-images" && <DeleteImagesDialog images={chosen} segFiles={(linkedFiles.data ?? []).filter((f) => f.image != null && chosen.some((i) => i.id === f.image))} onClose={() => setDialog(null)} onDone={() => { refresh(); segChanged(); }} />}
       {dialog === "register" && images.data && (

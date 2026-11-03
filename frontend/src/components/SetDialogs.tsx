@@ -197,6 +197,54 @@ export function MoveImagesDialog({ images: chosen, from, onClose, onDone }: { im
   );
 }
 
+/** Renaming one image: the name of the original file, with its extension. */
+export function RenameImageDialog({ image, onClose, onDone }: { image: SetImage; onClose(): void; onDone(): void }) {
+  const [name, setName] = useState(image.name);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/v2/images/${image.id}/rename`, { json: { name: name.trim() } });
+      onDone();
+      onClose();
+    } catch (e) {
+      setError(message(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="Rename image" onClose={busy ? () => undefined : onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim() && name.trim() !== image.name) void go();
+        }}
+      >
+        <label className="field">
+          <span>Name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus onFocus={(e) => e.target.setSelectionRange(0, Math.max(0, name.lastIndexOf(".")))} data-testid="rename-input" />
+        </label>
+        <p className="muted small">The file extension has to stay. Programs that find images by name (exact-sync) see the new name.</p>
+        {error && (
+          <p className="error small" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn primary" disabled={busy || !name.trim() || name.trim() === image.name} data-testid="rename-ok">
+            Rename
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 /** Deleting images removes their files and annotations. */
 export function DeleteImagesDialog({ images: chosen, segFiles = [], onClose, onDone }: { images: SetImage[]; /** the segmentation files linked to these images */ segFiles?: { id: number; name: string; image: number | null }[]; onClose(): void; onDone(): void }) {
   const [images] = useState(chosen);

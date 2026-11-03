@@ -18,6 +18,7 @@ pub mod plugins;
 pub mod processing;
 pub mod registration;
 pub mod related;
+pub mod rename_image;
 pub mod render3d;
 pub mod resources;
 pub mod seg3d;
@@ -56,6 +57,7 @@ pub fn routes() -> Router<AppState> {
         .merge(annotation_media::v2_routes())
         .merge(admin::routes())
         .merge(move_image::v2_routes())
+        .merge(rename_image::v2_routes())
         .merge(crop::v2_routes())
         .merge(related::routes())
         .merge(linked::routes())

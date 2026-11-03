@@ -29,8 +29,10 @@ Inside an image set you can:
 * **Filter and sort** the thumbnails, or select several to move, delete or register them.
 * **Right-click an image** (on a tablet or phone: press and hold) for its menu: **Open**, **Download** (the original file; slides
   that consist of a folder, such as MRXS and VSI, come as a ZIP that is packed first, so the download starts after a moment),
+  **Rename…** (the name of the image; the file extension has to stay, and z-stacks, frame series, MRXS and VSI slides cannot be renamed),
   **Move…** (no selection needed; on a selected image it moves the whole selection) and **Related images**: the images it was
   registered with and the crops made from it, or the image it was cropped from. Click one to open it.
+* **Download several images:** select them (checkboxes) and press **Download** in the toolbar: the original files come as one ZIP file.
 * **Export** the annotations in one of the export formats of the set, **view statistics**, and open **Files** (auxiliary
   files such as reports).
 * Open **Settings** to rename the set, change its team, tags and products.

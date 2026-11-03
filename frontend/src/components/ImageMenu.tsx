@@ -36,7 +36,7 @@ export interface ImageMenuModel {
  * The menu of an image in the image-set overview (right click, or a long press on a touch screen): open, download, move,
  * and the images linked to it (registrations, crops). Closes on a choice, Escape, or a click elsewhere.
  */
-export function ImageMenu({ model, onClose, onMove, onConvert }: { model: ImageMenuModel; onClose(): void; onMove(): void; /** an NRRD segmentation that was uploaded as an image can become a segmentation file */ onConvert?(): void }) {
+export function ImageMenu({ model, onClose, onMove, onRename, onConvert }: { model: ImageMenuModel; onClose(): void; onMove(): void; onRename(): void; /** an NRRD segmentation that was uploaded as an image can become a segmentation file */ onConvert?(): void }) {
   const root = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [pos, setPos] = useState({ left: model.x, top: model.y });
@@ -85,6 +85,9 @@ export function ImageMenu({ model, onClose, onMove, onConvert }: { model: ImageM
           Convert to segmentation file…
         </button>
       )}
+      <button role="menuitem" onClick={onRename} disabled={!model.canMove} title={model.canMove ? "Change the name of this image" : model.moveWhy.replace("move images out of", "rename images of")} data-testid="menu-rename">
+        Rename…
+      </button>
       <button role="menuitem" onClick={onMove} disabled={!model.canMove} title={model.canMove ? "Move to another image set" : model.moveWhy}>
         {model.moveCount > 1 ? `Move ${model.moveCount} selected images…` : "Move…"}
       </button>

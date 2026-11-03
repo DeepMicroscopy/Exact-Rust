@@ -115,3 +115,27 @@ def test_several_images_are_checked_one_by_one():
     assert c.get("/api/v2/images/download", params={"ids": "99999999"}).status_code == 404
     assert c.get("/api/v2/images/download").status_code == 400
     assert httpx.get(BASE + "/api/v2/images/download", params={"ids": str(i["id"])}).status_code in (401, 403)
+
+
+def test_an_image_is_renamed_and_renamed_back():
+    c = client()
+    i = image(c, filename=".tiff")
+    old = i["name"]
+    new = "renamed-by-test.tiff" if old.lower().endswith(".tiff") else "renamed-by-test" + old[old.rfind("."):]
+    try:
+        r = c.post(f"/api/v2/images/{i['id']}/rename", json={"name": new})
+        assert r.status_code == 200, r.text
+        assert c.get(f"/api/v1/images/images/{i['id']}/").json()["name"] == new
+        # the file of the viewers is untouched
+        assert c.get(f"/api/v2/images/{i['id']}/download").status_code == 200
+        assert c.get(f"/api/v2/images/{i['id']}/download", params={"original_image": "True"}).status_code == 200
+        # the extension stays, no paths, no empty name, no name of another image
+        assert c.post(f"/api/v2/images/{i['id']}/rename", json={"name": "x.png"}).status_code == 400
+        assert c.post(f"/api/v2/images/{i['id']}/rename", json={"name": "../x" + new[new.rfind("."):]}).status_code == 400
+        assert c.post(f"/api/v2/images/{i['id']}/rename", json={"name": ""}).status_code == 400
+        other = next(j for j in c.get("/api/v1/images/images/", params={"limit": 500}).json()["results"] if j["image_set"] == i["image_set"] and j["id"] != i["id"] and j["name"].lower().endswith(new[new.rfind("."):].lower()))
+        assert c.post(f"/api/v2/images/{i['id']}/rename", json={"name": other["name"]}).status_code == 409
+        assert client("rt_outsider").post(f"/api/v2/images/{i['id']}/rename", json={"name": new}).status_code == 403
+    finally:
+        assert c.post(f"/api/v2/images/{i['id']}/rename", json={"name": old}).status_code == 200
+    assert c.get(f"/api/v1/images/images/{i['id']}/").json()["name"] == old
