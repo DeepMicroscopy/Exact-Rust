@@ -175,6 +175,7 @@ pub fn routes() -> Router<AppState> {
     )
     .route("/images/api/image/download/{pk}/", get(download))
     .route("/api/v2/images/{pk}/download", get(download))
+    .route("/api/v2/images/download", get(download_many))
     .route("/api/v2/images/{pk}/metadata", get(metadata))
 }
 
@@ -950,6 +951,155 @@ async fn download(
     Ok(r)
 }
 
+/// The most images one bulk download takes (the ids travel in the address).
+const MAX_BULK_DOWNLOAD: usize = 500;
+
+/// `GET /api/v2/images/download?ids=1,2,3`: the original files of several images in one ZIP (slides with a folder are packed with it).
+/// All images must be readable by the account; an image whose file is missing is left out and named in `NOT_INCLUDED.txt`.
+async fn download_many(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let mut ids: Vec<i64> = Vec::new();
+    for t in q.get("ids").map(String::as_str).unwrap_or("").split(',') {
+        let id: i64 = t.trim().parse().map_err(|_| {
+            ApiError::detail(
+                StatusCode::BAD_REQUEST,
+                "ids must be a comma-separated list of image ids",
+            )
+        })?;
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    if ids.is_empty() {
+        return Err(ApiError::detail(StatusCode::BAD_REQUEST, "ids is required"));
+    }
+    if ids.len() > MAX_BULK_DOWNLOAD {
+        return Err(ApiError::detail(
+            StatusCode::BAD_REQUEST,
+            format!("at most {MAX_BULK_DOWNLOAD} images can be downloaded at once"),
+        ));
+    }
+    let rows = sqlx::query("SELECT i.id, i.name, i.filename, i.depth, i.width, i.height, s.path, s.id FROM images_image i JOIN images_imageset s ON s.id = i.image_set_id WHERE i.id = ANY($1)")
+        .bind(&ids)
+        .fetch_all(&s.pool)
+        .await
+        .map_err(db_err)?;
+    if rows.len() != ids.len() {
+        return Err(ApiError::not_found("No Image matches the given query."));
+    }
+    let mut allowed: HashMap<i64, bool> = HashMap::new();
+    let mut files: Vec<(i64, String, PathBuf)> = Vec::new();
+    for row in rows {
+        let set_id: i64 = row.get(7);
+        let ok = match allowed.get(&set_id) {
+            Some(ok) => *ok,
+            None => {
+                let ok = crate::compat::legacy::can_read_set(&s, &p, set_id).await?;
+                allowed.insert(set_id, ok);
+                ok
+            }
+        };
+        if !ok {
+            return Err(ApiError::permission_denied_msg(
+                "you do not have the permission to access one of these images",
+            ));
+        }
+        let img = ImageRow {
+            id: row.get(0),
+            name: row.get(1),
+            filename: row.get(2),
+            depth: row.get(3),
+            width: row.get::<i32, _>(4).into(),
+            height: row.get::<i32, _>(5).into(),
+            set_path: row.get(6),
+            set_id,
+        };
+        files.push((img.id, img.name.clone(), img.path(&s, 1, 1)));
+    }
+    files.sort_by_key(|f| f.0);
+    let tmp_dir = s.slides.cache_dir.join("downloads");
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| ApiError::from(exact_core::Error::Internal(e.to_string())))?;
+    let tmp = tmp_dir.join(format!("many-{}.zip", uuid::Uuid::new_v4()));
+    let t = tmp.clone();
+    let made = tokio::task::spawn_blocking(move || zip_files(&files, &t))
+        .await
+        .map_err(blocking_err)?;
+    let opened = match made {
+        Ok(()) => tokio::fs::File::open(&tmp).await,
+        Err(e) => Err(e),
+    };
+    let _ = std::fs::remove_file(&tmp);
+    let f = opened.map_err(|e| ApiError::from(exact_core::Error::Internal(e.to_string())))?;
+    let len = f.metadata().await.map(|m| m.len()).unwrap_or(0);
+    let mut r = Response::new(axum::body::Body::from_stream(
+        tokio_util::io::ReaderStream::new(f),
+    ));
+    let h = r.headers_mut();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zip"),
+    );
+    h.insert(header::CONTENT_LENGTH, HeaderValue::from(len));
+    h.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-transform"),
+    );
+    h.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment; filename=\"exact-images.zip\""),
+    );
+    Ok(r)
+}
+
+/// The files of several images into one ZIP: the name of each file as it is on disk (an image that repeats a name gets its id in front).
+fn zip_files(files: &[(i64, String, PathBuf)], out: &std::path::Path) -> std::io::Result<()> {
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(out)?);
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut missing: Vec<&str> = Vec::new();
+    for (id, name, file) in files {
+        if !file.is_file() {
+            missing.push(name);
+            continue;
+        }
+        let ext = file
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_uppercase())
+            .unwrap_or_default();
+        if ext == "MRXS" || ext == "VSI" {
+            add_companions(&mut zip, file, &ext)?;
+            continue;
+        }
+        let mut entry = file
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| name.clone());
+        if !used.insert(entry.clone()) {
+            entry = format!("{id}_{entry}");
+            used.insert(entry.clone());
+        }
+        zip.start_file(entry, stored())?;
+        std::io::copy(&mut std::fs::File::open(file)?, &mut zip)?;
+    }
+    if !missing.is_empty() {
+        zip.start_file("NOT_INCLUDED.txt", stored())?;
+        use std::io::Write;
+        writeln!(
+            zip,
+            "The files of these images were not found on the server:"
+        )?;
+        for n in missing {
+            writeln!(zip, "{n}")?;
+        }
+    }
+    zip.finish()?;
+    Ok(())
+}
+
 /// The Olympus scanner names the data folder of `slide-1.vsi` `_slide_1_`: everything but letters and digits becomes `_`.
 fn vsi_scanner_dir(file: &std::path::Path) -> Option<std::path::PathBuf> {
     let flat = |t: &str| -> String {
@@ -981,6 +1131,25 @@ pub fn zip_companions(
     ext: &str,
     out: &std::path::Path,
 ) -> std::io::Result<()> {
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(out)?);
+    add_companions(&mut zip, file, ext)?;
+    zip.finish()?;
+    Ok(())
+}
+
+/// Slide data is compressed already: stored, not deflated; streamed, not read into memory.
+fn stored() -> zip::write::SimpleFileOptions {
+    zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .large_file(true)
+}
+
+/// The index file and the companion directory of an MRXS / VSI slide, into an open zip.
+fn add_companions(
+    zip: &mut zip::ZipWriter<std::fs::File>,
+    file: &std::path::Path,
+    ext: &str,
+) -> std::io::Result<()> {
     let stem_dir = file.with_extension("");
     let dir = if ext == "VSI" {
         let stem = stem_dir
@@ -1000,11 +1169,7 @@ pub fn zip_companions(
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let mut zip = zip::ZipWriter::new(std::fs::File::create(out)?);
-    // slide data is compressed already: stored, not deflated; streamed, not read into memory
-    let opts = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .large_file(true);
+    let opts = stored();
     fn walk(
         zip: &mut zip::ZipWriter<std::fs::File>,
         dir: &std::path::Path,
@@ -1025,7 +1190,7 @@ pub fn zip_companions(
         }
         Ok(())
     }
-    walk(&mut zip, &dir, &dir_name, opts)?;
+    walk(zip, &dir, &dir_name, opts)?;
     let main = if ext == "VSI" {
         format!(
             "{dir_name}/{}",
@@ -1038,14 +1203,13 @@ pub fn zip_companions(
             .into_owned()
     };
     zip.start_file(main, opts)?;
-    std::io::copy(&mut std::fs::File::open(file)?, &mut zip)?;
-    zip.finish()?;
+    std::io::copy(&mut std::fs::File::open(file)?, zip)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::zip_companions;
+    use super::{zip_companions, zip_files};
 
     #[test]
     fn a_vsi_is_zipped_with_the_folder_the_scanner_named() {
@@ -1071,6 +1235,31 @@ mod tests {
             names.contains(&"_slide_1_/slide-1.vsi".to_string()),
             "{names:?}"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn several_images_are_zipped_with_their_names_and_the_missing_ones_listed() {
+        let dir = std::env::temp_dir().join(format!("exact-many-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::create_dir_all(dir.join("b")).unwrap();
+        std::fs::write(dir.join("a/ct.nii.gz"), b"one").unwrap();
+        std::fs::write(dir.join("b/ct.nii.gz"), b"two").unwrap();
+        let files = vec![
+            (1, "ct".to_string(), dir.join("a/ct.nii.gz")),
+            (2, "ct".to_string(), dir.join("b/ct.nii.gz")),
+            (3, "gone".to_string(), dir.join("c/gone.svs")),
+        ];
+        let out = dir.join("out.zip");
+        zip_files(&files, &out).unwrap();
+        let mut z = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
+        let names: Vec<String> = z.file_names().map(String::from).collect();
+        assert!(names.contains(&"ct.nii.gz".to_string()), "{names:?}");
+        assert!(names.contains(&"2_ct.nii.gz".to_string()), "{names:?}");
+        let mut note = String::new();
+        std::io::Read::read_to_string(&mut z.by_name("NOT_INCLUDED.txt").unwrap(), &mut note)
+            .unwrap();
+        assert!(note.contains("gone"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

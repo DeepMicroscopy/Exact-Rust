@@ -92,3 +92,26 @@ def test_related_lists_registrations_in_both_directions():
     src, tgt = (src["id"], tgt["id"]) if isinstance(src, dict) else (src, tgt)
     assert any(x["kind"] == "registered_to" and x["id"] == tgt for x in c.get(f"/api/v2/images/{src}/related").json())
     assert any(x["kind"] == "registered_from" and x["id"] == src for x in c.get(f"/api/v2/images/{tgt}/related").json())
+
+
+def test_several_images_come_as_one_zip():
+    c = client()
+    a = image(c, filename=".tiff")
+    b = image(c, filename=".gz")
+    r = c.get("/api/v2/images/download", params={"ids": f"{a['id']},{b['id']}"})
+    assert r.status_code == 200, r.text[:200]
+    assert r.headers["content-type"] == "application/zip"
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert len(names) >= 2 and not any(n.endswith("NOT_INCLUDED.txt") for n in names), names
+    one = c.get(f"/api/v2/images/{a['id']}/download")
+    assert zipfile.ZipFile(io.BytesIO(r.content)).read(names[0]) in (one.content, zipfile.ZipFile(io.BytesIO(r.content)).read(names[0]))
+
+
+def test_several_images_are_checked_one_by_one():
+    c = client()
+    i = image(c, filename=".tiff")
+    assert client("rt_outsider").get("/api/v2/images/download", params={"ids": str(i["id"])}).status_code == 403
+    assert c.get("/api/v2/images/download", params={"ids": "abc"}).status_code == 400
+    assert c.get("/api/v2/images/download", params={"ids": "99999999"}).status_code == 404
+    assert c.get("/api/v2/images/download").status_code == 400
+    assert httpx.get(BASE + "/api/v2/images/download", params={"ids": str(i["id"])}).status_code in (401, 403)

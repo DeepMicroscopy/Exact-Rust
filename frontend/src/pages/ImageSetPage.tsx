@@ -307,6 +307,9 @@ export function ImageSetPage() {
             {chosen.length > 0 ? (
               <>
                 <strong>{chosen.length} selected</strong>
+                <a className="btn" href={`/api/v2/images/download?ids=${chosen.map((i) => i.id).join(",")}`} download title="Download the original files of the selected images in one ZIP file (slides with a folder are packed with it)" data-testid="download-selected">
+                  Download
+                </a>
                 {can?.delete_images && !locked && (
                   <button
                     className="btn"
