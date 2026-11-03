@@ -21,11 +21,12 @@ NIFTI, SET = 80, 1  # CT_Philips.nii.gz
 IMAGES = pathlib.Path(os.environ.get("IMAGE_PATH", pathlib.Path(__file__).resolve().parents[2] / "reference/instance/images"))
 
 
-def nrrd(swap=False, shift=(0.0, 0.0, 0.0)):
-    """A two-segment label volume on the grid of the NIfTI, and where its ball is in the volume's reoriented voxels."""
+def nrrd(swap=False, shift=(0.0, 0.0, 0.0), img=None):
+    """A two-segment label volume on the grid of the NIfTI (CT_Philips unless `img` is given), and where its ball is in the volume's
+    reoriented voxels."""
     import nibabel as nib
 
-    img = nib.load(IMAGES / "exact_1_1" / "CT_Philips.nii.gz")
+    img = img or nib.load(IMAGES / "exact_1_1" / "CT_Philips.nii.gz")
     a, shape = img.affine, img.shape[:3]
     data = np.zeros(shape, np.uint8)
     c = [s // 2 for s in shape]
@@ -223,3 +224,40 @@ def test_the_labels_for_the_3d_render(made):
     assert all(seg == 0 for cov, seg in pairs if not cov)
     hidden = c.get(f"/api/v2/linked-volumes/{fid}/render-mask", params={"max": 64, "hide": "0"}).content
     assert {seg for cov, seg in zip(hidden[0::2], hidden[1::2]) if cov} == {2}
+
+
+def tiny_volume(c):
+    """A 16 x 16 x 16 NIfTI uploaded into the set, with a segmentation file linked to it: (image id, file id)."""
+    import nibabel as nib
+
+    img = nib.Nifti1Image((np.arange(16**3) % 200).astype(np.int16).reshape(16, 16, 16), np.diag([1.0, 1.0, 1.0, 1.0]))
+    name = f"tiny-{uuid.uuid4().hex[:8]}"
+    up = c.post(f"/api/v2/image-sets/{SET}/images", files={"file": (name + ".nii", img.to_bytes())}).json()["items"][0]
+    assert up["type"] == "image", up
+    seg = c.post(f"/api/v2/image-sets/{SET}/images", files={"file": (f"{name} segmentation_1.seg.nrrd", nrrd(img=img)[0])}).json()["items"][0]
+    assert seg["type"] == "segmentation", seg
+    r = c.put(f"/api/v2/linked-volumes/{seg['id']}", json={"image": up["id"]})
+    assert r.status_code == 200, r.text
+    return up["id"], seg["id"], name
+
+
+def test_deleting_the_volume_keeps_its_segmentation_files_unlinked(made):
+    c, _ = made
+    image, fid, name = tiny_volume(c)
+    try:
+        assert c.delete(f"/api/v2/images/{image}").status_code == 204
+        f = c.get(f"/api/v2/linked-volumes/{fid}")
+        assert f.status_code == 200 and f.json()["image"] is None
+        assert (IMAGES / "exact_1_1" / f"{name} segmentation_1.seg.nrrd").exists()
+        assert c.get(f"/api/v2/linked-volumes/{fid}/slice/0/0").status_code == 409
+    finally:
+        c.delete(f"/api/v2/linked-volumes/{fid}")
+
+
+def test_deleting_the_volume_can_delete_its_segmentation_files_with_it(made):
+    c, _ = made
+    image, fid, name = tiny_volume(c)
+    assert c.delete(f"/api/v2/images/{image}", params={"segmentations": "delete"}).status_code == 204
+    assert c.get(f"/api/v2/linked-volumes/{fid}").status_code == 404
+    assert not (IMAGES / "exact_1_1" / f"{name} segmentation_1.seg.nrrd").exists()
+    assert c.delete(f"/api/v2/images/{image}", params={"segmentations": "nonsense"}).status_code in (400, 404)

@@ -149,6 +149,7 @@ its opacity (or choose the *Soft tissue* look) to see them.
 The orientation of the file does not have to match the volume: both are placed in millimetres, so a segmentation saved with other axes (Slicer
 writes LPS and often swaps axes) lands on the same voxels. After linking, EXACT tells you if part of the labelled volume lies outside the
 volume; it cannot tell the segmentation of another scan that happens to overlap, so the file name is the check that matters.
+Deleting a volume asks what becomes of its segmentation files: they stay in the image set, not linked (the default), or are deleted with it. Moving a volume to another image set unlinks them.
 The linked file is read-only. Overlapping segments (Slicer layers) are drawn in layer order. Only NIfTI volumes can carry a file for now, and a file
 only belongs to a volume of its own image set.
 

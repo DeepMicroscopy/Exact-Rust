@@ -27,6 +27,8 @@ const SET_NULL: &[(&str, &str)] = &[
     ("annotations_annotationtype", "product_id"),
     ("administration_product", "creator_id"),
     ("administration_product", "team_id"),
+    // Rust-only: a segmentation file outlives the volume it was linked to (deleting it with the volume is the user's choice)
+    ("exact_rust_linked_volume", "image_id"),
 ];
 
 /// Deletes the rows `ids` of `table` (primary key `id`) and everything that depends on them. Returns the number of rows

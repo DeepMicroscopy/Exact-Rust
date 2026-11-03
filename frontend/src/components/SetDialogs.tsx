@@ -198,8 +198,11 @@ export function MoveImagesDialog({ images: chosen, from, onClose, onDone }: { im
 }
 
 /** Deleting images removes their files and annotations. */
-export function DeleteImagesDialog({ images: chosen, onClose, onDone }: { images: SetImage[]; onClose(): void; onDone(): void }) {
+export function DeleteImagesDialog({ images: chosen, segFiles = [], onClose, onDone }: { images: SetImage[]; /** the segmentation files linked to these images */ segFiles?: { id: number; name: string; image: number | null }[]; onClose(): void; onDone(): void }) {
   const [images] = useState(chosen);
+  const [files] = useState(segFiles);
+  // what becomes of the segmentation files linked to the volumes: they stay (unlinked) unless the user says otherwise
+  const [segs, setSegs] = useState<"unlink" | "delete">("unlink");
   const [results, setResults] = useState<Result[] | null>(null);
   const [busy, setBusy] = useState(false);
   const go = async () => {
@@ -207,7 +210,7 @@ export function DeleteImagesDialog({ images: chosen, onClose, onDone }: { images
     const out: Result[] = [];
     for (const image of images) {
       try {
-        await api(`/api/v2/images/${image.id}`, { method: "DELETE" });
+        await api(`/api/v2/images/${image.id}${files.some((f) => f.image === image.id) ? `?segmentations=${segs}` : ""}`, { method: "DELETE" });
         out.push({ image, ok: true, text: "deleted" });
       } catch (e) {
         out.push({ image, ok: false, text: message(e) });
@@ -228,6 +231,20 @@ export function DeleteImagesDialog({ images: chosen, onClose, onDone }: { images
             ))}
             {images.length > 8 && <li className="muted">… and {images.length - 8} more</li>}
           </ul>
+          {files.length > 0 && (
+            <fieldset className="seg-choice" data-testid="delete-seg-choice">
+              <legend>
+                {files.length === 1 ? "A segmentation file is" : `${files.length} segmentation files are`} linked to {files.length === 1 ? "it" : "these images"}: {files.slice(0, 3).map((f) => f.name).join(", ")}
+                {files.length > 3 ? ` and ${files.length - 3} more` : ""}
+              </legend>
+              <label>
+                <input type="radio" name="segs" checked={segs === "unlink"} onChange={() => setSegs("unlink")} /> Keep {files.length === 1 ? "it" : "them"} in the image set, not linked to a volume
+              </label>
+              <label>
+                <input type="radio" name="segs" checked={segs === "delete"} onChange={() => setSegs("delete")} /> Delete {files.length === 1 ? "it" : "them"} too
+              </label>
+            </fieldset>
+          )}
         </>
       ) : (
         <ul className="results">

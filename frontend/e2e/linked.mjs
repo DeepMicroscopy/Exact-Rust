@@ -56,6 +56,9 @@ const api = (method, url) =>
     [method, url],
   );
 let fileId = null;
+// leftovers of an aborted run
+for (const f of (await api("GET", `/api/v2/image-sets/${SET}/linked-volumes`)).body ?? []) await api("DELETE", `/api/v2/linked-volumes/${f.id}`);
+for (const i of (await api("GET", `/api/v2/images?image_set=${SET}&fields=id,name&limit=200`)).body?.items ?? []) if (i.name.startsWith("tiny-")) await api("DELETE", `/api/v2/images/${i.id}`);
 try {
   await page.goto(`${base}/sets/${SET}`);
   await page.waitForSelector(".tile");
@@ -129,6 +132,40 @@ try {
 
   // read-only: no tool for the linked segmentation (the mask tools belong to annotations)
   check((await page.locator('[data-testid="linked-file"] button:has-text("Import")').count()) === 0, "nothing in the panel changes the file");
+
+  // deleting a volume asks what becomes of its segmentation file: keep it (unlinked) or delete it too
+  const tinyName = `tiny-${Date.now() % 100000}`;
+  execFileSync(path.join(root, "reference/.venv/bin/python"), ["-c", `import sys, numpy as np, nibabel as nib; import test_v2_linked as t
+img = nib.Nifti1Image((np.arange(16**3) % 200).astype(np.int16).reshape(16, 16, 16), np.diag([1.0, 1.0, 1.0, 1.0]))
+open(sys.argv[1] + '.nii', 'wb').write(img.to_bytes()); open(sys.argv[1] + ' segmentation_1.seg.nrrd', 'wb').write(t.nrrd(img=img)[0])`, path.join(dir, tinyName)], { cwd: path.join(root, "tests/conformance"), env: { ...process.env, EXACT_URL: base } });
+  await page.goto(`${base}/sets/${SET}`);
+  await page.waitForSelector(".tile");
+  await page.setInputFiles('input[type="file"]', path.join(dir, `${tinyName}.nii`));
+  await page.waitForSelector(`.tile:has-text("${tinyName}.nii")`);
+  await page.setInputFiles('input[type="file"]', path.join(dir, `${tinyName} segmentation_1.seg.nrrd`));
+  await page.waitForSelector('[data-testid="link-seg"]');
+  check((await page.locator('[data-testid="link-volume"]').inputValue()) !== "", "the tiny volume is chosen for its file");
+  await page.click('[data-testid="link-go"]');
+  await page.waitForSelector('[data-testid="link-seg"]', { state: "detached" });
+  const tinyCard = page.locator(".tile", { hasText: `${tinyName} segmentation_1` });
+  await tinyCard.waitFor();
+  const volumeTile = page.locator('.tile:not(.seg-tile)', { hasText: `${tinyName}.nii` });
+  const askDelete = async () => {
+    await volumeTile.locator('input[type="checkbox"]').check();
+    await page.getByRole("button", { name: "Delete…" }).click();
+    await page.waitForSelector('[data-testid="delete-seg-choice"]');
+  };
+  await askDelete();
+  check((await page.getByRole("radio", { name: /Keep it in the image set/ }).isChecked()), "the choice defaults to keeping the file");
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await new Promise((r) => setTimeout(r, 3000));
+  if (shots) await page.screenshot({ path: `${shots}/linked-delete.png` });
+  await waitFor(async () => (await page.locator(".tile", { hasText: `${tinyName}.nii` }).count()) === 0 || (await page.locator('.tile:not(.seg-tile)', { hasText: `${tinyName}.nii` }).count()) === 0, "the volume is gone");
+  await page.locator(".modal-actions button", { hasText: "Close" }).click();
+  await waitFor(async () => /not linked/.test((await page.locator(".seg-tile", { hasText: tinyName }).textContent().catch(() => "")) ?? ""), "the segmentation file stays, now not linked");
+  check(true, "deleting the volume kept its segmentation file, unlinked");
+  const left = (await api("GET", `/api/v2/image-sets/${SET}/linked-volumes`)).body.find((f) => f.filename.startsWith(tinyName));
+  if (left) await api("DELETE", `/api/v2/linked-volumes/${left.id}`);
 } finally {
   if (fileId != null) await api("DELETE", `/api/v2/linked-volumes/${fileId}`);
   fs.rmSync(dir, { recursive: true, force: true });

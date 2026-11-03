@@ -625,3 +625,6 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .seg-open { width: 100%; background: none; border: 0; text-align: left; cursor: pointer; font: inherit; position: relative; }
 .seg-badge { position: absolute; top: 16px; left: 16px; font-size: 0.72rem; background: rgba(0, 0, 0, 0.6); }
 .seg-unlinked { color: #e0a040; }
+.seg-choice { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.seg-choice legend { padding: 0 6px; font-size: 0.9rem; }
+.seg-choice label { display: flex; align-items: center; gap: 8px; }

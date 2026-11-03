@@ -649,19 +649,42 @@ pub async fn delete_h(
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
+#[derive(serde::Deserialize)]
+pub struct DeleteImageQuery {
+    /// what happens to the segmentation files linked to the image: `unlink` (the default: they stay in the image set) or `delete`
+    segmentations: Option<String>,
+}
+
 pub async fn delete_image_h(
     State(s): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<DeleteImageQuery>,
 ) -> ApiResult<Response> {
     let p = require_user(authenticate(&s, &headers, &Method::DELETE).await?)?;
     let id: i64 = id.parse().map_err(|_| ApiError::not_found("Not found."))?;
-    delete_image(&s, &p, id).await?;
+    let with_files = match q.segmentations.as_deref() {
+        None | Some("unlink") => false,
+        Some("delete") => true,
+        Some(_) => {
+            return Err(ApiError::detail(
+                StatusCode::BAD_REQUEST,
+                "segmentations is \"unlink\" or \"delete\".",
+            ))
+        }
+    };
+    delete_image(&s, &p, id, with_files).await?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// Deletes an image with its rows and files (the file the viewer reads and the uploaded original).
-pub async fn delete_image(s: &AppState, p: &Principal, id: i64) -> ApiResult<()> {
+/// Deletes an image with its rows and files (the file the viewer reads and the uploaded original). The segmentation files linked
+/// to it are unlinked, or with `with_segmentations` deleted too (rows and files).
+pub async fn delete_image(
+    s: &AppState,
+    p: &Principal,
+    id: i64,
+    with_segmentations: bool,
+) -> ApiResult<()> {
     let r = sqlx::query(
         "SELECT i.image_set_id, i.name, i.filename, s.path, s.image_lock FROM images_image i \
          JOIN images_imageset s ON s.id = i.image_set_id WHERE i.id = $1",
@@ -688,8 +711,29 @@ pub async fn delete_image(s: &AppState, p: &Principal, id: i64) -> ApiResult<()>
         ));
     }
     let mut tx = s.pool.begin().await.map_err(db_err)?;
+    let linked: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, filename FROM exact_rust_linked_volume WHERE image_id = $1")
+            .bind(id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(db_err)?;
+    if with_segmentations {
+        sqlx::query("DELETE FROM exact_rust_linked_volume WHERE image_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+    }
     cascade::delete_rows(&mut tx, "images_image", &[id]).await?;
     tx.commit().await.map_err(db_err)?;
+    for (lid, file) in &linked {
+        crate::v2::linked::forget(*lid);
+        if with_segmentations && !file.contains("..") && !file.starts_with('/') {
+            if let Some(path) = &path {
+                let _ = tokio::fs::remove_file(s.slides.root().join(path).join(file)).await;
+            }
+        }
+    }
     if let Some(path) = path {
         for f in [filename, name] {
             let still_used: bool = sqlx::query_scalar(

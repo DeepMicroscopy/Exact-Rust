@@ -235,6 +235,11 @@ struct Entry {
     volume_mm: [f64; 3],
 }
 
+/// The resampled labels of a file are out of date (its volume went or changed).
+pub(crate) fn forget(id: i64) {
+    cache().invalidate(&id);
+}
+
 fn cache() -> &'static moka::sync::Cache<i64, Arc<Entry>> {
     static C: OnceLock<moka::sync::Cache<i64, Arc<Entry>>> = OnceLock::new();
     C.get_or_init(|| {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
@@ -93,6 +93,11 @@ export function ImageSetPage() {
   const uploads = useUploads(id, uploaded, existingNames, onSegmentation);
   // a finished upload gives way to the real card as soon as the list has the image; a segmentation file has no card
   const shownUploads = uploads.items.filter((u) => u.segmentationId == null && !(u.state === "done" && u.imageId != null && (images.data ?? []).some((i) => i.id === u.imageId)));
+  // ... and is dismissed for good then: it must not come back when the image is deleted later
+  const { items: uploadItems, dismiss: dismissUpload } = uploads;
+  useEffect(() => {
+    for (const u of uploadItems) if (u.state === "done" && u.imageId != null && (images.data ?? []).some((i) => i.id === u.imageId)) dismissUpload(u.key);
+  }, [uploadItems, images.data, dismissUpload]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -400,7 +405,7 @@ export function ImageSetPage() {
         />
       )}
       {dialog === "move" && <MoveImagesDialog images={moveList ?? chosen} from={id} onClose={() => setDialog(null)} onDone={refresh} />}
-      {dialog === "delete-images" && <DeleteImagesDialog images={chosen} onClose={() => setDialog(null)} onDone={refresh} />}
+      {dialog === "delete-images" && <DeleteImagesDialog images={chosen} segFiles={(linkedFiles.data ?? []).filter((f) => f.image != null && chosen.some((i) => i.id === f.image))} onClose={() => setDialog(null)} onDone={() => { refresh(); segChanged(); }} />}
       {dialog === "register" && images.data && (
         <NewRegistrationDialog
           images={images.data}
