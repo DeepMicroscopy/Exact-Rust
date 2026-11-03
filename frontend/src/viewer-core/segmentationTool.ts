@@ -10,6 +10,8 @@ export class SegmentationTool {
   private last: [number, number] | null = null;
   private erase = false;
   private stroking = false;
+  /** the pointer that is painting: a pen is tracked twice by OpenSeadragon (hovering and touching), its drag events carry the hovering one's position */
+  private pid: number | null = null;
   private cleanup: (() => void)[] = [];
 
   constructor(
@@ -26,8 +28,13 @@ export class SegmentationTool {
     };
     type Ev = { position: OpenSeadragon.Point; preventDefaultAction: boolean; originalEvent?: MouseEvent; pointerType?: string };
     on("canvas-press", (e: Ev) => this.press(e));
-    on("canvas-drag", (e: Ev) => this.drag(e));
-    on("canvas-release", () => void this.release());
+    on("canvas-drag", (e: Ev) => {
+      if (this.stroking) e.preventDefaultAction = true; // the image does not move under the brush; the points come from the pointer events below
+    });
+    on("canvas-release", (e: { originalEvent?: Event }) => {
+      const id = (e.originalEvent as PointerEvent | undefined)?.pointerId;
+      if (this.pid == null || id == null || id === this.pid) void this.release();
+    });
     on("canvas-scroll", (e: { scroll: number; preventDefaultAction: boolean; originalEvent?: WheelEvent }) => {
       if (this.live() && e.originalEvent?.altKey) {
         e.preventDefaultAction = true; // Alt + wheel sizes the brush
@@ -35,7 +42,13 @@ export class SegmentationTool {
       }
     });
     const el = viewer.canvas as HTMLElement;
-    const move = (ev: PointerEvent) => this.moved(ev);
+    const move = (ev: PointerEvent) => {
+      this.moved(ev);
+      this.strokeMove(ev);
+    };
+    const up = (ev: PointerEvent) => {
+      if (this.stroking && (this.pid == null || ev.pointerId === this.pid)) void this.release();
+    };
     const leave = () => {
       const l = this.masks.editable;
       if (l) {
@@ -44,9 +57,13 @@ export class SegmentationTool {
       }
     };
     el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
     el.addEventListener("pointerleave", leave);
     this.cleanup.push(() => {
       el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
       el.removeEventListener("pointerleave", leave);
     });
   }
@@ -96,26 +113,33 @@ export class SegmentationTool {
     }
     layer.beginStroke();
     this.stroking = true;
+    this.pid = (e.originalEvent as PointerEvent | undefined)?.pointerId ?? null;
     this.last = p;
     layer.paint(p, p, this.radius(), this.state.shape, this.erase ? 0 : 1);
   }
 
-  private drag(e: { position: OpenSeadragon.Point; preventDefaultAction: boolean }): void {
-    if (!this.stroking) return;
-    e.preventDefaultAction = true;
+  /** The brush follows the pointer that painted first (its coalesced events too, so that a quick pen stroke has no gaps). */
+  private strokeMove(ev: PointerEvent): void {
+    if (!this.stroking || (this.pid != null && ev.pointerId !== this.pid)) return;
     const layer = this.masks.editable;
-    const p = this.toImage(e.position);
-    if (!layer || !p || !this.last) return;
-    layer.paint(this.last, p, this.radius(), this.state.shape, this.erase ? 0 : 1);
-    layer.cursor = { at: p, r: this.radius(), shape: this.state.shape, erase: this.erase };
+    if (!layer || !this.last) return;
+    const r = (this.viewer.canvas as HTMLElement).getBoundingClientRect();
+    const events = typeof ev.getCoalescedEvents === "function" ? ev.getCoalescedEvents() : [];
+    for (const e of events.length ? events : [ev]) {
+      const p = this.toImage(new OpenSeadragon.Point(e.clientX - r.left, e.clientY - r.top));
+      if (!p) continue;
+      layer.paint(this.last, p, this.radius(), this.state.shape, this.erase ? 0 : 1);
+      this.last = p;
+    }
+    layer.cursor = { at: this.last, r: this.radius(), shape: this.state.shape, erase: this.erase };
     layer.refresh();
-    this.last = p;
   }
 
   private async release(): Promise<void> {
     if (!this.stroking) return;
     this.stroking = false;
     this.last = null;
+    this.pid = null;
     const layer = this.masks.editable;
     if (!layer) return;
     try {

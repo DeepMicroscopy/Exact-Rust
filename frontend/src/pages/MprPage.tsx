@@ -467,6 +467,8 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
 
     // the mask tools: a drag with the brush or eraser is one stroke (previewed here, stored when the pointer is lifted), a click with the wand grows a region
     let stroke: { points: [number, number][]; erase: boolean; frame: number; lasso: boolean } | null = null;
+    // the pointer that paints: a pen is tracked twice by OpenSeadragon (hovering and touching), its drag events carry the hovering one's position
+    let strokeId: number | null = null;
     let space = false;
     const spaceKey = (e: KeyboardEvent) => {
       if (e.code === "Space" && !isTypingTarget(e.target)) space = e.type === "keydown";
@@ -501,6 +503,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
         return;
       }
       stroke = { points: [at], erase, frame, lasso: sg.tool.tool === "lasso" };
+      strokeId = (oe as PointerEvent | undefined)?.pointerId ?? null;
       if (stroke.lasso) {
         brush.current?.setLasso({ points: stroke.points, erase });
         return;
@@ -509,24 +512,31 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       brush.current?.setStroke({ points: stroke.points, rx, ry, erase });
     });
     on("canvas-drag", (e: PointerEv) => {
+      if (stroke && live.current.seg) e.preventDefaultAction = true; // the image does not move under the brush; the points come from the pointer events
+    });
+    // the stroke follows the pointer that started it, its coalesced events too (a quick pen stroke has no gaps)
+    const strokeMove = (ev: PointerEvent) => {
       const sg = live.current.seg;
-      if (!stroke || !sg) return;
-      e.preventDefaultAction = true;
-      const at = toPlane(e.position);
-      if (!at) return;
-      stroke.points.push(at);
+      if (!stroke || !sg || (strokeId != null && ev.pointerId !== strokeId)) return;
+      const r = el.getBoundingClientRect();
+      const events = typeof ev.getCoalescedEvents === "function" ? ev.getCoalescedEvents() : [];
+      for (const e of events.length ? events : [ev]) {
+        const at = toPlane(new OpenSeadragon.Point(e.clientX - r.left, e.clientY - r.top));
+        if (at) stroke.points.push(at);
+      }
       if (stroke.lasso) {
         brush.current?.setLasso({ points: stroke.points, erase: stroke.erase });
         return;
       }
       const [rx, ry] = radii(sg);
       brush.current?.setStroke({ points: stroke.points, rx, ry, erase: stroke.erase });
-    });
-    on("canvas-release", () => {
+    }
+    const finish = () => {
       const sg = live.current.seg;
       if (!stroke || !sg) return;
       const done = stroke;
       stroke = null;
+      strokeId = null;
       const points = thin(dropClose(done.points, 0.5), 2000);
       if (done.lasso) {
         if (points.length < 3) return brush.current?.setLasso(null);
@@ -539,9 +549,17 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       void sg
         .onStroke(live.current.plane, done.frame, points, done.erase)
         .finally(() => window.setTimeout(() => brush.current?.setStroke(null), 1200));
+    };
+    on("canvas-release", (e: { originalEvent?: Event }) => {
+      const id = (e.originalEvent as PointerEvent | undefined)?.pointerId;
+      if (strokeId == null || id == null || id === strokeId) finish();
     });
+    const up = (ev: PointerEvent) => {
+      if (stroke && (strokeId == null || ev.pointerId === strokeId)) finish();
+    };
     // the ring of the brush follows the pointer
     const move = (ev: PointerEvent) => {
+      strokeMove(ev);
       const sg = live.current.seg;
       const r = el.getBoundingClientRect();
       const at = toPlane(new OpenSeadragon.Point(ev.clientX - r.left, ev.clientY - r.top));
@@ -566,6 +584,8 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
     window.addEventListener("keydown", heldKeys);
     window.addEventListener("keyup", heldKeys);
     el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
     el.addEventListener("pointerleave", leave);
     notes.current = plane === 0 ? new AnnotationLayer(v) : null; // below the crosshair
     if (live.current.shapes) notes.current?.setData(live.current.shapes, live.current.styles);
@@ -590,6 +610,8 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, onAc
       window.removeEventListener("keydown", heldKeys);
       window.removeEventListener("keyup", heldKeys);
       el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
       el.removeEventListener("pointerleave", leave);
       window.removeEventListener("keydown", spaceKey);
       window.removeEventListener("keyup", spaceKey);

@@ -139,6 +139,31 @@ try {
   check(/\d+(\.\d+)? (mm³|ml)/.test(await volume()), `the readout gives the volume (${await volume()})`);
   const v1 = await volumeMm3();
 
+  // ------------------------------------------------------------------------------------------ a pen draws the whole stroke
+  // An Apple Pencil is tracked as two pointers (hovering and touching): OpenSeadragon reports drags at the hovering one's place, so a stroke
+  // used to stop at the point where the pen touched down.
+  const penStroke = (from, to) =>
+    page.evaluate(({ a, b }) => {
+      const el = window.__mpr_0.canvas;
+      const fire = (type, id, x, y, buttons, pressure) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType: "pen", isPrimary: true, clientX: x, clientY: y, buttons, pressure, button: type === "pointerdown" || type === "pointerup" ? 0 : -1 }));
+      fire("pointerover", 5, a[0], a[1], 0, 0);
+      fire("pointerenter", 5, a[0], a[1], 0, 0);
+      for (let i = 0; i < 3; i++) fire("pointermove", 5, a[0] + i, a[1], 0, 0);
+      fire("pointerdown", 7, a[0], a[1], 1, 0.5);
+      for (let i = 1; i <= 10; i++) fire("pointermove", 7, a[0] + ((b[0] - a[0]) * i) / 10, a[1] + ((b[1] - a[1]) * i) / 10, 1, 0.5);
+      fire("pointerup", 7, b[0], b[1], 0, 0);
+    }, { a: from, b: to });
+  await penStroke(at(0.36, 0.85), at(0.36, 0.85)); // a tap (the axial image is a narrow portrait in the middle of the plane)
+  await waitFor(async () => (await volumeMm3()) > v1 + 10, "a pen tap paints a dab");
+  const tap = (await volumeMm3()) - v1;
+  await page.keyboard.press("Control+z");
+  await waitFor(async () => Math.abs((await volumeMm3()) - v1) < 1, "...and undo takes it back");
+  await penStroke(at(0.36, 0.85), at(0.64, 0.85)); // a stroke
+  await waitFor(async () => (await volumeMm3()) > v1 + tap * 2, `a pen stroke paints along the whole stroke, not only the dab where it touched down (${Math.round((await volumeMm3()) - v1)} mm³ against ${Math.round(tap)})`);
+  await page.keyboard.press("Control+z");
+  await waitFor(async () => Math.abs((await volumeMm3()) - v1) < 1, "...and undo takes it back");
+  check(true, "a pen that hovers and then touches (two pointers) draws the whole stroke");
+
   // ------------------------------------------------------------------------------------------ eraser, undo, redo
   await page.locator('[data-testid="seg3d-mode"]').click();
   check((await page.locator('[data-testid="seg3d-mode"]').innerText()) === "−", "the mode button shows − when subtracting");

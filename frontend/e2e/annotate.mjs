@@ -526,6 +526,28 @@ try {
     const t = await tileInfo(mask.id, 1, 1);
     return t.status === 200 && t.set < painted.set - 500;
   }, "the eraser removes part of the mask");
+  // a pen is tracked twice by OpenSeadragon (hovering and touching): the brush must follow the touching pen along the stroke, not stay at its first point
+  await admin.locator('[data-testid="seg-tools"] button[aria-label="Brush"]').click();
+  const penTile = async () => (await tileInfo(mask.id, 1, 0)).set;
+  const penBeforeSet = await penTile();
+  const [q0, q1] = [await screenOf(admin, 300, 200), await screenOf(admin, 480, 200)];
+  await admin.evaluate(({ a, b }) => {
+    const el = window.__viewer.canvas;
+    const fire = (type, id, x, y, buttons, pressure) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType: "pen", isPrimary: true, clientX: x, clientY: y, buttons, pressure, button: type === "pointerdown" || type === "pointerup" ? 0 : -1 }));
+    fire("pointerover", 5, a.x, a.y, 0, 0);
+    fire("pointerenter", 5, a.x, a.y, 0, 0);
+    for (let i = 0; i < 3; i++) fire("pointermove", 5, a.x + i, a.y, 0, 0);
+    fire("pointerdown", 7, a.x, a.y, 1, 0.5);
+    for (let i = 1; i <= 10; i++) fire("pointermove", 7, a.x + ((b.x - a.x) * i) / 10, a.y, 1, 0.5);
+    fire("pointerup", 7, b.x, b.y, 0, 0);
+  }, { a: q0, b: q1 });
+  const penPainted = await waitFor(async () => {
+    const n = (await penTile()) - penBeforeSet;
+    return n > 100 ? n : 0;
+  }, "a pen stroke is saved in the mask");
+  check(penPainted > 1000, `...along the whole stroke, not only the dab where the pen touched down (${penPainted} pixels)`);
+  await admin.keyboard.press("Control+z");
+  await waitFor(async () => (await penTile()) === penBeforeSet, "...and one undo takes the pen stroke back");
   // magic wand on the gradient image: a connected area of similar colour
   await admin.locator('[data-testid="seg-tools"] button[aria-label="Wand"]').click();
   await admin.locator('input[aria-label="Wand tolerance"]').fill("100");

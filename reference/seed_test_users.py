@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from exact.users.models import Team, TeamMembership
 
-assert settings.DATABASES['default']['NAME'] in ('exact_rust_test', 'exact_django_test'), 'refusing: not a scratch DB'
+assert settings.DATABASES['default']['NAME'] in ('exact_rust_test', 'exact_rust_e2e', 'exact_django_test'), 'refusing: not a scratch DB'
 PW = 'rust-test-pw'
 U = get_user_model()
 
