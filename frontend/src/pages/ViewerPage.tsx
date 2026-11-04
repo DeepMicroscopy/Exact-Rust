@@ -1076,8 +1076,13 @@ export function ViewerPage() {
             <circle cx="12" cy="13.5" r="3.6" />
           </svg>
         </button>
-        <button className={`btn ${screening ? "on" : ""}`} aria-pressed={screening} onClick={() => setScreening((s) => !s)} title="Screening mode: step through the slide window by window with overlap (W A S D, I J K L)" data-testid="screening-toggle">
-          Screening
+        <button className={`btn icon-btn ${screening ? "on" : ""}`} aria-pressed={screening} aria-label="Screening" onClick={() => setScreening((s) => !s)} title="Screening mode: step through the slide window by window with overlap (W A S D, I J K L)" data-testid="screening-toggle">
+          {/* the slide as a grid of windows, one of them (filled) being looked at */}
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M9 3v18M15 3v18M3 9h18M3 15h18" opacity="0.55" />
+            <rect x="9" y="9" width="6" height="6" fill="currentColor" stroke="none" />
+          </svg>
         </button>
         <button className="btn icon-btn" onClick={() => window.dispatchEvent(new Event(SHOW_HELP))} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" data-testid="help-button">
           ?
