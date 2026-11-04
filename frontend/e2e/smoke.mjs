@@ -250,7 +250,7 @@ try {
       // left from an earlier run: its settings are shown
       await page.locator('[data-testid="screening-panel"] .btn', { hasText: "Settings" }).click();
       await page.waitForSelector('[data-testid="screening-start"]');
-    } else check((await page.locator('[data-testid="screening-overlap"]').inputValue()) === "80", "the screening overlap is 80 % unless changed");
+    } else check((await page.locator('[data-testid="screening-overlap"]').inputValue()) === "20", "the screening overlap is 20 % unless changed");
     const dims = await page.evaluate(() => { const i = window.__viewer.world.getItemAt(0).getContentSize(); return [i.x, i.y]; });
     await page.locator('[data-testid="screening-w"]').fill(String(Math.max(16, Math.round(dims[0] / 2))));
     await page.locator('[data-testid="screening-h"]').fill(String(Math.max(16, Math.round(dims[1] / 2))));

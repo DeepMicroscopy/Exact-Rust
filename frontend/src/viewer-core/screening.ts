@@ -22,7 +22,7 @@ export interface ScreeningMode {
   screening_tiles: Record<string, Tile>;
 }
 
-export const DEFAULT_OVERLAP = 0.8;
+export const DEFAULT_OVERLAP = 0.2;
 
 /** The start positions along one axis: windows of `view` pixels, `view * (1 - overlap)` apart, the last one pushed back to end at the border. */
 export function starts(length: number, view: number, overlap: number): number[] {
