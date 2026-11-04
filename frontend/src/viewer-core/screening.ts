@@ -57,11 +57,11 @@ export function overlapOf(m: ScreeningMode): number {
 
 export type Move = "left" | "right" | "up" | "down";
 
-/** The index after a step; unchanged at the border. */
+/** The index after a step; unchanged at the top and bottom border. Left / right at the end of a row continue in the next / previous row (the last / first column). */
 export function moved(m: ScreeningMode, from: number, dir: Move): number {
   const col = from % m.x_steps;
   const row = Math.floor(from / m.x_steps);
-  const next = dir === "left" ? (col > 0 ? from - 1 : from) : dir === "right" ? (col < m.x_steps - 1 ? from + 1 : from) : dir === "up" ? (row > 0 ? from - m.x_steps : from) : row < m.y_steps - 1 ? from + m.x_steps : from;
+  const next = dir === "left" ? (col > 0 || row > 0 ? from - 1 : from) : dir === "right" ? (col < m.x_steps - 1 || row < m.y_steps - 1 ? from + 1 : from) : dir === "up" ? (row > 0 ? from - m.x_steps : from) : row < m.y_steps - 1 ? from + m.x_steps : from;
   return next;
 }
 

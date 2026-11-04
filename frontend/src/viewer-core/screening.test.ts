@@ -24,6 +24,8 @@ describe("screening windows", () => {
     expect(moved(m, 0, "down")).toBe(m.x_steps);
     const last = m.x_steps * m.y_steps - 1;
     expect(moved(m, last, "right")).toBe(last);
+    expect(moved(m, m.x_steps - 1, "right")).toBe(m.x_steps);
+    expect(moved(m, m.x_steps, "left")).toBe(m.x_steps - 1);
     expect(moved(m, last, "down")).toBe(last);
   });
 

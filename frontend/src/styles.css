@@ -200,7 +200,9 @@ code { font-size: 0.85em; background: var(--glass-h); padding: 1px 5px; border-r
 kbd { font: 600 0.72rem/1 ui-monospace, monospace; background: rgba(255, 255, 255, 0.14); border-radius: 4px; padding: 2px 5px; }
 .dropdown { position: relative; }
 .dropdown .trigger { display: inline-flex; align-items: center; gap: 7px; max-width: 220px; }
-.dropdown .dd-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropdown .dd-label { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.25; text-align: left; overflow-wrap: anywhere; }
+.dropdown .trigger { align-items: flex-start; }
+.dropdown .trigger > :not(.dd-label) { margin-top: 0.2em; }
 .dropdown .caret { opacity: 0.6; font-size: 0.8rem; }
 .dd-pop { position: absolute; bottom: calc(100% + 8px); left: 0; min-width: 230px; max-width: 320px; z-index: 8; padding: 6px; background: rgba(18, 18, 24, 0.97); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
 /* in the top bar the list opens downwards, to the left of the button's right edge */
@@ -212,7 +214,8 @@ kbd { font: 600 0.72rem/1 ui-monospace, monospace; background: rgba(255, 255, 25
 .dd-item:hover:not(:disabled) { background: var(--glass-h); }
 .dd-item.checked { background: rgba(120, 80, 220, 0.25); }
 .dd-item:disabled { opacity: 0.4; cursor: default; }
-.dd-item .dd-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-item .dd-label { flex: 1; }
+.dd-item { align-items: flex-start; }
 .dd-item .tick { color: var(--purple); }
 .dd-empty { padding: 8px; }
 .toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; padding: 10px 16px; max-width: min(520px, 90%); background: rgba(40, 20, 18, 0.95); border-color: #8a2b22; cursor: pointer; }
