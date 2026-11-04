@@ -251,6 +251,20 @@ try {
     await page.waitForTimeout(1500);
   }
 
+  // the top bar keeps its size when the pointer coordinates appear (the name does not wrap differently)
+  {
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(300);
+    const size = () => page.evaluate(() => ({ bar: document.querySelector(".viewer-bar").getBoundingClientRect().height, title: document.querySelector(".viewer-title").getBoundingClientRect().width }));
+    const before = await size();
+    const box = await page.locator(".openseadragon-canvas").first().boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(400);
+    check(/x [\d,]+ · y [\d,]+/.test(await page.locator('[data-testid="cursor-pos"]').innerText()), "the pointer coordinates are shown over the slide");
+    const after = await size();
+    check(Math.abs(before.bar - after.bar) < 0.5 && Math.abs(before.title - after.title) < 0.5, `the top bar and the name keep their size when the coordinates appear (bar ${before.bar}→${after.bar}, name ${before.title}→${after.title})`);
+  }
+
   // Home: back to the whole slide, like 0
   {
     const home = await page.evaluate(() => window.__viewer.viewport.getHomeZoom());

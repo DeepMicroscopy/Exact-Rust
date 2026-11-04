@@ -1021,14 +1021,19 @@ export function ViewerPage() {
             </Link>
           </span>
         )}
-        {cursor && (
-          <span className="cursor-pos muted small" title="Pixel under the pointer">
-            x {cursor[0].toLocaleString("en-US")} · y {cursor[1].toLocaleString("en-US")}
-            {image.data?.crop_source != null && image.data.crop_x != null && image.data.crop_y != null && (
-              <> · original {(cursor[0] + image.data.crop_x).toLocaleString("en-US")}, {(cursor[1] + (image.data.crop_y ?? 0)).toLocaleString("en-US")}</>
-            )}
-          </span>
-        )}
+        {/* always there, with a width of its own: the name must not get narrower (and wrap) when the coordinates appear */}
+        <span className={`cursor-pos muted small ${image.data?.crop_source != null ? "crop" : ""}`} title="Pixel under the pointer" data-testid="cursor-pos">
+          {cursor ? (
+            <>
+              x {cursor[0].toLocaleString("en-US")} · y {cursor[1].toLocaleString("en-US")}
+              {image.data?.crop_source != null && image.data.crop_x != null && image.data.crop_y != null && (
+                <> · original {(cursor[0] + image.data.crop_x).toLocaleString("en-US")}, {(cursor[1] + (image.data.crop_y ?? 0)).toLocaleString("en-US")}</>
+              )}
+            </>
+          ) : (
+            "\u00a0"
+          )}
+        </span>
         <span className="spacer" />
         {image.data && <OverlayControl key={id} viewerRef={viewerRef} imageId={id} width={image.data.width} />}
         {hasPlanes && (
