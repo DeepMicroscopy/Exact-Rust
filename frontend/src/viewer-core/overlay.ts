@@ -34,6 +34,26 @@ export function mappedRegion(m: Affine, r: { x: number; y: number; w: number; h:
 }
 
 /**
+ * Point pairs for registering a crop of the other image onto a crop of this one: the corners of the other crop (its own pixels) and where `m`
+ * (other image -> this image) puts them in the pixels of the crop of this image. The corners fix an affine map exactly, so the registration
+ * of the crops is the registration of the images moved to the crops' origins.
+ */
+export function cropRegistrationPoints(m: Affine, other: { x: number; y: number; w: number; h: number }, own: { x: number; y: number }): { source: [number, number]; target: [number, number] }[] {
+  const [a, b, tx, c, d, ty] = m;
+  return (
+    [
+      [0, 0],
+      [other.w, 0],
+      [0, other.h],
+      [other.w, other.h],
+    ] as [number, number][]
+  ).map(([sx, sy]) => {
+    const [ox, oy] = [sx + other.x, sy + other.y];
+    return { source: [sx, sy], target: [a * ox + b * oy + tx - own.x, c * ox + d * oy + ty - own.y] };
+  });
+}
+
+/**
  * Where an image of `ow` x `oh` pixels goes in the viewport of the current image (`cw` pixels wide = 1 viewport unit)
  * when `m` maps its pixels to the pixels of the current image. OpenSeadragon places an image by a rectangle and a rotation
  * about the rectangle's centre, so the map is reduced to scale, rotation and the image of the centre; a shear or an

@@ -852,6 +852,14 @@ try {
   const bw = boxNow.vector.x2 - boxNow.vector.x1;
   const regCrop = (await admin.evaluate(async ([id, set]) => (await (await fetch(`/api/v2/images?image_set=${set}&limit=50`)).json()).items.filter((i) => i.crop_source === id), [second.image, cropSet]))[0];
   check(regCrop && regCrop.image_set === cropSet && Math.abs(regCrop.width - bw / 2) <= 2 && regCrop.crop_x === Math.floor(boxNow.vector.x1 / 2 + 100), `the registered image is cropped at the mapped place into the same set (${regCrop?.width} x ${regCrop?.height} at ${regCrop?.crop_x}, ${regCrop?.crop_y})`);
+  // the crops keep the registration of their images: crop of the registered image -> crop of this one (and back)
+  const regs = await admin.evaluate(async ([a, b]) => ({
+    fwd: (await (await fetch(`/api/v2/registrations?source_image__in=${a}&target_image__in=${b}`)).json()).items,
+    back: (await (await fetch(`/api/v2/registrations?source_image__in=${b}&target_image__in=${a}`)).json()).items,
+  }), [regCrop.id, mine.id]);
+  const T = regs.fwd[0]?.transformation_matrix;
+  check(T && Math.abs(T.t_00 - 2) < 0.01 && Math.abs(T.t_02 - (2 * (regCrop.crop_x - 100) - mine.crop_x)) < 0.5 && Math.abs(T.t_12 - (2 * (regCrop.crop_y - 50) - mine.crop_y)) < 0.5, `the crops are registered with each other (${T && [T.t_00, T.t_02, T.t_12].map((v) => v.toFixed(1))})`);
+  check(regs.back.length === 1, "...in both directions");
   // the crop knows where it comes from: the top bar says so and leads back to the original
   const tab = await desktop.newPage();
   await tab.goto(`${base}/images/${mine.id}`);

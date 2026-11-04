@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { affineOf, invertAffine, mappedRegion, overlayPlacement, type Affine } from "./overlay";
+import { affineOf, invertAffine, cropRegistrationPoints, mappedRegion, overlayPlacement, type Affine } from "./overlay";
 
 describe("registration overlay", () => {
   it("reads the matrix and inverts it", () => {
@@ -47,5 +47,16 @@ describe("region of a registered image", () => {
 
   it("is null when the region lies outside the other image", () => {
     expect(mappedRegion([1, 0, 5000, 0, 1, 0], { x: 0, y: 0, w: 10, h: 10 }, 1000, 1000)).toBeNull();
+  });
+});
+
+describe("registration of two crops", () => {
+  it("moves the registration of the images to the origins of the crops", () => {
+    const m: Affine = [0.5, 0, 100, 0, 0.5, 50]; // pixels of the other image -> pixels of this one
+    const pts = cropRegistrationPoints(m, { x: 400, y: 200, w: 40, h: 20 }, { x: 290, y: 140 });
+    expect(pts).toHaveLength(4);
+    // (0, 0) of the other crop is (400, 200) in its image = (300, 150) in this image = (10, 10) in the crop of this one
+    expect(pts[0]).toEqual({ source: [0, 0], target: [10, 10] });
+    expect(pts[3]).toEqual({ source: [40, 20], target: [30, 20] });
   });
 });

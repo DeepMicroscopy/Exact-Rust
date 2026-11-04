@@ -3,7 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { Modal } from "./Modal";
 import { useRegisteredImages } from "../hooks/useRegisteredImages";
-import { invertAffine, mappedRegion } from "../viewer-core/overlay";
+import {
+  cropRegistrationPoints,
+  invertAffine,
+  mappedRegion,
+} from "../viewer-core/overlay";
 
 interface WritableSet {
   id: number;
@@ -133,23 +137,44 @@ export function CropDialog({
       for (const o of chosenOthers) {
         try {
           // frame 0: the frames of a registered image are not those of this one
-          await api(`/api/v2/images/${o.id}/crop`, {
-            json: { ...o.region, frame: 0, image_set: otherSet },
-          });
+          let id: number;
+          try {
+            id = (
+              await api<{ id: number }>(`/api/v2/images/${o.id}/crop`, {
+                json: { ...o.region, frame: 0, image_set: otherSet },
+              })
+            ).id;
+          } catch (e) {
+            // cropped there before: that image is registered all the same
+            const ex =
+              e instanceof ApiError && e.status === 409
+                ? e.body?.existing
+                : undefined;
+            if (typeof ex !== "number") throw e;
+            id = ex;
+          }
           made++;
+          // the crops keep the registration of their images: the crop of the registered image onto the crop of this one, and back
+          await api("/api/v2/registrations/manual", {
+            json: {
+              source_image: id,
+              target_image: img.id,
+              points: cropRegistrationPoints(o.map, o.region!, region),
+              inverse: true,
+            },
+          });
         } catch (e) {
-          if (e instanceof ApiError && e.status === 409)
-            made++; // cropped there before
-          else
-            failed.push(
-              `${o.name}: ${e instanceof Error ? e.message : String(e)}`,
-            );
+          failed.push(
+            `${o.name}: ${e instanceof Error ? e.message : String(e)}`,
+          );
         }
       }
       if (failed.length === 0) onDone(img.id, setId, made);
       else {
         setDone({ id: img.id, set: setId, extra: made });
-        setError(`The crop was made, but not for: ${failed.join("; ")}`);
+        setError(
+          `The crop was made, but not completely for: ${failed.join("; ")}`,
+        );
       }
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
