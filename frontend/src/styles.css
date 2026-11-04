@@ -782,3 +782,9 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .kb-legendbar { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8rem; color: var(--muted); }
 .kb-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; }
 .kb-tip { min-height: 1.4em; margin: 0; }
+
+/* the server log (administration) */
+.log-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.log-table td { vertical-align: top; padding: 4px 8px; }
+.log-message { word-break: break-word; white-space: pre-wrap; font-size: 0.85rem; }
+.log-table tr.error-row { background: rgba(192, 57, 43, 0.12); }

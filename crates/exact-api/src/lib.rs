@@ -13,6 +13,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
+pub mod errorlog;
 pub mod auth;
 pub mod cascade;
 pub mod compat;

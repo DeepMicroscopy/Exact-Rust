@@ -109,3 +109,8 @@ safe to delete too.
 Site admins have a pulse icon in the top bar: it shows a dot only while CPU, GPU, storage, temperature or the RAID is in alarm, the free
 space on hover and every check on click. What it measures, the one-time setup of the RAID script on the host, and troubleshooting are on
 its own page: [System health](system-health.html).
+
+## The server log in the browser
+
+*Administration → Log* (site admins) shows the warnings and errors of the server, newest first, as they also go to the console: slides that cannot be read (with the image number, the file and the reason, for example a VSI slide without its data folder), failed jobs, internal errors. The same message in a row is one line with a count. The list can be filtered (image number, file name, any text), limited to errors, refreshed by itself every 10 seconds, copied, downloaded as a text file and emptied. It is kept in memory (the last 2000 different messages) and starts empty after a restart of the server; the console or journal of the server keeps the complete history. API: `GET /api/v2/admin/log?level=error&q=&limit=`, `DELETE /api/v2/admin/log` (site admins only).
+

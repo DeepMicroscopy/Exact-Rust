@@ -16,6 +16,7 @@ pub mod move_image;
 pub mod passkeys;
 pub mod plugins;
 pub mod account;
+pub mod admin_log;
 pub mod preferences;
 pub mod processing;
 pub mod registration;
@@ -56,6 +57,7 @@ pub fn routes() -> Router<AppState> {
         .merge(welcome::routes())
         .merge(preferences::routes())
         .merge(account::routes())
+        .merge(admin_log::routes())
         .merge(invitations::routes())
         .merge(resources::routes())
         .merge(annotation_writes::routes())

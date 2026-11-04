@@ -294,7 +294,7 @@ fn slide_err(e: exact_wsi::WsiError) -> ApiError {
 /// [`slide_err`] with the cause an administrator can act on when the file system tells it: the file is gone, or a VSI / MRXS slide lacks
 /// the data folder that holds the pixels (the index file alone opens as a slide without scenes). The answer still begins with
 /// "The slide cannot be read", as before.
-fn slide_err_at(path: &str, e: exact_wsi::WsiError) -> ApiError {
+fn slide_err_at(image: i64, path: &str, e: exact_wsi::WsiError) -> ApiError {
     let file = std::path::Path::new(path);
     let ext = file
         .extension()
@@ -313,15 +313,19 @@ fn slide_err_at(path: &str, e: exact_wsi::WsiError) -> ApiError {
     } else {
         None
     };
+    // the log the site admins read says which image and which file
     match missing {
         Some(why) => {
-            tracing::warn!("slide error: {e} ({why})");
+            tracing::warn!("slide error, image {image} ({path}): {why}; reader said: {e}");
             ApiError::detail(
                 StatusCode::BAD_REQUEST,
                 format!("The slide cannot be read: {why}."),
             )
         }
-        None => slide_err(e),
+        None => {
+            tracing::warn!("slide error, image {image} ({path}): {e}");
+            ApiError::detail(StatusCode::BAD_REQUEST, "The slide cannot be read.")
+        }
     }
 }
 
@@ -411,7 +415,7 @@ async fn thumbnail(
         return Ok(browser_cached("image/png", b));
     }
     if st.thumb_failed.contains_key(&thumb_path) {
-        return Err(slide_err(exact_wsi::WsiError("failed before".into())));
+        return Err(slide_err_at(img.id, &path.to_string_lossy(), exact_wsi::WsiError("thumbnail failed before".into())));
     }
     // one rendering per thumbnail at a time, and a limited number of renderings altogether
     let flight = {
@@ -434,6 +438,7 @@ async fn thumbnail(
         .await
         .map_err(|e| ApiError::detail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let (slides, tp) = (st.clone(), thumb_path.clone());
+    let file_for_log = path.to_string_lossy().into_owned();
     let result = tokio::task::spawn_blocking(move || -> exact_wsi::Result<Vec<u8>> {
         if let Ok(b) = std::fs::read(&tp) {
             return Ok(b); // another request finished it while this one waited
@@ -464,7 +469,7 @@ async fn thumbnail(
         Ok(bytes) => Ok(browser_cached("image/png", bytes)),
         Err(e) => {
             st.thumb_failed.insert(thumb_path, ());
-            Err(slide_err(e))
+            Err(slide_err_at(img.id, &file_for_log, e))
         }
     }
 }
@@ -624,7 +629,7 @@ async fn metadata(
     })
     .await
     .map_err(blocking_err)?
-    .map_err(|e| slide_err_at(&at, e))?;
+    .map_err(|e| slide_err_at(img.id, &at, e))?;
     Ok(Json(out))
 }
 
@@ -693,7 +698,7 @@ pub(crate) async fn get_dz(
     })
     .await
     .map_err(blocking_err)?
-    .map_err(|e| slide_err_at(&at, e))
+    .map_err(|e| slide_err_at(img.id, &at, e))
     .map(|(dz, measured, path)| {
         s.slides.dz_put(&path, plane, dz.clone());
         (dz, measured)
@@ -1258,7 +1263,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("exact-vsi-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let msg = |p: &std::path::Path| {
-            let e = super::slide_err_at(&p.to_string_lossy(), exact_wsi::WsiError("x".into()));
+            let e = super::slide_err_at(1, &p.to_string_lossy(), exact_wsi::WsiError("x".into()));
             e.body["detail"].as_str().unwrap_or_default().to_string()
         };
         let vsi = dir.join("slide-1.vsi");

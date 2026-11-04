@@ -3,6 +3,7 @@ import { SearchInput } from "../components/SearchInput";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { LogTab } from "../components/LogAdmin";
 import { PluginsTab } from "../components/PluginsAdmin";
 import { ProductsTab, type ProductPerms } from "../components/ProductsAdmin";
 import { Modal } from "../components/Modal";
@@ -60,7 +61,7 @@ export function useAdminMe() {
 /** Administration: the teams one administers (members, invitations) and, for site admins, all users. */
 export function AdminPage() {
   const me = useAdminMe();
-  const [tab, setTab] = useState<"teams" | "users" | "products" | "plugins">("teams");
+  const [tab, setTab] = useState<"teams" | "users" | "products" | "plugins" | "log">("teams");
   if (me.isLoading) return <p className="muted">Loading…</p>;
   const site = !!me.data?.is_site_admin;
   const mine = me.data?.admin_team_ids ?? [];
@@ -87,12 +88,17 @@ export function AdminPage() {
           </button>
         )}
         {site && (
+          <button role="tab" aria-selected={tab === "log"} className={tab === "log" ? "active" : ""} onClick={() => setTab("log")} data-testid="tab-log">
+            Log
+          </button>
+        )}
+        {site && (
           <button role="tab" aria-selected={tab === "users"} className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>
             Users
           </button>
         )}
       </div>
-      {tab === "teams" ? <TeamsTab me={me.data} /> : tab === "products" ? <ProductsTab perms={perms} /> : tab === "plugins" ? <PluginsTab /> : <UsersTab me={me.data} />}
+      {tab === "teams" ? <TeamsTab me={me.data} /> : tab === "products" ? <ProductsTab perms={perms} /> : tab === "plugins" ? <PluginsTab /> : tab === "log" ? <LogTab /> : <UsersTab me={me.data} />}
     </section>
   );
 }
