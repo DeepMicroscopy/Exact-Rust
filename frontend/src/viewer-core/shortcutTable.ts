@@ -41,6 +41,8 @@ export const SHORTCUTS: Shortcut[] = [
   { scope: "viewer", keys: "Y", text: "Show / hide the annotations" },
   { scope: "viewer", keys: "O", text: "Overlay image on / off (when one is chosen)" },
   { scope: "viewer", keys: "H", text: "Hide / show the overview map" },
+  { scope: "viewer", keys: "W A S D", text: "Screening mode: step up / left / down / right and count the window you leave as screened (they replace the tool keys while the panel is open)" },
+  { scope: "viewer", keys: "I J K L", text: "Screening mode: step up / left / down / right without counting" },
   { scope: "viewer", keys: "Ctrl/Cmd + Z, Ctrl/Cmd + Y (or + Shift + Z)", text: "Undo / redo" },
   { scope: "viewer", keys: "Ctrl/Cmd + A / C / V", text: "Select all / copy / paste annotations" },
 

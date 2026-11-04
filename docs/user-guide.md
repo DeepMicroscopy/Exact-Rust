@@ -238,3 +238,12 @@ Press **?** on any page (or the **?** button in the top bar) for the list of key
 
 **Manual registration.** The first point of a pair keeps a crosshair across its image until the second point is set, and the point is marked by a small dot with its number beside it, so that the spot stays visible.
 
+## Screenshot and screening mode
+
+- **Screenshot:** the camera button in the top bar of the viewer saves the current view as a PNG (`<image>_screenshot.png`), with the annotations, masks and the brightness / gamma settings as they are on the screen.
+- **Screening:** the **Screening** button opens a small window. Choose the size of the window to look at (it starts with what is on the screen, or 2000 × 1200 px when the whole slide is in view) and the **overlap** of neighbouring windows (80 % unless you change it), then *Start screening*. A map shows the slide with the screened windows in green and the window you are at in magenta; click the map to go to a window. **W A S D** step up / left / down / right and count the window you leave as screened, **I J K L** step without counting (as in the old EXACT; the arrows on the window do the same for touch screens). The progress is kept for your account and the image, so you can continue later. At most 40,000 windows per slide (the window shows the count while you choose): use a larger window or less overlap for very large slides. While the window is open, those letters step through the slide instead of selecting tools.
+
+## No accidental selection
+
+On touch screens the interface text cannot be selected by a long press or drag any more, and in the viewer it never can; text fields still work as usual. Scrolling beyond the end of a list (for example the image finder) no longer reloads the page.
+

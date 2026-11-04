@@ -235,6 +235,55 @@ try {
     await page.waitForTimeout(1500);
   }
 
+  // screenshot of the view, screening mode, no text selection
+  {
+    check((await page.evaluate(() => getComputedStyle(document.querySelector(".viewer-shell")).userSelect)) === "none", "the viewer does not let the browser select text");
+    const [shot] = await Promise.all([page.waitForEvent("download"), page.locator('[data-testid="screenshot"]').click()]);
+    const file = await shot.path();
+    const png = fs.readFileSync(file);
+    check(png.length > 1000 && png.subarray(1, 4).toString() === "PNG" && /_screenshot\.png$/.test(shot.suggestedFilename()), `the camera button downloads the view as a PNG (${shot.suggestedFilename()}, ${png.length} bytes)`);
+
+    await page.locator('[data-testid="screening-toggle"]').click();
+    await page.waitForSelector('[data-testid="screening-panel"]');
+    await page.waitForSelector('[data-testid="screening-start"], [data-testid="screening-map"]');
+    if (await page.locator('[data-testid="screening-map"]').count()) {
+      // left from an earlier run: its settings are shown
+      await page.locator('[data-testid="screening-panel"] .btn', { hasText: "Settings" }).click();
+      await page.waitForSelector('[data-testid="screening-start"]');
+    } else check((await page.locator('[data-testid="screening-overlap"]').inputValue()) === "80", "the screening overlap is 80 % unless changed");
+    const dims = await page.evaluate(() => { const i = window.__viewer.world.getItemAt(0).getContentSize(); return [i.x, i.y]; });
+    await page.locator('[data-testid="screening-w"]').fill(String(Math.max(16, Math.round(dims[0] / 2))));
+    await page.locator('[data-testid="screening-h"]').fill(String(Math.max(16, Math.round(dims[1] / 2))));
+    await page.locator('[data-testid="screening-overlap"]').fill("50");
+    const count = Number(/^(\d[\d,]*) windows/.exec(await page.locator('[data-testid="screening-count"]').innerText())?.[1].replace(/,/g, ""));
+    check(count >= 4 && count <= 25, `the window count follows size and overlap (${count})`);
+    await page.locator('[data-testid="screening-start"]').click();
+    await page.waitForSelector('[data-testid="screening-map"]', { timeout: 8000 }).catch(async (e) => { throw new Error("screening did not start: " + (await page.locator('[data-testid="screening-panel"]').innerText())); });
+    const prog0 = await page.locator('[data-testid="screening-progress"]').innerText();
+    const centre = () => page.evaluate(() => { const c = window.__viewer.viewport.getCenter(); return [c.x, c.y]; });
+    await page.waitForTimeout(900);
+    const c0 = await centre();
+    await page.locator("body").click({ position: { x: 5, y: 5 } }).catch(() => undefined);
+    await page.keyboard.press("d");
+    await page.waitForTimeout(900);
+    const c1 = await centre();
+    check(c1[0] > c0[0] + 1e-4, "D steps to the window on the right");
+    const prog1 = await page.locator('[data-testid="screening-progress"]').innerText();
+    check(prog1 !== prog0, `...and counts the window that was left as screened (${prog0} -> ${prog1})`);
+    await page.keyboard.press("j");
+    await page.waitForTimeout(900);
+    const c2 = await centre();
+    check(c2[0] < c1[0] - 1e-4 && (await page.locator('[data-testid="screening-progress"]').innerText()) === prog1, "J steps back without counting");
+    await page.keyboard.press("s");
+    await page.waitForTimeout(300);
+    check((await page.locator('[data-testid="screening-panel"]').count()) === 1, "the letters step through the slide while the panel is open");
+    await page.locator('[data-testid="screening-toggle"]').click();
+    check((await page.locator('[data-testid="screening-panel"]').count()) === 0, "the panel closes");
+    await page.waitForTimeout(800); // closing stores the progress
+    const stored = await page.evaluate(async () => { const r = await (await fetch(location.pathname.replace("/images/", "/api/v2/images/") + "/screening")).json(); return r ? [{ cur: r.current_index, screened: Object.values(r.screening_tiles).filter((t) => t.Screened).length }] : []; });
+    check(stored.length === 1 && stored[0].screened >= 1, `the progress is stored with the account (${JSON.stringify(stored)})`);
+  }
+
   // image adjustments: a movable window behind an icon at the right of the top bar
   const tileFilter = () => page.evaluate(() => window.__viewer.drawer.canvas.style.filter);
   const overlayFilters = () => page.evaluate(() => [...document.querySelectorAll(".openseadragon-canvas canvas")].filter((c) => c !== window.__viewer.drawer.canvas).map((c) => c.style.filter).join(""));

@@ -22,6 +22,8 @@ import { SegmentationTool } from "../viewer-core/segmentationTool";
 import { clipboard, pasteVector } from "../viewer-core/clipboard";
 import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
 import { loadTileSource } from "../viewer-core/tileSource";
+import { ScreeningPanel } from "../components/ScreeningPanel";
+import { takeScreenshot } from "../viewer-core/screenshot";
 import { ImageFinder } from "../components/ImageFinder";
 import { SHOW_HELP } from "../components/GlobalShortcuts";
 import { OVERLAY_TOGGLE, OverlayControl } from "../components/OverlayControl";
@@ -217,6 +219,7 @@ export function ViewerPage() {
       /* not remembered */
     }
   }, []);
+  const [screening, setScreening] = useState(false);
   const [finder, setFinder] = useState(false);
   const finderOpen = useRef(false);
   finderOpen.current = finder;
@@ -1061,6 +1064,21 @@ export function ViewerPage() {
         >
           ▣
         </button>
+        <button
+          className="btn icon-btn"
+          aria-label="Screenshot"
+          onClick={() => viewerRef.current && void takeScreenshot(viewerRef.current, image.data?.name ?? "image")}
+          title="Save the current view as a picture (PNG), with the annotations"
+          data-testid="screenshot"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 8h3l1.6-2.4h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+            <circle cx="12" cy="13.5" r="3.6" />
+          </svg>
+        </button>
+        <button className={`btn ${screening ? "on" : ""}`} aria-pressed={screening} onClick={() => setScreening((s) => !s)} title="Screening mode: step through the slide window by window with overlap (W A S D, I J K L)" data-testid="screening-toggle">
+          Screening
+        </button>
         <button className="btn icon-btn" onClick={() => window.dispatchEvent(new Event(SHOW_HELP))} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" data-testid="help-button">
           ?
         </button>
@@ -1070,6 +1088,7 @@ export function ViewerPage() {
         </button>
       </header>
       <GammaFilter gamma={adjust.gamma} />
+      {screening && image.data && <ScreeningPanel key={id} viewerRef={viewerRef} imageId={id} width={image.data.width} height={image.data.height} onClose={() => setScreening(false)} />}
       {finder && imageSetId != null && (
         <ImageFinder
           setId={imageSetId}

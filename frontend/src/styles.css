@@ -737,3 +737,22 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .finder-thumb { width: 56px; height: 38px; flex: none; overflow: hidden; border-radius: 4px; background: #0e0e14; }
 .finder-thumb .thumb { width: 100%; height: 100%; object-fit: cover; }
 .finder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* screening mode */
+.screening { display: flex; flex-direction: column; gap: 8px; width: 264px; }
+.screening-map { width: 100%; height: auto; border-radius: 6px; cursor: pointer; touch-action: none; background: #1b1b24; }
+.screening-progress { margin: 0; }
+.screening-pad { display: grid; grid-template-areas: ". u ." "l . r" ". d ."; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 40px); gap: 4px; justify-content: center; }
+.screening .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.screening input[type="number"] { width: 5.5em; }
+.screening .col { display: flex; flex-direction: column; gap: 8px; }
+
+/* no accidental text selection (a long press or a drag on a tablet used to select blocks of the interface); fields and what is made to be copied stay selectable */
+body { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: contain; }
+.viewer-shell, .viewer-shell *, .topbar, .tile, .card, button, .side-item, .modal header, .finder-item, .tabs { -webkit-user-select: none; user-select: none; }
+@media (pointer: coarse) { body, body * { -webkit-user-select: none; user-select: none; } }
+input, textarea, select, [contenteditable="true"], .selectable, .secret, .secret * { -webkit-user-select: text !important; user-select: text !important; }
+img { -webkit-user-drag: none; }
+/* the page behind a dialog or the end of a list must not take over a scroll (on an iPad it reloaded the page) */
+.modal-back, .modal, .modal-body, .finder-list, .dd-list, .ctx { overscroll-behavior: contain; }
+body:has(.viewer-shell) { overscroll-behavior: none; }
