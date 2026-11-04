@@ -847,6 +847,9 @@ try {
   await admin.locator(".modal select").first().selectOption({ label: "＋ New image set…" });
   await admin.fill('.modal input[maxlength="256"]', `e2e-crops-${Date.now()}`);
   await admin.locator(".modal .btn.primary").click();
+  await admin.waitForSelector('[data-testid="crop-steps"]');
+  const stepsText = await admin.locator('[data-testid="crop-steps"]').innerText();
+  check(/Create the image set/.test(stepsText) && /Crop this image/.test(stepsText) && /Register the crop of/.test(stepsText) && (await admin.locator('[data-testid="crop-steps"] li').count()) >= 5, `the dialog lists every step while it works (${stepsText.replace(/\s+/g, " ").slice(0, 400)})`);
   await admin.waitForSelector(".toast.ok");
   const crops = await admin.evaluate(async (w) => (await (await fetch(`/api/v2/images?name__contains=_w${w}_h&limit=200`)).json()).items, boxNow.vector.x2 - boxNow.vector.x1);
   const mine = crops.find((c) => c.crop_source === IMAGE && c.crop_x === boxNow.vector.x1 && c.crop_y === boxNow.vector.y1);

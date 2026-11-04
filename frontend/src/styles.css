@@ -825,3 +825,10 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .crop-others li { margin-bottom: 6px; }
 .crop-target { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0 26px; }
 .crop-target select, .crop-target input { min-width: 0; max-width: 100%; flex: 1 1 180px; }
+.crop-steps { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.crop-steps li { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.crop-steps li .mark { width: 18px; display: inline-flex; justify-content: center; flex: none; }
+.crop-steps li.run { color: var(--text); }
+.crop-steps li.ok { color: var(--text); }
+.crop-steps li.ok .mark { color: #5ccf8a; }
+.crop-steps li.fail { color: #ff9a8d; }

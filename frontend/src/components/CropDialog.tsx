@@ -32,6 +32,14 @@ interface Props {
 const NEW = "new";
 const SAME = "same";
 
+interface Step {
+  key: string;
+  label: string;
+  state: "wait" | "run" | "ok" | "fail";
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /** Asks where the crop should go (an existing image set or a new one), then calls the server's crop. */
 export function CropDialog({
   imageId,
@@ -89,6 +97,25 @@ export function CropDialog({
     null,
   );
 
+  // the steps of a run, shown as a checklist while it goes on
+  const [steps, setSteps] = useState<Step[]>([]);
+  const mark = (key: string, state: Step["state"]) =>
+    setSteps((all) =>
+      all.map((st) => (st.key === key ? { ...st, state } : st)),
+    );
+  /** runs one step of the checklist: running, then done or failed (and the failure goes on) */
+  const doStep = async <T,>(key: string, fn: () => Promise<T>): Promise<T> => {
+    mark(key, "run");
+    try {
+      const out = await fn();
+      mark(key, "ok");
+      return out;
+    } catch (e) {
+      mark(key, "fail");
+      throw e;
+    }
+  };
+
   const items = sets.data?.items ?? [];
   const choice = target || (items[0] ? String(items[0].id) : NEW);
   const size =
@@ -97,95 +124,126 @@ export function CropDialog({
       : "";
 
   const run = async () => {
+    if (choice === NEW && !name.trim())
+      return setError("Give the new image set a name.");
+    if (
+      chosenOthers.some((o) => targetOf(o.id) === NEW && !nameOf(o.id).trim())
+    )
+      return setError(
+        "Give each new image set for the registered images a name.",
+      );
     setBusy(true);
     setError(null);
-    try {
-      let setId = Number(choice);
-      if (choice === NEW) {
-        if (!name.trim()) throw new Error("Give the new image set a name.");
-        const created = await api<{ id: number }>("/api/v2/image-sets", {
-          json: {
-            name: name.trim(),
-            team: team ?? teams.data?.items[0]?.id,
-            products: source.products,
-          },
-        });
-        setId = created.id;
-      }
-      if (
-        chosenOthers.some((o) => targetOf(o.id) === NEW && !nameOf(o.id).trim())
-      )
-        throw new Error(
-          "Give each new image set for the registered images a name.",
-        );
-      const img = await api<{ id: number }>(`/api/v2/images/${imageId}/crop`, {
-        json: { ...region, frame, image_set: setId },
+    setExisting(null);
+    const teamId = team ?? teams.data?.items[0]?.id;
+    const newSet = (nm: string) =>
+      api<{ id: number }>("/api/v2/image-sets", {
+        json: { name: nm, team: teamId, products: source.products },
+      }).then((c) => c.id);
+    // the plan: every step is listed before the first one starts
+    const plan: Step[] = [];
+    if (choice === NEW)
+      plan.push({
+        key: "set",
+        label: `Create the image set “${name.trim()}”`,
+        state: "wait",
       });
+    plan.push({ key: "crop", label: "Crop this image", state: "wait" });
+    const seenNew = new Set<string>();
+    for (const o of chosenOthers) {
+      const nm = nameOf(o.id).trim();
+      if (targetOf(o.id) === NEW && !seenNew.has(nm)) {
+        seenNew.add(nm);
+        plan.push({
+          key: `set:${nm}`,
+          label: `Create the image set “${nm}”`,
+          state: "wait",
+        });
+      }
+      plan.push({
+        key: `crop:${o.id}`,
+        label: `Crop ${o.name}`,
+        state: "wait",
+      });
+      plan.push({
+        key: `reg:${o.id}`,
+        label: `Register the crop of ${o.name} onto this crop`,
+        state: "wait",
+      });
+    }
+    setSteps(plan);
+    try {
+      const setId =
+        choice === NEW
+          ? await doStep("set", () => newSet(name.trim()))
+          : Number(choice);
+      const img = await doStep("crop", () =>
+        api<{ id: number }>(`/api/v2/images/${imageId}/crop`, {
+          json: { ...region, frame, image_set: setId },
+        }),
+      );
       if (chosenOthers.length === 0) {
+        await sleep(500);
         onDone(img.id, setId);
         return;
       }
       // one new image set per name: registered images that choose the same new name share it
       const created = new Map<string, number>();
-      const setFor = async (o: (typeof chosenOthers)[number]) => {
-        const t = targetOf(o.id);
-        if (t === SAME) return setId;
-        if (t !== NEW) return Number(t);
-        const nm = nameOf(o.id).trim();
-        let id = created.get(nm);
-        if (id == null) {
-          id = (
-            await api<{ id: number }>("/api/v2/image-sets", {
-              json: {
-                name: nm,
-                team: team ?? teams.data?.items[0]?.id,
-                products: source.products,
-              },
-            })
-          ).id;
-          created.set(nm, id);
-        }
-        return id;
-      };
       const failed: string[] = [];
       let made = 0;
       for (const o of chosenOthers) {
         try {
+          const t = targetOf(o.id);
+          const nm = nameOf(o.id).trim();
+          let otherSet = setId;
+          if (t === NEW) {
+            let id = created.get(nm);
+            if (id == null) {
+              id = await doStep(`set:${nm}`, () => newSet(nm));
+              created.set(nm, id);
+            }
+            otherSet = id;
+          } else if (t !== SAME) otherSet = Number(t);
           // frame 0: the frames of a registered image are not those of this one
-          let id: number;
-          try {
-            id = (
-              await api<{ id: number }>(`/api/v2/images/${o.id}/crop`, {
-                json: { ...o.region, frame: 0, image_set: await setFor(o) },
-              })
-            ).id;
-          } catch (e) {
-            // cropped there before: that image is registered all the same
-            const ex =
-              e instanceof ApiError && e.status === 409
-                ? e.body?.existing
-                : undefined;
-            if (typeof ex !== "number") throw e;
-            id = ex;
-          }
+          const id = await doStep(`crop:${o.id}`, async () => {
+            try {
+              return (
+                await api<{ id: number }>(`/api/v2/images/${o.id}/crop`, {
+                  json: { ...o.region, frame: 0, image_set: otherSet },
+                })
+              ).id;
+            } catch (e) {
+              // cropped there before: that image is registered all the same
+              const ex =
+                e instanceof ApiError && e.status === 409
+                  ? e.body?.existing
+                  : undefined;
+              if (typeof ex !== "number") throw e;
+              return ex;
+            }
+          });
           made++;
           // the crops keep the registration of their images: the crop of the registered image onto the crop of this one, and back
-          await api("/api/v2/registrations/manual", {
-            json: {
-              source_image: id,
-              target_image: img.id,
-              points: cropRegistrationPoints(o.map, o.region!, region),
-              inverse: true,
-            },
-          });
+          await doStep(`reg:${o.id}`, () =>
+            api("/api/v2/registrations/manual", {
+              json: {
+                source_image: id,
+                target_image: img.id,
+                points: cropRegistrationPoints(o.map, o.region!, region),
+                inverse: true,
+              },
+            }),
+          );
         } catch (e) {
           failed.push(
             `${o.name}: ${e instanceof Error ? e.message : String(e)}`,
           );
         }
       }
-      if (failed.length === 0) onDone(img.id, setId, made);
-      else {
+      if (failed.length === 0) {
+        await sleep(500);
+        onDone(img.id, setId, made);
+      } else {
         setDone({ id: img.id, set: setId, extra: made });
         setError(
           `The crop was made, but not completely for: ${failed.join("; ")}`,
@@ -213,145 +271,168 @@ export function CropDialog({
         Save the region of this annotation, {region.w} × {region.h} px{size}, as
         a new image{frame > 0 ? ` (frame ${frame + 1})` : ""}.
       </p>
-      <label className="field">
-        <span>Target image set</span>
-        <select
-          value={choice}
-          onChange={(e) => setTarget(e.target.value)}
-          disabled={busy}
-        >
-          {[...byTeam.entries()].map(([t, list]) => (
-            <optgroup key={t} label={t}>
-              {list.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-          <option value={NEW}>＋ New image set…</option>
-        </select>
-      </label>
-      {choice === NEW && (
+      {steps.length === 0 ? (
         <>
           <label className="field">
-            <span>Name of the new image set</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={busy}
-              maxLength={256}
-            />
-          </label>
-          <label className="field">
-            <span>Team</span>
+            <span>Target image set</span>
             <select
-              value={team ?? ""}
-              onChange={(e) => setTeam(Number(e.target.value))}
+              value={choice}
+              onChange={(e) => setTarget(e.target.value)}
               disabled={busy}
             >
-              {(teams.data?.items ?? []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
+              {[...byTeam.entries()].map(([t, list]) => (
+                <optgroup key={t} label={t}>
+                  {list.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
+              <option value={NEW}>＋ New image set…</option>
             </select>
           </label>
-          <p className="muted small">
-            The new image set gets the annotation types (products) of this
-            image's set.
-          </p>
-        </>
-      )}
-      {others.length > 0 && !done && (
-        <div className="crop-others" data-testid="crop-others">
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={withOthers}
-              onChange={(e) => setWithOthers(e.target.checked)}
-              disabled={busy}
-              data-testid="crop-with-registered"
-            />
-            Also crop the{" "}
-            {others.length === 1 ? "image" : `${others.length} images`}{" "}
-            registered with this one, at the same place
-          </label>
-          {withOthers && (
+          {choice === NEW && (
             <>
-              <ul className="plain-list">
-                {others.map((o) => (
-                  <li key={o.id}>
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={!skip.has(o.id)}
-                        disabled={busy}
-                        onChange={(e) =>
-                          setSkip((sk) => {
-                            const n = new Set(sk);
-                            if (e.target.checked) n.delete(o.id);
-                            else n.add(o.id);
-                            return n;
-                          })
-                        }
-                      />
-                      {o.name}{" "}
-                      <span className="muted small">
-                        ({o.region?.w} × {o.region?.h} px)
-                      </span>
-                    </label>
-                    {!skip.has(o.id) && (
-                      <div className="crop-target">
-                        <select
-                          value={targetOf(o.id)}
-                          onChange={(e) =>
-                            setTargets((t) => ({
-                              ...t,
-                              [o.id]: e.target.value,
-                            }))
-                          }
-                          disabled={busy}
-                          aria-label={`Image set for the crop of ${o.name}`}
-                          data-testid={`crop-target-${o.id}`}
-                        >
-                          <option value={SAME}>
-                            Image set: the same as above
-                          </option>
-                          {[...byTeam.entries()].map(([t, list]) => (
-                            <optgroup key={t} label={t}>
-                              {list.map((st) => (
-                                <option key={st.id} value={st.id}>
-                                  {st.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                          <option value={NEW}>＋ New image set…</option>
-                        </select>
-                        {targetOf(o.id) === NEW && (
-                          <input
-                            value={nameOf(o.id)}
-                            onChange={(e) =>
-                              setNewNames((n) => ({
-                                ...n,
-                                [o.id]: e.target.value,
-                              }))
-                            }
-                            disabled={busy}
-                            maxLength={256}
-                            aria-label={`Name of the new image set for ${o.name}`}
-                            placeholder="Name of the new image set"
-                          />
-                        )}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <label className="field">
+                <span>Name of the new image set</span>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={busy}
+                  maxLength={256}
+                />
+              </label>
+              <label className="field">
+                <span>Team</span>
+                <select
+                  value={team ?? ""}
+                  onChange={(e) => setTeam(Number(e.target.value))}
+                  disabled={busy}
+                >
+                  {(teams.data?.items ?? []).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted small">
+                The new image set gets the annotation types (products) of this
+                image's set.
+              </p>
             </>
           )}
-        </div>
+          {others.length > 0 && !done && (
+            <div className="crop-others" data-testid="crop-others">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={withOthers}
+                  onChange={(e) => setWithOthers(e.target.checked)}
+                  disabled={busy}
+                  data-testid="crop-with-registered"
+                />
+                Also crop the{" "}
+                {others.length === 1 ? "image" : `${others.length} images`}{" "}
+                registered with this one, at the same place
+              </label>
+              {withOthers && (
+                <>
+                  <ul className="plain-list">
+                    {others.map((o) => (
+                      <li key={o.id}>
+                        <label className="check">
+                          <input
+                            type="checkbox"
+                            checked={!skip.has(o.id)}
+                            disabled={busy}
+                            onChange={(e) =>
+                              setSkip((sk) => {
+                                const n = new Set(sk);
+                                if (e.target.checked) n.delete(o.id);
+                                else n.add(o.id);
+                                return n;
+                              })
+                            }
+                          />
+                          {o.name}{" "}
+                          <span className="muted small">
+                            ({o.region?.w} × {o.region?.h} px)
+                          </span>
+                        </label>
+                        {!skip.has(o.id) && (
+                          <div className="crop-target">
+                            <select
+                              value={targetOf(o.id)}
+                              onChange={(e) =>
+                                setTargets((t) => ({
+                                  ...t,
+                                  [o.id]: e.target.value,
+                                }))
+                              }
+                              disabled={busy}
+                              aria-label={`Image set for the crop of ${o.name}`}
+                              data-testid={`crop-target-${o.id}`}
+                            >
+                              <option value={SAME}>
+                                Image set: the same as above
+                              </option>
+                              {[...byTeam.entries()].map(([t, list]) => (
+                                <optgroup key={t} label={t}>
+                                  {list.map((st) => (
+                                    <option key={st.id} value={st.id}>
+                                      {st.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                              <option value={NEW}>＋ New image set…</option>
+                            </select>
+                            {targetOf(o.id) === NEW && (
+                              <input
+                                value={nameOf(o.id)}
+                                onChange={(e) =>
+                                  setNewNames((n) => ({
+                                    ...n,
+                                    [o.id]: e.target.value,
+                                  }))
+                                }
+                                disabled={busy}
+                                maxLength={256}
+                                aria-label={`Name of the new image set for ${o.name}`}
+                                placeholder="Name of the new image set"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <ol className="crop-steps" data-testid="crop-steps" aria-live="polite">
+          {steps.map((st) => (
+            <li key={st.key} className={st.state} data-state={st.state}>
+              <span className="mark" aria-hidden="true">
+                {st.state === "run" ? (
+                  <span className="spinner" />
+                ) : st.state === "ok" ? (
+                  "✓"
+                ) : st.state === "fail" ? (
+                  "✗"
+                ) : (
+                  "○"
+                )}
+              </span>
+              {st.label}
+            </li>
+          ))}
+        </ol>
       )}
       {error && (
         <p className="error">
@@ -379,18 +460,32 @@ export function CropDialog({
             <button className="btn ghost" onClick={onClose} disabled={busy}>
               Cancel
             </button>
-            <button
-              className="btn primary"
-              onClick={() => void run()}
-              disabled={busy || sets.isLoading}
-              data-testid="crop-run"
-            >
-              {busy
-                ? "Cropping…"
-                : chosenOthers.length
-                  ? `Crop (${chosenOthers.length + 1} images)`
-                  : "Crop"}
-            </button>
+            {steps.length > 0 && !busy && (
+              <button
+                className="btn"
+                onClick={() => {
+                  setSteps([]);
+                  setError(null);
+                  setExisting(null);
+                }}
+              >
+                Back
+              </button>
+            )}
+            {(steps.length === 0 || busy) && (
+              <button
+                className="btn primary"
+                onClick={() => void run()}
+                disabled={busy || sets.isLoading}
+                data-testid="crop-run"
+              >
+                {busy
+                  ? "Cropping…"
+                  : chosenOthers.length
+                    ? `Crop (${chosenOthers.length + 1} images)`
+                    : "Crop"}
+              </button>
+            )}
           </>
         )}
       </div>
