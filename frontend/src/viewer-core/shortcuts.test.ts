@@ -62,4 +62,16 @@ describe("shortcuts of the old UI", () => {
     expect(key("v", { ctrlKey: true })).toEqual({ type: "paste" });
     expect(key("c")).toEqual({ type: "toggleDrawing" }); // plain C is still the draw toggle
   });
+
+  it("O and H switch the overlay and the overview", () => {
+    expect(key("o")).toEqual({ type: "overlay" });
+    expect(key("h")).toEqual({ type: "overview" });
+  });
+
+  it("the brush size is on , and . by position, so that English and German keyboards agree", () => {
+    expect(key(",", { code: "Comma" })).toEqual({ type: "brushSize", dir: -1 });
+    expect(key(".", { code: "Period" })).toEqual({ type: "brushSize", dir: 1 });
+    expect(key(";", { code: "Comma", shiftKey: true })).toBeNull(); // Shift + , is ";" on both
+    expect(key("[", { code: "BracketLeft" })).toBeNull();
+  });
 });

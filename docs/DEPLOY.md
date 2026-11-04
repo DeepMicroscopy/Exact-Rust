@@ -122,7 +122,7 @@ What the server does about it:
   `SLIDEIO_WORKERS`, default 4), a thumbnail asked for twice at once is rendered once, a file that cannot be read is not tried again for five minutes,
   and a thumbnail does not open a pool of handles or push the slides being viewed out of the cache;
 * a rendered thumbnail is a small file in `EXACT_CACHE_DIR/thumbnails` and a browser keeps it: only the first look is slow;
-* the home page draws 48 image sets at first ("Show more" adds more).
+* the home page draws 48 image sets at first (scrolling to the end of the list adds more).
 
 Render the covers ahead of the users, a few at a time (nights are best; Ctrl+C stops, what is done stays done):
 ```

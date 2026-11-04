@@ -23,12 +23,30 @@ interface Candidate extends Other {
  * The images registered with the current one (in either direction), one of which can be shown on top of it. Renders
  * nothing when there is no registration. Mount it with `key={imageId}` so that the choice does not carry over.
  */
+/** Sent by the O key: the overlay image on / off. */
+export const OVERLAY_TOGGLE = "exact:overlay-toggle";
+
 export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: MutableRefObject<OpenSeadragon.Viewer | null>; imageId: number; width: number }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [opacity, setOpacity] = useState(0.5);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const overlay = useRef<RegistrationOverlay | null>(null);
+  const lastOpacity = useRef(0.5);
+  const live = useRef({ picked, opacity });
+  live.current = { picked, opacity };
+  useEffect(() => {
+    const toggle = () => {
+      const { picked: p, opacity: o } = live.current;
+      if (p == null) return;
+      if (o > 0) {
+        lastOpacity.current = o;
+        setOpacity(0);
+      } else setOpacity(lastOpacity.current || 0.5);
+    };
+    window.addEventListener(OVERLAY_TOGGLE, toggle);
+    return () => window.removeEventListener(OVERLAY_TOGGLE, toggle);
+  }, []);
 
   const regs = useQuery({
     queryKey: ["overlay-registrations", imageId],
@@ -80,7 +98,7 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
       <label className="muted small" htmlFor="overlay-pick">
         Overlay
       </label>
-      <select id="overlay-pick" value={picked ?? ""} onChange={(e) => setPicked(e.target.value ? Number(e.target.value) : null)} title="Show a registered image on top of this one">
+      <select id="overlay-pick" value={picked ?? ""} onChange={(e) => setPicked(e.target.value ? Number(e.target.value) : null)} title="Show a registered image on top of this one (O switches it on and off)">
         <option value="">none</option>
         {candidates.map((c) => (
           <option key={c.id} value={c.id}>

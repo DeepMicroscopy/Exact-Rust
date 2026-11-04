@@ -219,6 +219,11 @@ try {
   check((await page.locator('[data-testid="seg3d-mode"]').innerText()) === "+", "...and the button shows + again when Shift is let go");
   await page.keyboard.press("Control+z");
   await waitFor(async () => Math.abs((await volumeMm3()) - v1) < 1, "Ctrl+Z brings it back");
+  // Space taps between adding and subtracting
+  await page.keyboard.press("Space");
+  check((await page.locator('[data-testid="seg3d-mode"]').innerText()) === "−", "a tap of Space switches to subtracting");
+  await page.keyboard.press("Space");
+  check((await page.locator('[data-testid="seg3d-mode"]').innerText()) === "+", "...and another tap switches back");
   await page.mouse.move(...at(0.5, 0.5));
   await page.keyboard.down("Alt");
   await page.mouse.wheel(0, 100);

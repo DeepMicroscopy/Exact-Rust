@@ -29,7 +29,17 @@ export function SearchInput({ history, value, onChange, ...rest }: Omit<InputHTM
   };
   return (
     <>
-      <input {...rest} list={listId} autoComplete="off" value={value} onChange={(e) => onChange(e.target.value)} onBlur={remember} onKeyDown={(e) => e.key === "Enter" && remember()} />
+      <input {...rest} list={listId} autoComplete="off" value={value} onChange={(e) => onChange(e.target.value)} onBlur={remember} onKeyDown={(e) => {
+          if (e.key === "Enter") remember();
+          // Esc empties the field, a second Esc leaves it
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            if (value) onChange("");
+            else e.currentTarget.blur();
+          }
+        }}
+        data-search
+      />
       <datalist id={listId}>
         {terms.map((t) => (
           <option key={t} value={t} />

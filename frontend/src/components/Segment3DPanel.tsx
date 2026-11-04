@@ -253,7 +253,7 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
               onClick={() => onTool({ erase: !tool.erase })}
               aria-pressed={tool.erase}
               aria-label={tool.erase ? "Subtracting (tap to add)" : "Adding (tap to subtract)"}
-              title={tool.erase ? "Subtracting from the mask: click to add (E, or hold Shift)" : "Adding to the mask: click to subtract (E, or hold Shift)"}
+              title={tool.erase ? "Subtracting from the mask: click to add (Space, or hold Shift)" : "Adding to the mask: click to subtract (Space, or hold Shift)"}
               data-testid="seg3d-mode"
             >
               {effectiveErase ? "−" : "+"}
@@ -279,7 +279,7 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
                   </button>
                 ))}
               </div>
-              <p className="muted small">Shift turns + and − around while held; Alt + wheel or [ ] changes the size.</p>
+              <p className="muted small">Shift turns + and − around while held; Alt + wheel, or , and . change the size.</p>
             </>
           ) : (
             <>
@@ -395,7 +395,7 @@ function QuickTools({ tool, onTool, readOnly, busy, state, effectiveErase, inver
           onClick={() => onTool({ erase: !tool.erase })}
           aria-pressed={tool.erase}
           aria-label={tool.erase ? "Subtracting (tap to add)" : "Adding (tap to subtract)"}
-          title={tool.erase ? "Subtracting from the mask: click to add (E, or hold Shift)" : "Adding to the mask: click to subtract (E, or hold Shift)"}
+          title={tool.erase ? "Subtracting from the mask: click to add (Space, or hold Shift)" : "Adding to the mask: click to subtract (Space, or hold Shift)"}
           data-testid="seg3d-mode"
         >
           {effectiveErase ? "−" : "+"}

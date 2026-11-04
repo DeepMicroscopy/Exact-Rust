@@ -78,6 +78,9 @@ interface Meta {
   planes: PlaneInfo[] | null;
 }
 
+/** Sent when a plane is dragged with Space held (that is moving it, so the Space key must not switch add / subtract afterwards). */
+const SPACE_DRAG = "exact:mpr-space-drag";
+
 /** The three planes of a volume side by side, linked by a crosshair: a click in one plane moves the slices of the others. */
 export function MprPage() {
   const id = Number(useParams().imageId);
@@ -120,7 +123,7 @@ export function MprPage() {
   const imageSet = useQuery({
     queryKey: ["image-set", imageSetId],
     enabled: imageSetId != null,
-    queryFn: () => api<{ id: number; product_set: number[] }>(`/api/v2/image-sets/${imageSetId}?fields=id,product_set`),
+    queryFn: () => api<{ id: number; product_set: number[]; images?: number[] }>(`/api/v2/image-sets/${imageSetId}?fields=id,product_set,images`),
   });
   const segTypes = useMemo(
     () => (types.data ?? []).filter((t) => t.vector_type === VectorType.Segmentation && (!imageSet.data || imageSet.data.product_set.includes(t.product as number))),
@@ -227,10 +230,64 @@ export function MprPage() {
 
   const step = useCallback((plane: Plane, delta: number) => setVoxel((v) => (v && shape ? stepped(shape, plane, v, delta) : v)), [shape]);
 
+  // what the keys below need from the page, without the listener being replaced at every change
+  const live2 = useRef({ id, navigate, images: imageSet.data?.images ?? [], linkedAll, setLinkedView });
+  live2.current = { id, navigate, images: imageSet.data?.images ?? [], linkedAll, setLinkedView };
+  const linkedWas = useRef<number[]>([]);
+  useEffect(() => {
+    // Space: a tap switches the mask tools between adding and subtracting; Space held while dragging moves the plane (see Pane)
+    let spaceDown = false;
+    let spaceDragged = false;
+    const spaceKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || isTypingTarget(e.target)) return;
+      if (e.type === "keydown") {
+        if (!e.repeat) spaceDragged = false;
+        spaceDown = true;
+        if (segTypeId != null) e.preventDefault();
+      } else if (spaceDown) {
+        spaceDown = false;
+        if (!spaceDragged && segTypeId != null && editableRef.current) setTool((t) => ({ ...t, erase: !t.erase }));
+      }
+    };
+    const dragged = () => (spaceDragged = true);
+    window.addEventListener("keydown", spaceKey);
+    window.addEventListener("keyup", spaceKey);
+    window.addEventListener(SPACE_DRAG, dragged);
+    return () => {
+      window.removeEventListener("keydown", spaceKey);
+      window.removeEventListener("keyup", spaceKey);
+      window.removeEventListener(SPACE_DRAG, dragged);
+    };
+  }, [segTypeId]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") && isTypingTarget(el)) return;
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        const L = live2.current;
+        if (k === "e" || k === "q") {
+          const i = L.images.indexOf(L.id);
+          const next = i >= 0 ? L.images[i + (k === "e" ? 1 : -1)] : undefined;
+          if (next != null) L.navigate(`/images/${next}`);
+          e.preventDefault();
+          return;
+        }
+        if (k === "o" && L.linkedAll.length > 0) {
+          // the linked segmentation files off (the ones that were on are remembered) and on again
+          L.setLinkedView((m) => {
+            const on = L.linkedAll.filter((f) => !m[f.id]?.off).map((f) => f.id);
+            if (on.length) {
+              linkedWas.current = on;
+              return { ...m, ...Object.fromEntries(on.map((f) => [f, { hidden: m[f]?.hidden ?? [], off: true }])) };
+            }
+            const back = linkedWas.current.length ? linkedWas.current : [L.linkedAll[0].id];
+            return { ...m, ...Object.fromEntries(back.map((f) => [f, { hidden: m[f]?.hidden ?? [], off: false }])) };
+          });
+          e.preventDefault();
+          return;
+        }
+      }
       if (segTypeId != null) {
         const k = e.key.toLowerCase();
         const mod = e.ctrlKey || e.metaKey;
@@ -238,8 +295,7 @@ export function MprPage() {
         else if (mod && k === "z") void (e.shiftKey ? segLive.current.redo() : segLive.current.undo());
         else if (mod && k === "y") void segLive.current.redo();
         else if (!mod && !e.altKey && editableRef.current && (k === "b" || k === "l" || k === "w")) setTool((t) => ({ ...t, tool: k === "b" ? "brush" : k === "l" ? "lasso" : "wand" }));
-        else if (!mod && !e.altKey && editableRef.current && k === "e") setTool((t) => ({ ...t, erase: !t.erase }));
-        else if (!mod && !e.altKey && editableRef.current && (e.key === "[" || e.key === "]")) setTool((t) => ({ ...t, size: resized(t.size, e.key === "]" ? 1 : -1, t.unit) }));
+        else if (!mod && !e.altKey && !e.shiftKey && editableRef.current && (e.code === "Comma" || e.code === "Period")) setTool((t) => ({ ...t, size: resized(t.size, e.code === "Period" ? 1 : -1, t.unit) }));
         else if (!(e.key === "PageUp" || e.key === "ArrowUp" || e.key === "PageDown" || e.key === "ArrowDown")) return;
         else {
           step(active, e.key === "PageUp" || e.key === "ArrowUp" ? 1 : -1);
@@ -528,6 +584,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
       live.current.onActivate();
       const sg = live.current.seg;
       const oe = e.originalEvent;
+      if (space) window.dispatchEvent(new Event(SPACE_DRAG));
       if (!sg?.editable || space || oe?.button === 1 || oe?.ctrlKey || oe?.metaKey || pen.ignores(e.pointerType)) return;
       const at = toPlane(e.position);
       if (!at) return;

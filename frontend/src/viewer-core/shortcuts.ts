@@ -24,7 +24,10 @@ export type Action =
   | { type: "prevFrame" } // Shift+Q
   | { type: "pan"; dx: number; dy: number }
   | { type: "zoom"; factor: number }
-  | { type: "home" };
+  | { type: "home" }
+  | { type: "overlay" } // O: the registered overlay image on / off
+  | { type: "overview" } // H: hide / show the overview map
+  | { type: "brushSize"; dir: 1 | -1 }; // , and . (the same keys on English and German keyboards)
 
 type KeyLike = Pick<KeyboardEvent, "key" | "code" | "shiftKey" | "ctrlKey" | "metaKey" | "altKey">;
 
@@ -40,6 +43,9 @@ export function matchShortcut(e: KeyLike): Action | null {
     if (k === "v") return { type: "paste" };
     return null;
   }
+  // by position: "," and "." are on the same keys of English and German keyboards, "[" and "]" are not
+  if (!e.shiftKey && e.code === "Comma") return { type: "brushSize", dir: -1 };
+  if (!e.shiftKey && e.code === "Period") return { type: "brushSize", dir: 1 };
   const digit = /^Digit([1-9])$|^Numpad([1-9])$/.exec(e.code ?? "");
   if (digit) return { type: "digit", n: Number(digit[1] ?? digit[2]), shift: e.shiftKey };
   switch (k) {
@@ -85,6 +91,10 @@ export function matchShortcut(e: KeyLike): Action | null {
       return { type: "zoom", factor: 0.8 };
     case "0":
       return { type: "home" };
+    case "o":
+      return { type: "overlay" };
+    case "h":
+      return { type: "overview" };
   }
   return null;
 }

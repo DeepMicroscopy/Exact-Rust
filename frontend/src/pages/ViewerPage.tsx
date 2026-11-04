@@ -22,7 +22,8 @@ import { SegmentationTool } from "../viewer-core/segmentationTool";
 import { clipboard, pasteVector } from "../viewer-core/clipboard";
 import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
 import { loadTileSource } from "../viewer-core/tileSource";
-import { OverlayControl } from "../components/OverlayControl";
+import { SHOW_HELP } from "../components/GlobalShortcuts";
+import { OVERLAY_TOGGLE, OverlayControl } from "../components/OverlayControl";
 import { ScaleBar } from "../components/ScaleBar";
 import { coverageOf, ZBlender } from "../viewer-core/zBlend";
 import type { ZRange } from "../viewer-core/zFormat";
@@ -940,11 +941,27 @@ export function ViewerPage() {
         case "home":
           viewer?.viewport.goHome();
           return;
+        case "overlay":
+          window.dispatchEvent(new Event(OVERLAY_TOGGLE));
+          return;
+        case "overview":
+          showOverview(!overviewShown);
+          return;
+        case "brushSize": {
+          const grow = (n: number) => Math.min(400, Math.max(1, Math.round(a.dir > 0 ? n * 1.2 + 1 : n / 1.2 - 1)));
+          if (segTypeId != null && segToolRef.current) segToolRef.current.setState({ size: grow(segToolRef.current.state.size) });
+          else if (ed && (ed.brushActive() || ed.penBrush)) {
+            ed.brushRadius = grow(ed.brushRadius);
+            ed.refresh();
+          } else return;
+          syncFromEditor();
+          return;
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard, segTypeId, readOnly]);
+  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard, segTypeId, readOnly, overviewShown, showOverview]);
 
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
@@ -1029,10 +1046,13 @@ export function ViewerPage() {
           aria-pressed={overviewShown}
           aria-label="Overview"
           onClick={() => showOverview(!overviewShown)}
-          title={overviewShown ? "Hide the overview (the small map of the slide)" : "Show the overview (the small map of the slide)"}
+          title={overviewShown ? "Hide the overview, the small map of the slide (H)" : "Show the overview, the small map of the slide (H)"}
           data-testid="overview-toggle"
         >
           ▣
+        </button>
+        <button className="btn icon-btn" onClick={() => window.dispatchEvent(new Event(SHOW_HELP))} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" data-testid="help-button">
+          ?
         </button>
         <AdjustButton open={adjustOpen} active={!isNeutral(adjust)} onClick={() => setAdjustOpen((o) => !o)} />
         <button className="btn ghost" onClick={() => navigate("/")}>

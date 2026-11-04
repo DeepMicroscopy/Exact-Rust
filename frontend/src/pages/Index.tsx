@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SearchInput } from "../components/SearchInput";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -12,8 +12,22 @@ import { Thumb } from "../components/Thumb";
 import { useAuth } from "../auth/AuthContext";
 
 const LAST_TEAM = "exact.team";
-const MAX_FOUND = 60; // sets shown for a search
-const PAGE = 48; // cards of a team drawn at first (each is a thumbnail that may have to be rendered): "Show more" adds this many
+/** An empty strip below the list: when it scrolls into view the next cards are asked for (like the endless feeds of social media). */
+function ScrollEnd({ onReach }: { onReach(): void }) {
+  const el = useRef<HTMLDivElement>(null);
+  const reach = useRef(onReach);
+  reach.current = onReach;
+  useEffect(() => {
+    const node = el.current;
+    if (!node) return;
+    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && reach.current(), { rootMargin: "600px" });
+    io.observe(node);
+    return () => io.disconnect();
+  }, []);
+  return <div ref={el} className="scroll-end" data-testid="scroll-end" aria-hidden="true" />;
+}
+
+const PAGE = 48; // cards drawn at first (each is a thumbnail that may have to be rendered); scrolling to the end of the list adds this many
 
 /** A team is always selected (the last one used, else the first): only its image sets are loaded and drawn. The search covers all teams. */
 export function Index() {
@@ -51,6 +65,7 @@ export function Index() {
   });
 
   const q = search.trim();
+  useEffect(() => setShown(PAGE), [q]);
   // the search covers images as well (after a pause in typing)
   const [debounced, setDebounced] = useState("");
   useEffect(() => {
@@ -66,11 +81,12 @@ export function Index() {
     const lq = q.toLowerCase();
     return lq ? (index.data ?? []).filter((s) => s.name.toLowerCase().includes(lq) || (s.description ?? "").toLowerCase().includes(lq)) : [];
   }, [index.data, q]);
-  const shownIds = matches.slice(0, MAX_FOUND).map((s) => s.id);
+  const shownIds = matches.slice(0, shown).map((s) => s.id);
   // the cards (with the image lists for the thumbnails): the selected team's sets, or what the search found
-  const cardsKey = q ? ["image-sets", "found", shownIds.join(",")] : ["image-sets", "team", teamId];
+  const cardsKey = q ? ["image-sets", "found", q, shownIds.join(",")] : ["image-sets", "team", teamId];
   const cards = useQuery({
     queryKey: cardsKey,
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === cardsKey[1] && prevQuery?.queryKey[2] === cardsKey[2] ? prev : undefined), // more cards load as the list is scrolled: the ones shown stay meanwhile
     enabled: q ? index.data !== undefined : teamId !== null,
     queryFn: () =>
       listAll<ImageSet>("/api/v2/image-sets", {
@@ -116,9 +132,8 @@ export function Index() {
         </div>
         {(cards.isLoading || index.isLoading) && <p className="muted">Loading…</p>}
         {(cards.error || index.error) && <p className="error">Could not load image sets.</p>}
-        {q && matches.length > MAX_FOUND && <p className="muted">Showing {MAX_FOUND} of {matches.length} image sets: narrow the search.</p>}
         <div className="cards">
-          {visible.slice(0, q ? MAX_FOUND : shown).map((s) => (
+          {visible.slice(0, shown).map((s) => (
             <Link key={s.id} to={`/sets/${s.id}`} className="card glass">
               <Thumb imageId={s.images[0]} alt={s.name} />
               <div className="card-body">
@@ -130,13 +145,7 @@ export function Index() {
             </Link>
           ))}
         </div>
-        {!q && visible.length > shown && (
-          <p>
-            <button className="btn" onClick={() => setShown((n) => n + PAGE)}>
-              Show more ({visible.length - shown} more image sets)
-            </button>
-          </p>
-        )}
+        {(q ? matches.length : visible.length) > shown && <ScrollEnd key={shown} onReach={() => setShown((n) => n + PAGE)} />}
         {cards.data && !cards.isFetching && visible.length === 0 && hits.length === 0 && !found.isFetching && <p className="muted">{q ? "Nothing found." : "This team has no image sets yet."}</p>}
         {q.length >= 2 && hits.length > 0 && (
           <>

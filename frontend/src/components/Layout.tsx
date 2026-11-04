@@ -7,6 +7,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Logo } from "./Logo";
 import { useAdminMe } from "../pages/AdminPage";
 import { SystemHealth } from "./SystemHealth";
+import { SHOW_HELP } from "./GlobalShortcuts";
 import { UserMenu } from "./UserMenu";
 import { OPEN_WELCOME } from "./WelcomeDialog";
 
@@ -47,6 +48,9 @@ export function Layout() {
               Administration
             </Link>
           )}
+          <button className="btn ghost" onClick={() => window.dispatchEvent(new Event(SHOW_HELP))} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" data-testid="help-button">
+            ?
+          </button>
           <button className="btn ghost" onClick={() => window.dispatchEvent(new Event(OPEN_WELCOME))} data-testid="whats-new">
             What's new
           </button>

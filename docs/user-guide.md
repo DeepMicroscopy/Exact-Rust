@@ -221,3 +221,14 @@ If a TIFF's pyramid is damaged the viewer offers a **one-time repair**; the orig
 
 - Every search or filter field (image sets, images of a set, users, teams) remembers the last eight terms you finished with Enter or by leaving the field, and offers them as suggestions when you click into the field. The history is kept per field in your browser.
 - The overview (the small map of the slide at the bottom right of the viewer) has a **×** to hide it. The **▣** button in the viewer bar shows it again; the choice is remembered in the browser.
+
+## Keyboard shortcuts
+
+Press **?** on any page (or the **?** button in the top bar) for the list of keys, with the ones of the current page first. In short:
+
+- **Everywhere:** `?` the list · `G` then `P` preferences · `/` or `Ctrl/Cmd + F` the search field of the page (`Esc` inside it clears it).
+- **Viewer:** `E` / `Q` next / previous image · `Shift + E` / `Shift + Q` or Page Up / Down frames · `1`–`9` annotation type · `C` select / draw · `A` one-click mode · `Enter` or `V` finish · `Esc` cancel · `Delete`, `Backspace` or `X` delete · `S` / `G` / `D` polygon scissors / glue / knife · `,` and `.` smaller / larger brush · `Y` annotations on / off · `O` overlay image on / off · `H` overview on / off · `Ctrl/Cmd + Z` / `Y` undo / redo.
+- **Three planes:** Page Up / Down or arrows step slices · `E` / `Q` next / previous image · `O` linked segmentation files on / off · `B` / `L` / `W` brush, lasso, wand · **Space** switches between adding and subtracting (hold Space and drag to move a plane) · `,` and `.` brush size · hold `Shift` or `Alt` for the opposite · `Esc` closes the mask tools.
+
+`,` and `.` were chosen for the brush size because they are in the same place on English and German keyboards. The start page now loads more image sets as you scroll to the end of the list (no "Show more" button).
+

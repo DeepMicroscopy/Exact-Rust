@@ -200,6 +200,41 @@ try {
     await page.waitForTimeout(1500);
   }
 
+  // keyboard: the list of keys, the search field, Preferences, the overview
+  {
+    const viewerUrl = page.url();
+    check((await page.locator('[data-testid="overview-toggle"]').getAttribute("aria-pressed")) === "true", "the overview is shown before the H key");
+    await page.locator("body").click({ position: { x: 5, y: 5 } }).catch(() => undefined);
+    await page.keyboard.press("h");
+    await waitFor(async () => (await page.locator('[data-testid="overview-toggle"]').getAttribute("aria-pressed")) === "false", "H hides the overview");
+    await page.keyboard.press("h");
+    await waitFor(async () => (await page.locator('[data-testid="overview-toggle"]').getAttribute("aria-pressed")) === "true", "...and shows it again");
+    await page.keyboard.press("Shift+Slash");
+    await page.waitForSelector('[data-testid="shortcut-help"]');
+    const first = await page.locator('[data-testid="shortcut-help"] h3').first().innerText();
+    check(/Viewer/.test(first), `? lists the keys of the viewer first (${first})`);
+    await page.keyboard.press("Escape");
+    await page.goto(base + "/");
+    await page.waitForSelector(".search");
+    await page.keyboard.press("/");
+    check(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") === "Search"), "/ goes to the search field");
+    await page.keyboard.type("zz");
+    await page.keyboard.press("Escape");
+    check((await page.locator(".search").inputValue()) === "", "Esc inside the search field clears it");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Control+f");
+    check(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") === "Search"), "Ctrl + F goes to the search field as well (not the browser's)");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("g");
+    await page.keyboard.press("p");
+    await page.waitForSelector('[data-testid="preferences"]');
+    check(true, "G then P opens the preferences");
+    await page.goto(viewerUrl);
+    await page.waitForSelector(".openseadragon-canvas");
+    await page.waitForTimeout(1500);
+  }
+
   // image adjustments: a movable window behind an icon at the right of the top bar
   const tileFilter = () => page.evaluate(() => window.__viewer.drawer.canvas.style.filter);
   const overlayFilters = () => page.evaluate(() => [...document.querySelectorAll(".openseadragon-canvas canvas")].filter((c) => c !== window.__viewer.drawer.canvas).map((c) => c.style.filter).join(""));

@@ -188,7 +188,7 @@ export function Toolbox(p: ToolboxProps) {
           </div>
           {(p.seg.state.tool === "brush" || p.seg.state.tool === "eraser") && (
             <>
-              <label className="toggle brush-size" title="Brush size in image pixels (Alt + mouse wheel)">
+              <label className="toggle brush-size" title="Brush size in image pixels (Alt + mouse wheel, or , and .)">
                 Size
                 <input type="range" min={2} max={300} value={p.seg.state.size} onChange={(e) => p.on.segState({ size: Number(e.target.value) })} aria-label="Brush size" />
                 <span className="muted small">{p.seg.state.size} px</span>
@@ -246,12 +246,12 @@ export function Toolbox(p: ToolboxProps) {
           </Dropdown>
           <Measure shape={sel} mpp={p.imageMpp} />
           {p.reshapable && (
-            <Dropdown className="reshape-dd" name="reshape" items={reshape} onPick={pickReshape} title="Reshape the polygon: paint area on or off, cut, merge, split">
+            <Dropdown className="reshape-dd" name="reshape" items={reshape} onPick={pickReshape} title="Reshape the polygon: paint area on or off, cut (S), merge (G), split (D)">
               Reshape
             </Dropdown>
           )}
           {p.brushMode !== "off" && (
-            <label className="toggle brush-size" title="Brush size (mouse wheel)">
+            <label className="toggle brush-size" title="Brush size (mouse wheel, or , and .)">
               {p.brushMode === "add" ? "Add" : "Erase"}
               <input type="range" min={4} max={120} value={Math.round(p.brushRadius)} onChange={(e) => p.on.brushRadius(Number(e.target.value))} />
             </label>

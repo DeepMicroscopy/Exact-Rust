@@ -10,6 +10,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { InvitePage } from "./pages/InvitePage";
 import { MprPage } from "./pages/MprPage";
 import { ViewerPage } from "./pages/ViewerPage";
+import { GlobalShortcuts } from "./components/GlobalShortcuts";
 import { WelcomeGate } from "./components/WelcomeDialog";
 
 export function App() {
@@ -26,6 +27,7 @@ export function App() {
   return (
     <>
     <WelcomeGate />
+    <GlobalShortcuts />
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Index />} />
