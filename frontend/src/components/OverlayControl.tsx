@@ -1,24 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useRegisteredImages } from "../hooks/useRegisteredImages";
 import { usePreferences } from "../hooks/usePreferences";
 import type OpenSeadragon from "openseadragon";
-import { api } from "../api/client";
-import type { Page } from "../api/client";
-import type { Registration } from "../api/types";
 import { Ring } from "./UploadTile";
-import { affineOf, invertAffine, overlayPlacement, RegistrationOverlay, type Affine } from "../viewer-core/overlay";
-
-interface Other {
-  id: number;
-  name: string;
-  width: number;
-  height: number;
-}
-
-interface Candidate extends Other {
-  /** maps the pixels of this image to the pixels of the current one */
-  map: Affine;
-}
+import { overlayPlacement, RegistrationOverlay } from "../viewer-core/overlay";
 
 /**
  * The images registered with the current one (in either direction), one of which can be shown on top of it. Renders
@@ -58,30 +43,7 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
     return () => window.removeEventListener(OVERLAY_TOGGLE, toggle);
   }, []);
 
-  const regs = useQuery({
-    queryKey: ["overlay-registrations", imageId],
-    queryFn: async () => {
-      const [a, b] = await Promise.all([
-        api<Page<Registration>>(`/api/v2/registrations?source_image__in=${imageId}&limit=1000`),
-        api<Page<Registration>>(`/api/v2/registrations?target_image__in=${imageId}&limit=1000`),
-      ]);
-      const ids = [...new Set([...a.items, ...b.items].flatMap((r) => [r.source_image, r.target_image]))].filter((i) => i !== imageId);
-      const images = ids.length ? (await api<Page<Other>>(`/api/v2/images?id__in=${ids.join(",")}&fields=id,name,width,height&limit=1000`)).items : [];
-      const byId = new Map(images.map((i) => [i.id, i]));
-      const out = new Map<number, Candidate>();
-      // the registration onto this image is used as it is, the other direction is inverted
-      for (const r of [...a.items, ...b.items]) {
-        const m = r.transformation_matrix && affineOf(r.transformation_matrix);
-        if (!m) continue;
-        const direct = r.target_image === imageId;
-        const other = byId.get(direct ? r.source_image : r.target_image);
-        const map = direct ? m : invertAffine(m);
-        if (!other || !map || (!direct && out.has(other.id))) continue;
-        out.set(other.id, { ...other, map });
-      }
-      return [...out.values()].sort((x, y) => x.name.localeCompare(y.name));
-    },
-  });
+  const regs = useRegisteredImages(imageId);
   const candidates = regs.data;
   // "Auto-enable first overlay" (a setting of the account): the only registered image is shown when the image opens
   const autoDone = useRef<number | null>(null);

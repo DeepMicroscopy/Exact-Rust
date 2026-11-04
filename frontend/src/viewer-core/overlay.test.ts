@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { affineOf, invertAffine, overlayPlacement, type Affine } from "./overlay";
+import { affineOf, invertAffine, mappedRegion, overlayPlacement, type Affine } from "./overlay";
 
 describe("registration overlay", () => {
   it("reads the matrix and inverts it", () => {
@@ -31,5 +31,21 @@ describe("registration overlay", () => {
     // the centre (200, 100) lands at (900, 200); the unrotated rectangle is centred there
     expect(p.x * 1000 + (p.width * 1000) / 2).toBeCloseTo(900);
     expect(p.y * 1000 + (p.width * 1000 * 0.5) / 2).toBeCloseTo(200);
+  });
+});
+
+describe("region of a registered image", () => {
+  it("is the bounding box of the mapped corners, kept inside the image", () => {
+    // a shift by (10, 20) and a doubling of the scale
+    const m: Affine = [2, 0, 10, 0, 2, 20];
+    expect(mappedRegion(m, { x: 5, y: 5, w: 10, h: 10 }, 1000, 1000)).toEqual({ x: 20, y: 30, w: 20, h: 20 });
+    expect(mappedRegion(m, { x: 5, y: 5, w: 10, h: 10 }, 30, 1000)).toEqual({ x: 20, y: 30, w: 10, h: 20 });
+    // a quarter turn: the box stays a box
+    const turn: Affine = [0, -1, 100, 1, 0, 0];
+    expect(mappedRegion(turn, { x: 10, y: 20, w: 30, h: 40 }, 1000, 1000)).toEqual({ x: 40, y: 10, w: 40, h: 30 });
+  });
+
+  it("is null when the region lies outside the other image", () => {
+    expect(mappedRegion([1, 0, 5000, 0, 1, 0], { x: 0, y: 0, w: 10, h: 10 }, 1000, 1000)).toBeNull();
   });
 });

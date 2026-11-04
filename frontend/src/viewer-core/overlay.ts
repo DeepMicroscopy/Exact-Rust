@@ -17,6 +17,22 @@ export function invertAffine([a, b, tx, c, d, ty]: Affine): Affine | null {
   return [ia, ib, -(ia * tx + ib * ty), ic, id, -(ic * tx + id * ty)];
 }
 
+/** The region (image pixels) of the image that `m` maps onto `r` of the other: the bounding box of the mapped corners, kept inside `w` x `h`; null when nothing of it is left. */
+export function mappedRegion(m: Affine, r: { x: number; y: number; w: number; h: number }, w: number, h: number): { x: number; y: number; w: number; h: number } | null {
+  const [a, b, tx, c, d, ty] = m;
+  const pts = [
+    [r.x, r.y],
+    [r.x + r.w, r.y],
+    [r.x, r.y + r.h],
+    [r.x + r.w, r.y + r.h],
+  ].map(([x, y]) => [a * x + b * y + tx, c * x + d * y + ty]);
+  const x1 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p[0]))));
+  const y1 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p[1]))));
+  const x2 = Math.min(w, Math.ceil(Math.max(...pts.map((p) => p[0]))));
+  const y2 = Math.min(h, Math.ceil(Math.max(...pts.map((p) => p[1]))));
+  return x2 - x1 >= 1 && y2 - y1 >= 1 ? { x: x1, y: y1, w: x2 - x1, h: y2 - y1 } : null;
+}
+
 /**
  * Where an image of `ow` x `oh` pixels goes in the viewport of the current image (`cw` pixels wide = 1 viewport unit)
  * when `m` maps its pixels to the pixels of the current image. OpenSeadragon places an image by a rectangle and a rotation

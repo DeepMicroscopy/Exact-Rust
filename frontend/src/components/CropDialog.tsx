@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { Modal } from "./Modal";
+import { useRegisteredImages } from "../hooks/useRegisteredImages";
+import { invertAffine, mappedRegion } from "../viewer-core/overlay";
 
 interface WritableSet {
   id: number;
@@ -19,26 +21,73 @@ interface Props {
   source: { team: number | null; products: number[] };
   mpp: number;
   onClose(): void;
-  onDone(imageId: number, setId: number): void;
+  /** `extra`: how many images registered with the source were cropped as well */
+  onDone(imageId: number, setId: number, extra?: number): void;
 }
 
 const NEW = "new";
+const SAME = "same";
 
 /** Asks where the crop should go (an existing image set or a new one), then calls the server's crop. */
-export function CropDialog({ imageId, region, frame, source, mpp, onClose, onDone }: Props) {
+export function CropDialog({
+  imageId,
+  region,
+  frame,
+  source,
+  mpp,
+  onClose,
+  onDone,
+}: Props) {
   // always fresh: the list changes when image sets are created or locked
-  const sets = useQuery({ queryKey: ["writable-sets"], queryFn: () => api<{ items: WritableSet[] }>("/api/v2/image-sets/writable"), staleTime: 0, refetchOnMount: "always" });
-  const teams = useQuery({ queryKey: ["teams-mine"], queryFn: () => api<{ items: { id: number; name: string }[] }>("/api/v2/teams?limit=200&fields=id,name") });
+  const sets = useQuery({
+    queryKey: ["writable-sets"],
+    queryFn: () => api<{ items: WritableSet[] }>("/api/v2/image-sets/writable"),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const teams = useQuery({
+    queryKey: ["teams-mine"],
+    queryFn: () =>
+      api<{ items: { id: number; name: string }[] }>(
+        "/api/v2/teams?limit=200&fields=id,name",
+      ),
+  });
   const [target, setTarget] = useState<string>("");
   const [name, setName] = useState("Crops");
   const [team, setTeam] = useState<number | null>(source.team);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [existing, setExisting] = useState<{ id: number; set: number } | null>(null);
+  // the images registered with this one can be cropped at the same place (the region mapped through the registration)
+  const registered = useRegisteredImages(imageId);
+  const others = (registered.data ?? [])
+    .map((o) => {
+      const inv = invertAffine(o.map);
+      return {
+        ...o,
+        region: inv && mappedRegion(inv, region, o.width, o.height),
+      };
+    })
+    .filter((o) => o.region);
+  const [withOthers, setWithOthers] = useState(false);
+  const [skip, setSkip] = useState<Set<number>>(new Set());
+  const [otherTarget, setOtherTarget] = useState(SAME);
+  const [otherName, setOtherName] = useState("Crops (registered)");
+  const chosenOthers = withOthers ? others.filter((o) => !skip.has(o.id)) : [];
+  const [done, setDone] = useState<{
+    id: number;
+    set: number;
+    extra: number;
+  } | null>(null);
+  const [existing, setExisting] = useState<{ id: number; set: number } | null>(
+    null,
+  );
 
   const items = sets.data?.items ?? [];
   const choice = target || (items[0] ? String(items[0].id) : NEW);
-  const size = mpp > 0 ? ` (${((region.w * mpp) / 1000).toFixed(2)} × ${((region.h * mpp) / 1000).toFixed(2)} mm)` : "";
+  const size =
+    mpp > 0
+      ? ` (${((region.w * mpp) / 1000).toFixed(2)} × ${((region.h * mpp) / 1000).toFixed(2)} mm)`
+      : "";
 
   const run = async () => {
     setBusy(true);
@@ -47,15 +96,66 @@ export function CropDialog({ imageId, region, frame, source, mpp, onClose, onDon
       let setId = Number(choice);
       if (choice === NEW) {
         if (!name.trim()) throw new Error("Give the new image set a name.");
-        const created = await api<{ id: number }>("/api/v2/image-sets", { json: { name: name.trim(), team: team ?? teams.data?.items[0]?.id, products: source.products } });
+        const created = await api<{ id: number }>("/api/v2/image-sets", {
+          json: {
+            name: name.trim(),
+            team: team ?? teams.data?.items[0]?.id,
+            products: source.products,
+          },
+        });
         setId = created.id;
       }
-      const img = await api<{ id: number }>(`/api/v2/images/${imageId}/crop`, { json: { ...region, frame, image_set: setId } });
-      onDone(img.id, setId);
+      const img = await api<{ id: number }>(`/api/v2/images/${imageId}/crop`, {
+        json: { ...region, frame, image_set: setId },
+      });
+      if (chosenOthers.length === 0) {
+        onDone(img.id, setId);
+        return;
+      }
+      let otherSet = setId;
+      if (otherTarget === NEW) {
+        if (!otherName.trim())
+          throw new Error(
+            "Give the image set for the registered images a name.",
+          );
+        otherSet = (
+          await api<{ id: number }>("/api/v2/image-sets", {
+            json: {
+              name: otherName.trim(),
+              team: team ?? teams.data?.items[0]?.id,
+              products: source.products,
+            },
+          })
+        ).id;
+      } else if (otherTarget !== SAME) otherSet = Number(otherTarget);
+      const failed: string[] = [];
+      let made = 0;
+      for (const o of chosenOthers) {
+        try {
+          // frame 0: the frames of a registered image are not those of this one
+          await api(`/api/v2/images/${o.id}/crop`, {
+            json: { ...o.region, frame: 0, image_set: otherSet },
+          });
+          made++;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409)
+            made++; // cropped there before
+          else
+            failed.push(
+              `${o.name}: ${e instanceof Error ? e.message : String(e)}`,
+            );
+        }
+      }
+      if (failed.length === 0) onDone(img.id, setId, made);
+      else {
+        setDone({ id: img.id, set: setId, extra: made });
+        setError(`The crop was made, but not for: ${failed.join("; ")}`);
+      }
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const ex = e.body?.existing;
-        if (typeof ex === "number") setExisting({ id: ex, set: Number(choice) });
+        if (typeof ex === "number")
+          setExisting({ id: ex, set: Number(choice) });
         setError("This region was cropped into that image set before.");
       } else setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -64,16 +164,22 @@ export function CropDialog({ imageId, region, frame, source, mpp, onClose, onDon
   };
 
   const byTeam = new Map<string, WritableSet[]>();
-  for (const s of items) byTeam.set(s.team_name, [...(byTeam.get(s.team_name) ?? []), s]);
+  for (const s of items)
+    byTeam.set(s.team_name, [...(byTeam.get(s.team_name) ?? []), s]);
 
   return (
     <Modal title="Crop to new image" onClose={busy ? () => undefined : onClose}>
       <p>
-        Save the region of this annotation, {region.w} × {region.h} px{size}, as a new image{frame > 0 ? ` (frame ${frame + 1})` : ""}.
+        Save the region of this annotation, {region.w} × {region.h} px{size}, as
+        a new image{frame > 0 ? ` (frame ${frame + 1})` : ""}.
       </p>
       <label className="field">
         <span>Target image set</span>
-        <select value={choice} onChange={(e) => setTarget(e.target.value)} disabled={busy}>
+        <select
+          value={choice}
+          onChange={(e) => setTarget(e.target.value)}
+          disabled={busy}
+        >
           {[...byTeam.entries()].map(([t, list]) => (
             <optgroup key={t} label={t}>
               {list.map((s) => (
@@ -90,11 +196,20 @@ export function CropDialog({ imageId, region, frame, source, mpp, onClose, onDon
         <>
           <label className="field">
             <span>Name of the new image set</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} disabled={busy} maxLength={256} />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={busy}
+              maxLength={256}
+            />
           </label>
           <label className="field">
             <span>Team</span>
-            <select value={team ?? ""} onChange={(e) => setTeam(Number(e.target.value))} disabled={busy}>
+            <select
+              value={team ?? ""}
+              onChange={(e) => setTeam(Number(e.target.value))}
+              disabled={busy}
+            >
               {(teams.data?.items ?? []).map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
@@ -102,26 +217,129 @@ export function CropDialog({ imageId, region, frame, source, mpp, onClose, onDon
               ))}
             </select>
           </label>
-          <p className="muted small">The new image set gets the annotation types (products) of this image's set.</p>
+          <p className="muted small">
+            The new image set gets the annotation types (products) of this
+            image's set.
+          </p>
         </>
+      )}
+      {others.length > 0 && !done && (
+        <div className="crop-others" data-testid="crop-others">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={withOthers}
+              onChange={(e) => setWithOthers(e.target.checked)}
+              disabled={busy}
+              data-testid="crop-with-registered"
+            />
+            Also crop the{" "}
+            {others.length === 1 ? "image" : `${others.length} images`}{" "}
+            registered with this one, at the same place
+          </label>
+          {withOthers && (
+            <>
+              <ul className="plain-list">
+                {others.map((o) => (
+                  <li key={o.id}>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={!skip.has(o.id)}
+                        disabled={busy}
+                        onChange={(e) =>
+                          setSkip((sk) => {
+                            const n = new Set(sk);
+                            if (e.target.checked) n.delete(o.id);
+                            else n.add(o.id);
+                            return n;
+                          })
+                        }
+                      />
+                      {o.name}{" "}
+                      <span className="muted small">
+                        ({o.region?.w} × {o.region?.h} px)
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <label className="field">
+                <span>Image set for these crops</span>
+                <select
+                  value={otherTarget}
+                  onChange={(e) => setOtherTarget(e.target.value)}
+                  disabled={busy}
+                  data-testid="crop-others-target"
+                >
+                  <option value={SAME}>The same as above</option>
+                  {[...byTeam.entries()].map(([t, list]) => (
+                    <optgroup key={t} label={t}>
+                      {list.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  <option value={NEW}>＋ New image set…</option>
+                </select>
+              </label>
+              {otherTarget === NEW && (
+                <label className="field">
+                  <span>Name of the new image set</span>
+                  <input
+                    value={otherName}
+                    onChange={(e) => setOtherName(e.target.value)}
+                    disabled={busy}
+                    maxLength={256}
+                  />
+                </label>
+              )}
+            </>
+          )}
+        </div>
       )}
       {error && (
         <p className="error">
           {error}{" "}
           {existing && (
-            <button className="btn" onClick={() => onDone(existing.id, existing.set)}>
+            <button
+              className="btn"
+              onClick={() => onDone(existing.id, existing.set)}
+            >
               Open it
             </button>
           )}
         </p>
       )}
       <div className="modal-actions">
-        <button className="btn ghost" onClick={onClose} disabled={busy}>
-          Cancel
-        </button>
-        <button className="btn primary" onClick={() => void run()} disabled={busy || sets.isLoading}>
-          {busy ? "Cropping…" : "Crop"}
-        </button>
+        {done ? (
+          <button
+            className="btn primary"
+            onClick={() => onDone(done.id, done.set, done.extra)}
+          >
+            Close
+          </button>
+        ) : (
+          <>
+            <button className="btn ghost" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button
+              className="btn primary"
+              onClick={() => void run()}
+              disabled={busy || sets.isLoading}
+              data-testid="crop-run"
+            >
+              {busy
+                ? "Cropping…"
+                : chosenOthers.length
+                  ? `Crop (${chosenOthers.length + 1} images)`
+                  : "Crop"}
+            </button>
+          </>
+        )}
       </div>
     </Modal>
   );

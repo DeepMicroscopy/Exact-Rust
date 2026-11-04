@@ -65,6 +65,8 @@ until you ask for it: the server first averages the volume onto a coarse grid (c
 time. Drag to turn it, scroll to zoom; *Bone*, *Soft tissue* and *Maximum intensity* are starting points for the threshold and opacity sliders.
 
 ### Images from a crop
+When the image has registered images, the crop dialog offers to **crop them as well, at the same place**: the region is carried over through the registration (its bounding box, kept inside the other image), each registered image can be left out, and the crops go into the same image set as the first one or into another (or a new) one. Frames are not carried over (the crops of the registered images are of their first frame), and a registered image you may not copy from is reported while the others are made. The crops are not registered with each other.
+
 An image created by *Crop to new image* remembers where it came from. The top bar offers **Show in original**, and the
 pointer position is shown in both coordinate systems.
 

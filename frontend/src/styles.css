@@ -819,3 +819,6 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .pv-list li:hover, .pv-list li:focus-visible { background: rgba(150, 110, 255, 0.14); }
 .pv-list li b { font-weight: 600; }
 @media (max-width: 600px) { .pv-list li { grid-template-columns: 1fr; gap: 0; } }
+
+.crop-others { margin: 10px 0; padding-top: 8px; border-top: 1px solid var(--border); }
+.crop-others .plain-list { list-style: none; margin: 4px 0 8px 22px; padding: 0; max-height: 25vh; overflow: auto; }

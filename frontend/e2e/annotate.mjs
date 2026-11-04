@@ -837,6 +837,10 @@ try {
   await waitFor(async () => (await admin.locator(".modal select").first().locator("option").count()) >= 2, "the dialog loaded the image sets");
   const opts = await admin.locator(".modal select").first().locator("option").allInnerTexts();
   check(opts.some((o) => o.includes("New image set")) && opts.length >= 2, `the dialog offers the image sets and a new one (${opts.length} options)`);
+  await waitFor(async () => (await admin.locator('[data-testid="crop-others"]').count()) === 1, "an image with a registered image offers to crop it as well");
+  check(!(await admin.locator('[data-testid="crop-with-registered"]').isChecked()), "...unchecked at first");
+  await admin.locator('[data-testid="crop-with-registered"]').check();
+  check((await admin.locator('[data-testid="crop-others-target"]').inputValue()) === "same", "...into the same image set as the first crop unless chosen");
   await admin.locator(".modal select").first().selectOption({ label: "＋ New image set…" });
   await admin.fill('.modal input[maxlength="256"]', `e2e-crops-${Date.now()}`);
   await admin.locator(".modal .btn.primary").click();
@@ -845,6 +849,9 @@ try {
   const mine = crops.find((c) => c.crop_source === IMAGE && c.crop_x === boxNow.vector.x1 && c.crop_y === boxNow.vector.y1);
   check(mine && mine.width === boxNow.vector.x2 - boxNow.vector.x1 && mine.height === boxNow.vector.y2 - boxNow.vector.y1 && mine.image_set !== SET, "the crop is a new image in a new image set, with the size of the annotation");
   const cropSet = mine.image_set;
+  const bw = boxNow.vector.x2 - boxNow.vector.x1;
+  const regCrop = (await admin.evaluate(async ([id, set]) => (await (await fetch(`/api/v2/images?image_set=${set}&limit=50`)).json()).items.filter((i) => i.crop_source === id), [second.image, cropSet]))[0];
+  check(regCrop && regCrop.image_set === cropSet && Math.abs(regCrop.width - bw / 2) <= 2 && regCrop.crop_x === Math.floor(boxNow.vector.x1 / 2 + 100), `the registered image is cropped at the mapped place into the same set (${regCrop?.width} x ${regCrop?.height} at ${regCrop?.crop_x}, ${regCrop?.crop_y})`);
   // the crop knows where it comes from: the top bar says so and leads back to the original
   const tab = await desktop.newPage();
   await tab.goto(`${base}/images/${mine.id}`);

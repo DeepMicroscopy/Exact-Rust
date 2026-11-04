@@ -193,7 +193,7 @@ export function ViewerPage() {
   const [groupMenu, setGroupMenu] = useState<{ shapes: Shape[]; x: number; y: number } | null>(null);
   const [groupDelete, setGroupDelete] = useState<Shape[] | null>(null);
   const [dialog, setDialog] = useState<{ kind: "info" | "crop" | "delete" | "resize"; shape: Shape; typeId?: number } | null>(null);
-  const [cropped, setCropped] = useState<{ id: number } | null>(null);
+  const [cropped, setCropped] = useState<{ id: number; extra?: number } | null>(null);
   const [playing, setPlaying] = useState(false);
   const [fpsOverride, setFpsOverride] = useState<number | null>(null);
   const [showAnnotations, setShowAnnotations] = useState(true);
@@ -1417,15 +1417,15 @@ export function ViewerPage() {
             source={{ team: imageSet.data?.team ?? null, products: imageSet.data?.product_set ?? [] }}
             mpp={mpp}
             onClose={() => setDialog(null)}
-            onDone={(newId) => {
+            onDone={(newId, _set, extra) => {
               setDialog(null);
-              setCropped({ id: newId });
+              setCropped({ id: newId, extra });
             }}
           />
         )}
         {cropped && (
           <div className="toast glass ok" role="status">
-            Cropped image created.{" "}
+            Cropped image created{cropped.extra ? ` (and ${cropped.extra} registered ${cropped.extra === 1 ? "image" : "images"})` : ""}.{" "}
             <Link to={`/images/${cropped.id}`} className="btn">
               Open it
             </Link>{" "}
