@@ -756,3 +756,6 @@ img { -webkit-user-drag: none; }
 /* the page behind a dialog or the end of a list must not take over a scroll (on an iPad it reloaded the page) */
 .modal-back, .modal, .modal-body, .finder-list, .dd-list, .ctx { overscroll-behavior: contain; }
 body:has(.viewer-shell) { overscroll-behavior: none; }
+
+/* the search, statistics and "new image set" of the start page stay in view while the cards scroll */
+.toolbar.pinned { position: sticky; top: var(--topbar-h, 58px); z-index: 4; padding: 10px 0; margin-top: -10px; background: rgba(15, 15, 20, 0.85); backdrop-filter: blur(10px); }

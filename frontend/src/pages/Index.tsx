@@ -118,7 +118,7 @@ export function Index() {
             </option>
           ))}
         </select>
-        <div className="toolbar">
+        <div className="toolbar pinned">
           <span className="spacer" />
           <SearchInput history="index" className="search" placeholder="Search all teams…" aria-label="Search" value={search} onChange={setSearch} />
           {teamId !== null && (
