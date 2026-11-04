@@ -641,33 +641,6 @@ try {
   await admin.keyboard.press("Control+z");
   await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "two undos restore the polygon");
 
-  // scissors (S): draw an area covering the upper right corner
-  await admin.keyboard.press("s");
-  check((await admin.locator(".toolbox .hint", { hasText: "cut away" }).count()) === 1, "S starts the scissors");
-  for (const [x, y] of [[2400, 1100], [2700, 1100], [2700, 1350], [2400, 1350]]) {
-    const p = await screenOf(admin, x, y);
-    await admin.mouse.click(p.x, p.y);
-    await admin.waitForTimeout(150);
-  }
-  await admin.keyboard.press("Enter");
-  const cut = await waitFor(async () => { const v = (await polyNow()).vector; return xs(v).length > 4 ? v : null; }, "scissors cut a notch out of the polygon");
-  check(xs(cut).length >= 6 && Math.max(...xs(cut)) === 2600, `scissors: the polygon has a notch now (${xs(cut).length} vertices)`);
-  await admin.keyboard.press("Control+z");
-  await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "undo restores the polygon after the scissors");
-
-  // the same notch freehand: one stroke that returns to its start cuts it when the pen is lifted
-  await admin.keyboard.press("s");
-  const stroke = [];
-  for (const [x, y] of [[2400, 1100], [2700, 1100], [2700, 1350], [2400, 1350], [2410, 1120]]) stroke.push(await screenOf(admin, x, y));
-  await admin.mouse.move(stroke[0].x, stroke[0].y);
-  await admin.mouse.down();
-  for (const q of stroke.slice(1)) await admin.mouse.move(q.x, q.y, { steps: 10 });
-  await admin.mouse.up();
-  const cutFree = await waitFor(async () => { const v = (await polyNow()).vector; return xs(v).length > 4 ? v : null; }, "a freehand scissors stroke cuts a notch out as well");
-  check(xs(cutFree).length >= 6 && Math.max(...xs(cutFree)) === 2600, `...without Enter (${xs(cutFree).length} vertices)`);
-  await admin.keyboard.press("Control+z");
-  await waitFor(async () => JSON.stringify((await polyNow()).vector) === JSON.stringify(pStart.vector), "...(undone)");
-
   // knife (D): a line through the polygon makes two polygons
   const before2 = (await annotations(admin)).length;
   await admin.keyboard.press("d");

@@ -16,8 +16,6 @@ The shortcuts of the old EXACT interface were kept. Shortcuts are ignored while 
 | `Esc` | cancel drawing or editing, clear the selection |
 | `Delete`, `Backspace`, `X` | delete the selection |
 | `Y` | show or hide annotations |
-| `S` | scissors: cut an area away from the selected polygon |
-| `G` | glue: add an area to the selected polygon |
 | `D` | knife: split the selected polygon along a line |
 | `Shift` + drag / `Alt` + drag | brush: add area / erase area of a selected polygon |
 | `Shift` + drag | while drawing by clicks or outlining (polygon, polyline, points, one-click boxes): move the image |

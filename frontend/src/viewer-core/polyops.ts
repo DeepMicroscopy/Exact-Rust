@@ -1,4 +1,4 @@
-// Boolean operations on annotation polygons (brush, scissors, glue, knife). Pure functions on rings of image pixels.
+// Boolean operations on annotation polygons (brush, knife). Pure functions on rings of image pixels.
 import polygonClipping, { type MultiPolygon, type Polygon } from "polygon-clipping";
 import type { Pt } from "./geometry";
 

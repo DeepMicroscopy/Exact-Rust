@@ -20,7 +20,7 @@ export interface ToolboxProps {
   selectedType: PaletteEntry | null;
   selectedVertex: number | null;
   draftPoints: number;
-  /** scissors / glue / knife in progress */
+  /** the knife in progress */
   polyOp: PolyOp | null;
   brushMode: BrushMode;
   brushRadius: number;
@@ -105,8 +105,6 @@ export function Toolbox(p: ToolboxProps) {
   const reshape: DropdownItem[] = [
     { id: "add", label: "Add area (Shift + drag)", checked: p.brushMode === "add" },
     { id: "erase", label: "Erase area (Alt + drag)", checked: p.brushMode === "erase" },
-    { id: "scissors", label: "Cut away an area (S)", checked: p.polyOp === "scissors" },
-    { id: "glue", label: "Merge an area (G)", checked: p.polyOp === "glue" },
     { id: "knife", label: "Split along a line (D)", checked: p.polyOp === "knife" },
   ];
   const pickReshape = (id: string | number) => {
@@ -246,7 +244,7 @@ export function Toolbox(p: ToolboxProps) {
           </Dropdown>
           <Measure shape={sel} mpp={p.imageMpp} />
           {p.reshapable && (
-            <Dropdown className="reshape-dd" name="reshape" items={reshape} onPick={pickReshape} title="Reshape the polygon: paint area on or off, cut (S), merge (G), split (D)">
+            <Dropdown className="reshape-dd" name="reshape" items={reshape} onPick={pickReshape} title="Reshape the polygon: paint area on or off, or split it along a line (D)">
               Reshape
             </Dropdown>
           )}
@@ -259,7 +257,7 @@ export function Toolbox(p: ToolboxProps) {
           {p.polyOp && (
             <>
               <span className="hint">
-                {p.polyOp === "scissors" ? "Click the corners of the area to cut away" : p.polyOp === "glue" ? "Click the corners of the area to add" : "Click along the line that splits the polygon"} · Enter applies · Esc
+                Click along the line that splits the polygon · Enter applies · Esc
               </span>
               {p.draftPoints > 0 && (
                 <button className="btn" onClick={p.on.finish}>

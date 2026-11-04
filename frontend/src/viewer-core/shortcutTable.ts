@@ -36,7 +36,7 @@ export const SHORTCUTS: Shortcut[] = [
   { scope: "viewer", keys: "Enter  or  V", text: "Finish the annotation" },
   { scope: "viewer", keys: "Esc", text: "Cancel" },
   { scope: "viewer", keys: "Delete, Backspace  or  X", text: "Delete the selection" },
-  { scope: "viewer", keys: "S / G / D", text: "Polygon: cut away (scissors) / add (glue) / split (knife)" },
+  { scope: "viewer", keys: "D", text: "Polygon: split along a line (knife)" },
   { scope: "viewer", keys: ", / .", text: "Smaller / larger brush (polygon brush, pen brush, mask tool)" },
   { scope: "viewer", keys: "Y", text: "Show / hide the annotations" },
   { scope: "viewer", keys: "O", text: "Overlay image on / off (when one is chosen)" },

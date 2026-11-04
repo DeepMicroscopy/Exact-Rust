@@ -85,9 +85,8 @@ The toolbox at the bottom changes with what you are doing.
 * **Move the image while drawing** with `Shift` + drag, `Space` + drag, the middle mouse button or (on a touch screen) a finger.
   A plain drag with the pen or mouse never moves the image while a polygon, polyline, point or one-click box is being drawn.
 * **One-click mode** (`A`): every click places an annotation of the type's default size. A ghost outline shows where.
-* **Polygons**: select one, hold `Shift` and drag to add area with a brush, `Alt` and drag to erase. `S` cuts an area away
-  (scissors), `G` adds one (glue), `D` splits along a line (knife); with these you can outline freehand as well (the knife cuts
-  where you drew, as soon as you lift the pen). On a touch screen use the buttons in the toolbox.
+* **Polygons**: select one, hold `Shift` and drag to add area with a brush, `Alt` and drag to erase. `D` splits the polygon along a line
+  (knife; it cuts where you drew, as soon as you lift the pen). Scissors and glue of the old EXACT are gone: the brush adds and removes area. On a touch screen use the buttons in the toolbox.
 * **Pen**: the pen annotates by itself, without switching a tool on, using the type chosen under *Annotate with*. With a polygon
   type, or a polygon selected, it is a brush: a stroke paints area (Add) or erases it (Subtract). With a polygon selected only
   that polygon is changed. With nothing selected the first polygon the brush touches is the one that is changed, and only for that
@@ -227,7 +226,7 @@ If a TIFF's pyramid is damaged the viewer offers a **one-time repair**; the orig
 Press **?** on any page (or the **?** button in the top bar) for the keys, shown **on a keyboard** (choose English or German layout, the situation: viewer, viewer with screening open, three planes, image sets; hold Shift or Ctrl / ⌘, or use the buttons, to see what they add; colours tell the kind of action) or **as a list** with the ones of the current page first. In short:
 
 - **Everywhere:** `?` the list · `G` then `P` preferences · `/` or `Ctrl/Cmd + F` the search field of the page (`Esc` inside it clears it).
-- **Viewer:** `E` / `Q` next / previous image · `Shift + E` / `Shift + Q` or Page Up / Down frames · `1`–`9` annotation type · `C` select / draw · `A` one-click mode · `Enter` or `V` finish · `Esc` cancel · `Delete`, `Backspace` or `X` delete · `S` / `G` / `D` polygon scissors / glue / knife · `,` and `.` smaller / larger brush · `Y` annotations on / off · `O` overlay image on / off · `H` overview on / off · `Ctrl/Cmd + Z` / `Y` undo / redo.
+- **Viewer:** `E` / `Q` next / previous image · `Shift + E` / `Shift + Q` or Page Up / Down frames · `1`–`9` annotation type · `C` select / draw · `A` one-click mode · `Enter` or `V` finish · `Esc` cancel · `Delete`, `Backspace` or `X` delete · `D` polygon knife · `,` and `.` smaller / larger brush · `Y` annotations on / off · `O` overlay image on / off · `H` overview on / off · `Ctrl/Cmd + Z` / `Y` undo / redo.
 - **Three planes:** Page Up / Down or arrows step slices · `E` / `Q` next / previous image · `O` linked segmentation files on / off · `B` / `L` / `W` brush, lasso, wand · **Space** switches between adding and subtracting (hold Space and drag to move a plane) · `,` and `.` brush size · hold `Shift` or `Alt` for the opposite · `Esc` closes the mask tools.
 
 `,` and `.` were chosen for the brush size because they are in the same place on English and German keyboards. The start page now loads more image sets as you scroll to the end of the list (no "Show more" button).

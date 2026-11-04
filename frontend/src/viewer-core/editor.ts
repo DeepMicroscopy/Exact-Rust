@@ -44,7 +44,8 @@ export interface TypeInfo {
   height: number | null;
 }
 
-export type PolyOp = "scissors" | "glue" | "knife";
+/** The knife (split along a line) is the only operation left; adding and removing area is done with the brush. */
+export type PolyOp = "knife";
 export type BrushMode = "off" | "add" | "erase";
 
 export type Tool = { kind: "select" } | { kind: "draw"; typeId: number; oneClick: boolean } | { kind: "op"; op: PolyOp };
@@ -664,8 +665,8 @@ export class AnnotationEditor {
     d.points.splice(s.first, d.points.length - s.first, ...mine);
     const closes = d.points.length >= 4 && dist(d.points[d.points.length - 1], d.points[0]) * this.zoom() <= STROKE_CLOSE;
     const info = d.op ? null : this.host.type(d.typeId);
-    const outline = d.op ? d.op !== "knife" : info?.vectorType === VectorType.Polygon;
-    if (d.op === "knife") {
+    const outline = !d.op && info?.vectorType === VectorType.Polygon;
+    if (d.op) {
       this.finish();
     } else if (outline && closes) {
       d.points.pop(); // the last point only said "here is the start again"
@@ -1067,24 +1068,18 @@ export class AnnotationEditor {
     this.host.onReplace(shape, rings);
   }
 
-  /** Scissors (cut the drawn area away), glue (add the drawn area), knife (split along the drawn line) on the selected polygon. */
-  private finishOp(op: PolyOp, points: Pt[]): boolean {
+  /** Knife: split the selected polygon along the drawn line. */
+  private finishOp(_op: PolyOp, points: Pt[]): boolean {
     const target = this.selected;
     const pts = points.filter((p, i) => i === 0 || dist(p, points[i - 1]) > 0.5);
-    if (!target || pts.length < (op === "knife" ? 2 : 3)) return false;
-    const base = ringOf(target);
-    let res: { rings: Ring[]; droppedHoles: boolean };
-    if (op === "scissors") res = difference(base, [pts]);
-    else if (op === "glue") res = union(base, [pts]);
-    else {
-      res = split(base, pts, Math.max(1, 1 / this.zoom()));
-      if (res.rings.length < 2) {
-        this.host.notify("The line did not cut through the polygon.");
-        this.draft = null;
-        this.tool = { kind: "select" };
-        this.refresh();
-        return true;
-      }
+    if (!target || pts.length < 2) return false;
+    const res = split(ringOf(target), pts, Math.max(1, 1 / this.zoom()));
+    if (res.rings.length < 2) {
+      this.host.notify("The line did not cut through the polygon.");
+      this.draft = null;
+      this.tool = { kind: "select" };
+      this.refresh();
+      return true;
     }
     this.draft = null;
     this.tool = { kind: "select" };
@@ -1180,9 +1175,9 @@ export class AnnotationEditor {
       const op = this.draft.op;
       o.draft = {
         points: this.draft.points,
-        closed: op ? op !== "knife" : info?.vectorType === VectorType.Polygon,
+        closed: op ? false : info?.vectorType === VectorType.Polygon,
         cursor: this.hover,
-        color: op === "scissors" ? "#ff5a5a" : op === "glue" ? "#5adc7a" : op === "knife" ? "#ffffff" : (info?.color ?? "#fff"),
+        color: op ? "#ffffff" : (info?.color ?? "#fff"),
       };
     }
     const ps = this.session?.kind === "penbrush" ? this.session : null;

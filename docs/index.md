@@ -20,7 +20,7 @@ started again at any time.
 | | |
 |---|---|
 | **Look at anything** | Whole-slide formats (OpenSlide), TIFF and BigTIFF, OME-TIFF z-stacks, NIfTI and DICOM volumes with a three-plane view, movies, CZI and VSI. Damaged TIFF pyramids can be repaired in place. |
-| **Annotate quickly** | Click an annotation to select and edit it. The toolbox follows what is selected. One-click mode places fixed-size boxes. Polygons have brush, scissors, glue and knife. All old keyboard shortcuts work. |
+| **Annotate quickly** | Click an annotation to select and edit it. The toolbox follows what is selected. One-click mode places fixed-size boxes. Polygons have a brush (add / erase area) and a knife (split). All old keyboard shortcuts work. |
 | **Work in teams** | Teams, image sets, products and annotation types, invitations by link, passkeys or passwords. |
 | **Register images** | Manual and automatic registration of image pairs, with a review of the result and overlays in the viewer. |
 | **Run analyses** | Plugins and workers: a job queue with an atomic claim, progress and results back as annotations. |
