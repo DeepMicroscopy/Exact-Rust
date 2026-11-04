@@ -788,3 +788,23 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .log-table td { vertical-align: top; padding: 4px 8px; }
 .log-message { word-break: break-word; white-space: pre-wrap; font-size: 0.85rem; }
 .log-table tr.error-row { background: rgba(192, 57, 43, 0.12); }
+
+/* the mouse / trackpad in the shortcut help */
+.pv { display: flex; flex-direction: column; gap: 10px; }
+.pv-body-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.pv-figure { flex: none; width: 190px; }
+.pv-device { width: 100%; height: auto; }
+.pv-body { fill: rgba(255, 255, 255, 0.06); stroke: var(--border); stroke-width: 2; }
+.pv-btn { fill: rgba(255, 255, 255, 0.05); stroke: var(--border); stroke-width: 1.5; }
+.pv-btn.hot, .pv-wheel.hot { fill: var(--purple); stroke: #fff; }
+.pv-wheel { fill: rgba(255, 255, 255, 0.12); stroke: var(--border); stroke-width: 1.5; }
+.pv-split { stroke: var(--border); stroke-width: 1.5; fill: none; }
+.pv-finger { fill: rgba(150, 110, 255, 0.65); stroke: #fff; stroke-width: 2; }
+.pv-ring { fill: none; stroke: var(--purple); stroke-width: 2.5; }
+.pv-arrows { fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.pv-note { fill: var(--muted); font-size: 12px; }
+.pv-list { flex: 1 1 320px; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pv-list li { display: grid; grid-template-columns: minmax(150px, 40%) 1fr; gap: 10px; padding: 6px 8px; border-radius: 8px; outline: none; }
+.pv-list li:hover, .pv-list li:focus-visible { background: rgba(150, 110, 255, 0.14); }
+.pv-list li b { font-weight: 600; }
+@media (max-width: 600px) { .pv-list li { grid-template-columns: 1fr; gap: 0; } }

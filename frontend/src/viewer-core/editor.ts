@@ -504,6 +504,12 @@ export class AnnotationEditor {
     return ((pointer === "touch" ? TOUCH_SLOP : MOUSE_SLOP) / this.zoom()) || MOUSE_SLOP;
   }
 
+  /** Ctrl (Windows, Linux) or Cmd (Mac) is held for this pointer event. */
+  private navMod(e: Ev): boolean {
+    const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
+    return !!(oe?.ctrlKey || oe?.metaKey);
+  }
+
   private isTouch(e: Ev): boolean {
     return this.kind(e) === "touch";
   }
@@ -541,6 +547,8 @@ export class AnnotationEditor {
         return;
       }
     }
+    // while drawing, Ctrl / Cmd + drag moves the image (any other press starts or adds to a shape)
+    if (this.tool.kind !== "select" && this.navMod(e)) return;
     if (this.tool.kind === "draw") {
       const info = this.host.type(this.tool.typeId);
       if (info && this.dragDrawn(info) && !this.tool.oneClick) {
@@ -842,6 +850,7 @@ export class AnnotationEditor {
     }
     if (e.quick === false && !this.slowPenTap(e)) return;
     if (pen.ignores(this.kind(e)) && this.tool.kind !== "select") return; // a finger may still tap to select
+    if (this.tool.kind !== "select" && this.navMod(e)) return; // Ctrl / Cmd belongs to moving the image while drawing: a click with it places nothing
     const p = this.toImage(this.at(e));
     if (!p) return;
     if (this.tool.kind === "op") {

@@ -218,6 +218,14 @@ try {
     check((await page.locator('[data-testid="kb-key-KeyZ"]').getAttribute("data-action")) === "Undo", "...and on Z of an English one");
     await page.locator('[data-testid="kb-layer-none"]').click();
     check((await page.locator('[data-testid="kb-key-Comma"]').getAttribute("data-action")) === "Brush −", "the brush size is on the comma key");
+    await page.locator('[data-testid="help-tab-pointer"]').click();
+    await page.waitForSelector('[data-testid="pointer-view"]');
+    check((await page.locator('[data-testid="pv-trackpad"]').getAttribute("aria-pressed")) === "true", "the mouse / trackpad tab starts with the navigation of the user's setting (trackpad / tablet unless changed)");
+    await page.locator('[data-testid="pv-mode-draw"]').click();
+    await page.locator('[data-testid="pv-mouse"]').click();
+    check((await page.locator('[data-testid="pv-list"]').innerText()).includes("Move the slide while drawing"), "...and lists that Ctrl / Cmd + drag moves the slide while drawing");
+    await page.locator('[data-testid="pv-list"] li').first().hover();
+    check((await page.locator('[data-testid="pointer-view"] .pv-btn.hot').count()) === 1, "the part of the mouse a gesture uses is highlighted");
     await page.locator('[data-testid="help-tab-list"]').click();
     const first = await page.locator('[data-testid="shortcut-help"] h3').first().innerText();
     check(/Viewer/.test(first), `? lists the keys of the viewer first (${first})`);

@@ -245,3 +245,6 @@ Press **?** on any page (or the **?** button in the top bar) for the keys, shown
 ## No accidental selection
 
 On touch screens the interface text cannot be selected by a long press or drag any more, and in the viewer it never can; text fields still work as usual. Scrolling beyond the end of a list (for example the image finder) no longer reloads the page.
+
+**Mouse and trackpad in the help.** The `?` dialog has a third tab, *Mouse / trackpad*: a picture of a mouse or a trackpad and, per situation (selecting, drawing, three planes), what each gesture does; point at a line to see which button, wheel or fingers it uses. It starts with the navigation of your setting (Preferences → Slide navigation) and can show the other one too. **Drawing (C):** Ctrl or ⌘ + drag now moves the slide, as Shift + drag and Space + drag did; a click with Ctrl or ⌘ places nothing.
+

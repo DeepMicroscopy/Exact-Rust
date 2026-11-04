@@ -331,6 +331,21 @@ try {
   await admin.waitForTimeout(600);
   check(Math.abs((await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x)) - center0) > 0.001, "Space + drag pans");
   check(JSON.stringify((await annotations(admin)).find((x) => x.id === box.id).vector) === JSON.stringify(moved.vector), "...and does not touch the annotation");
+  // in the drawing mode (C) Ctrl / Cmd + drag moves the image too, and a click with it places nothing
+  const nBefore = (await annotations(admin)).length;
+  await admin.keyboard.press("c");
+  const cDraw = await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x);
+  await admin.keyboard.down("Control");
+  await admin.mouse.move(emptySpot.x, emptySpot.y);
+  await admin.mouse.down();
+  await admin.mouse.move(emptySpot2.x, emptySpot2.y, { steps: 5 });
+  await admin.mouse.up();
+  await admin.mouse.click(emptySpot2.x, emptySpot2.y);
+  await admin.keyboard.up("Control");
+  await admin.waitForTimeout(600);
+  check(Math.abs((await admin.evaluate(() => window.__viewer.viewport.getCenter(true).x)) - cDraw) > 0.001, "Ctrl + drag moves the image while drawing");
+  check((await annotations(admin)).length === nBefore, "...and neither the drag nor a click with Ctrl placed an annotation");
+  await admin.keyboard.press("c");
   await admin.evaluate(() => window.__viewer.viewport.goHome(true));
   await admin.waitForTimeout(400);
 
