@@ -21,6 +21,8 @@ interface Props {
   disabled?: boolean;
   /** a filter field above the list (default: when there are more than 7 items) */
   filter?: boolean;
+  /** open downwards (the default is upwards: the tools of the viewer sit at the bottom) */
+  down?: boolean;
   /** data-testid style hook for tests */
   name?: string;
 }
@@ -29,7 +31,7 @@ interface Props {
  * A button that opens a list: for the many annotation types of an image set. Opens upwards (the tools sit at the bottom),
  * closes on a pick, a click elsewhere or Escape (which then does not reach the viewer's own Escape handling).
  */
-export function Dropdown({ children, items, onPick, title, className = "", disabled, filter, name }: Props) {
+export function Dropdown({ children, items, onPick, title, className = "", disabled, filter, name, down }: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const root = useRef<HTMLDivElement>(null);
@@ -54,7 +56,7 @@ export function Dropdown({ children, items, onPick, title, className = "", disab
 
   return (
     <div
-      className={`dropdown ${className}`}
+      className={`dropdown ${down ? "down" : ""} ${className}`}
       ref={root}
       data-name={name}
       onKeyDown={(e) => {

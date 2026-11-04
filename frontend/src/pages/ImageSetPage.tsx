@@ -284,7 +284,7 @@ export function ImageSetPage() {
           </span>
         ))}
         {can?.edit_set && addable.length > 0 && (
-          <Dropdown items={addable} onPick={(pid) => void addProduct(Number(pid))} title="Add a product">
+          <Dropdown down items={addable} onPick={(pid) => void addProduct(Number(pid))} title="Add a product">
             + product
           </Dropdown>
         )}

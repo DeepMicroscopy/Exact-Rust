@@ -1147,29 +1147,37 @@ fn zip_files(files: &[(i64, String, PathBuf)], out: &std::path::Path) -> std::io
     Ok(())
 }
 
-/// The Olympus scanner names the data folder of `slide-1.vsi` `_slide_1_`: everything but letters and digits becomes `_`.
+/// The Olympus scanner names the data folder of `slide-1.vsi` `_slide_1_`: everything but letters and digits becomes `_`. Some exports
+/// put an `Image_` in front of the name (`_Image_slide_1_`). The plainer spelling wins when both exist.
 fn vsi_scanner_dir(file: &std::path::Path) -> Option<std::path::PathBuf> {
     let flat = |t: &str| -> String {
         t.chars()
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
             .collect()
     };
-    let stem = file.file_stem()?.to_string_lossy().into_owned();
+    let stem = flat(&file.file_stem()?.to_string_lossy());
+    let image = format!("Image_{stem}");
+    let rank = |p: &std::path::PathBuf| -> Option<u8> {
+        let n = p.file_name()?.to_string_lossy().into_owned();
+        if !p.is_dir() || n.len() <= 2 || !n.starts_with('_') || !n.ends_with('_') {
+            return None;
+        }
+        let inner = flat(&n[1..n.len() - 1]);
+        if inner == stem {
+            Some(0)
+        } else if inner == image {
+            Some(1)
+        } else {
+            None
+        }
+    };
     std::fs::read_dir(file.parent()?)
         .ok()?
         .filter_map(Result::ok)
         .map(|e| e.path())
-        .find(|p| {
-            let n = p
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            p.is_dir()
-                && n.len() > 2
-                && n.starts_with('_')
-                && n.ends_with('_')
-                && flat(&n[1..n.len() - 1]) == flat(&stem)
-        })
+        .filter_map(|p| rank(&p).map(|r| (r, p)))
+        .min()
+        .map(|(_, p)| p)
 }
 
 /// MRXS / VSI slides consist of the index file plus a companion directory; they are downloaded as one zip.
@@ -1303,6 +1311,18 @@ mod tests {
             names.contains(&"_slide_1_/slide-1.vsi".to_string()),
             "{names:?}"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_vsi_folder_is_found_with_an_image_prefix_and_the_plain_spelling_wins() {
+        let dir = std::env::temp_dir().join(format!("exact-vsi-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("_Image_slide_1_")).unwrap();
+        let vsi = dir.join("slide-1.vsi");
+        std::fs::write(&vsi, b"index").unwrap();
+        assert_eq!(super::vsi_scanner_dir(&vsi), Some(dir.join("_Image_slide_1_")));
+        std::fs::create_dir_all(dir.join("_slide_1_")).unwrap();
+        assert_eq!(super::vsi_scanner_dir(&vsi), Some(dir.join("_slide_1_")));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
