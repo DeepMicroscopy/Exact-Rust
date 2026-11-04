@@ -79,7 +79,7 @@ input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
 .card { overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.15s, background 0.15s; }
 .card:hover, .tile:hover { border-color: var(--border-h); background: var(--glass-h); }
 .card-body { padding: 12px 14px 14px; }
-.card-title { font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-title { font-weight: 600; margin-bottom: 4px; line-height: 1.25; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 
 .thumb { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #08080c; }
 .thumb.placeholder { background: repeating-linear-gradient(45deg, #101018, #101018 10px, #14141c 10px, #14141c 20px); }
@@ -103,7 +103,7 @@ input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
 
 .viewer-shell { height: 100%; display: flex; flex-direction: column; padding: 10px; gap: 10px; }
 .viewer-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
-.viewer-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.viewer-title { font-weight: 600; line-height: 1.2; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .viewer-body { position: relative; flex: 1; min-height: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: #000; }
 .osd { width: 100%; height: 100%; } /* OpenSeadragon forces position: relative on its element */
 .viewer-side { position: absolute; top: 12px; left: 12px; width: 230px; max-height: calc(100% - 24px); overflow: auto; padding: 12px; z-index: 3; background: rgba(15, 15, 20, 0.75); }
@@ -298,7 +298,7 @@ dl.info dd { margin: 0; overflow-wrap: anywhere; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--purple); }
 .uploads { padding: 10px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
 .upload { display: grid; grid-template-columns: minmax(120px, 1fr) 70px minmax(120px, 220px) 70px; align-items: center; gap: 10px; }
-.upload .name, .reg .name, .job .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload .name, .reg .name, .job .name { line-height: 1.25; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .upload progress { width: 100%; accent-color: var(--purple); }
 .btn.small { padding: 4px 10px; font-size: 0.82rem; min-height: 0; }
 .check { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
@@ -372,7 +372,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .img-pick { display: flex; flex-direction: column; gap: 4px; align-items: stretch; background: transparent; border: 2px solid var(--border); border-radius: 8px; padding: 4px; color: var(--text); cursor: pointer; font: inherit; text-align: left; }
 .img-pick[aria-checked="true"] { border-color: var(--purple); background: rgba(150, 100, 255, 0.15); }
 .img-pick .thumb { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px; }
-.img-pick .name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.img-pick .name { font-size: 12px; line-height: 1.25; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .upload-tile { display: flex; flex-direction: column; gap: 4px; padding: 8px; }
 .upload-tile .upload-body { aspect-ratio: 4 / 3; display: grid; place-items: center; background: rgba(255, 255, 255, 0.05); border-radius: 6px; }
 .upload-tile.error { border-color: #8a2b22; }
@@ -737,7 +737,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .finder-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 4px 6px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .finder-thumb { width: 56px; height: 38px; flex: none; overflow: hidden; border-radius: 4px; background: #0e0e14; }
 .finder-thumb .thumb { width: 100%; height: 100%; object-fit: cover; }
-.finder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.finder-name { flex: 1; line-height: 1.25; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 
 /* screening mode */
 .screening { display: flex; flex-direction: column; gap: 8px; width: 264px; }
