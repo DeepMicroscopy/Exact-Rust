@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 import { useRegisteredImages } from "../hooks/useRegisteredImages";
 import { usePreferences } from "../hooks/usePreferences";
 import type OpenSeadragon from "openseadragon";
@@ -12,7 +18,15 @@ import { overlayPlacement, RegistrationOverlay } from "../viewer-core/overlay";
 /** Sent by the O key: the overlay image on / off. */
 export const OVERLAY_TOGGLE = "exact:overlay-toggle";
 
-export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: MutableRefObject<OpenSeadragon.Viewer | null>; imageId: number; width: number }) {
+export function OverlayControl({
+  viewerRef,
+  imageId,
+  width,
+}: {
+  viewerRef: MutableRefObject<OpenSeadragon.Viewer | null>;
+  imageId: number;
+  width: number;
+}) {
   const [picked, setPicked] = useState<number | null>(null);
   const { prefs } = usePreferences();
   const start = prefs.overlay_opacity / 100;
@@ -28,8 +42,6 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
   const lastOpacity = useRef(start);
   const live = useRef({ picked, opacity });
   live.current = { picked, opacity };
-  const startRef = useRef(start);
-  startRef.current = start;
   useEffect(() => {
     const toggle = () => {
       const { picked: p, opacity: o } = live.current;
@@ -37,7 +49,7 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
       if (o > 0) {
         lastOpacity.current = o;
         setOpacity(0);
-      } else setOpacity(lastOpacity.current || startRef.current || 0.5);
+      } else setOpacity(lastOpacity.current || 1); // nothing to go back to (the start value is 0): fully visible
     };
     window.addEventListener(OVERLAY_TOGGLE, toggle);
     return () => window.removeEventListener(OVERLAY_TOGGLE, toggle);
@@ -48,11 +60,15 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
   // "Auto-enable first overlay" (a setting of the account): the only registered image is shown when the image opens
   const autoDone = useRef<number | null>(null);
   useEffect(() => {
-    if (!prefs.auto_overlay || !candidates || autoDone.current === imageId) return;
+    if (!prefs.auto_overlay || !candidates || autoDone.current === imageId)
+      return;
     autoDone.current = imageId;
     if (candidates.length === 1) setPicked(candidates[0].id);
   }, [prefs.auto_overlay, candidates, imageId]);
-  const chosen = useMemo(() => candidates?.find((c) => c.id === picked) ?? null, [candidates, picked]);
+  const chosen = useMemo(
+    () => candidates?.find((c) => c.id === picked) ?? null,
+    [candidates, picked],
+  );
 
   const opacityRef = useRef(opacity);
   opacityRef.current = opacity;
@@ -60,9 +76,18 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
     const viewer = viewerRef.current;
     if (!viewer || !chosen) return;
     setError(null);
-    const o = new RegistrationOverlay(viewer, chosen.id, overlayPlacement(chosen.map, chosen.width, chosen.height, width), opacityRef.current, (e) => setError(e.message), setLoading);
+    const o = new RegistrationOverlay(
+      viewer,
+      chosen.id,
+      overlayPlacement(chosen.map, chosen.width, chosen.height, width),
+      opacityRef.current,
+      (e) => setError(e.message),
+      setLoading,
+    );
     overlay.current = o;
-    (window as unknown as { __overlay?: RegistrationOverlay | null }).__overlay = o; // used by the e2e tests
+    (
+      window as unknown as { __overlay?: RegistrationOverlay | null }
+    ).__overlay = o; // used by the e2e tests
     return () => {
       setLoading(false);
       o.destroy();
@@ -77,7 +102,14 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
       <label className="muted small" htmlFor="overlay-pick">
         Overlay
       </label>
-      <select id="overlay-pick" value={picked ?? ""} onChange={(e) => setPicked(e.target.value ? Number(e.target.value) : null)} title="Show a registered image on top of this one (O switches it on and off)">
+      <select
+        id="overlay-pick"
+        value={picked ?? ""}
+        onChange={(e) =>
+          setPicked(e.target.value ? Number(e.target.value) : null)
+        }
+        title="Show a registered image on top of this one (O switches it on and off)"
+      >
         <option value="">none</option>
         {candidates.map((c) => (
           <option key={c.id} value={c.id}>
@@ -86,13 +118,27 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
         ))}
       </select>
       {chosen && (
-        <input type="range" min={0} max={1} step={0.05} value={opacity} onChange={(e) => {
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={opacity}
+          onChange={(e) => {
             touched.current = true;
             setOpacity(Number(e.target.value));
-          }} aria-label="Overlay opacity" title={`Opacity ${Math.round(opacity * 100)} %`} />
+          }}
+          aria-label="Overlay opacity"
+          title={`Opacity ${Math.round(opacity * 100)} %`}
+        />
       )}
       {chosen && loading && (
-        <span className="overlay-loading" role="status" aria-label="Loading the overlay" data-testid="overlay-loading">
+        <span
+          className="overlay-loading"
+          role="status"
+          aria-label="Loading the overlay"
+          data-testid="overlay-loading"
+        >
           <Ring progress={0} spinning />
         </span>
       )}

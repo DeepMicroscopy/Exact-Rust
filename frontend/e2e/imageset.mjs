@@ -374,6 +374,23 @@ try {
     await waitFor(() => page.evaluate(() => window.__overlay && window.__viewer.world.getItemAt(window.__viewer.world.getItemCount() - 1).getOpacity() === 0), "O switches the overlay off...");
     await page.keyboard.press("o");
     await waitFor(() => page.evaluate(() => window.__viewer.world.getItemAt(window.__viewer.world.getItemCount() - 1).getOpacity() > 0.3), "...and on again");
+    // a start opacity of 0 (setting): O shows the overlay fully, not at half
+    const setOpacity = (v) => page.evaluate(async (v) => {
+      const me = await (await fetch("/api/v2/auth/me")).json();
+      await fetch("/api/v2/me/preferences", { method: "PUT", headers: { "content-type": "application/json", "x-csrf-token": me.csrf_token }, body: JSON.stringify({ overlay_opacity: v }) });
+    }, v);
+    const topOpacity = () => page.evaluate(() => window.__viewer.world.getItemAt(window.__viewer.world.getItemCount() - 1).getOpacity());
+    await setOpacity(0);
+    try {
+      await page.goto(`${base}/images/${i1.id}`);
+      await waitFor(async () => (await page.locator("#overlay-pick").inputValue()) === String(i2.id) && (await topOpacity()) === 0, "a start opacity of 0 shows the overlay invisible");
+      await page.keyboard.press("o");
+      await waitFor(async () => (await topOpacity()) === 1, "O then shows it at 100 %");
+      await page.keyboard.press("o");
+      await waitFor(async () => (await topOpacity()) === 0, "...and the next O hides it again");
+    } finally {
+      await setOpacity(50);
+    }
   } finally {
     await setAuto(false);
   }
