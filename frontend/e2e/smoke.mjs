@@ -251,6 +251,17 @@ try {
     await page.waitForTimeout(1500);
   }
 
+  // Home: back to the whole slide, like 0
+  {
+    const home = await page.evaluate(() => window.__viewer.viewport.getHomeZoom());
+    await page.evaluate(() => window.__viewer.viewport.zoomBy(4, undefined, true));
+    await page.waitForTimeout(1200);
+    check((await page.evaluate(() => window.__viewer.viewport.getZoom())) > home * 2, "zoomed in, away from the whole slide");
+    await page.locator('[data-testid="home"]').click();
+    await page.waitForTimeout(1500);
+    check(Math.abs((await page.evaluate(() => window.__viewer.viewport.getZoom())) - home) < home * 0.05, "the Home button brings back the whole slide");
+  }
+
   // screenshot of the view, screening mode, no text selection
   {
     check((await page.evaluate(() => getComputedStyle(document.querySelector(".viewer-shell")).userSelect)) === "none", "the viewer does not let the browser select text");

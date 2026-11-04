@@ -1059,6 +1059,12 @@ export function ViewerPage() {
             Three planes
           </button>
         )}
+        <button className="btn icon-btn" aria-label="Home" onClick={() => viewerRef.current?.viewport.goHome()} title="Back to the whole slide (0)" data-testid="home">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3.5 11.5 12 4l8.5 7.5" />
+            <path d="M6 10v9.5h4.2v-5h3.6v5H18V10" />
+          </svg>
+        </button>
         <button
           className={`btn icon-btn ${overviewShown ? "on" : ""}`}
           aria-pressed={overviewShown}
