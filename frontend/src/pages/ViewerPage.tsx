@@ -24,7 +24,7 @@ import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
 import { loadTileSource } from "../viewer-core/tileSource";
 import { ScreeningPanel } from "../components/ScreeningPanel";
 import { takeScreenshot } from "../viewer-core/screenshot";
-import { ImageFinder } from "../components/ImageFinder";
+import { FINDER_FOCUS, ImageFinder, readFinder, saveFinder } from "../components/ImageFinder";
 import { SHOW_HELP } from "../components/GlobalShortcuts";
 import { OVERLAY_TOGGLE, OverlayControl } from "../components/OverlayControl";
 import { ScaleBar } from "../components/ScaleBar";
@@ -222,9 +222,10 @@ export function ViewerPage() {
     }
   }, []);
   const [screening, setScreening] = useState(false);
-  const [finder, setFinder] = useState(false);
+  const [finder, setFinder] = useState(() => readFinder().open);
+  const [finderPin, setFinderPin] = useState(() => readFinder().pinned);
   const finderOpen = useRef(false);
-  finderOpen.current = finder;
+  finderOpen.current = finder && !finderPin; // a pinned finder leaves the viewer's keys alone
   const [toolsOpen, setToolsOpen] = useState(() => window.innerWidth >= 760); // phones view first: the tools open on demand
   const notify = useCallback((msg: string) => {
     setToast(msg);
@@ -848,6 +849,8 @@ export function ViewerPage() {
       if (imageSetId != null && !finderOpen.current && ((( ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === "f") || (ev.key === "/" && !ev.ctrlKey && !ev.metaKey && !isTypingTarget(ev.target) && !menuOpen.current))) {
         ev.preventDefault();
         setFinder(true);
+        saveFinder(readFinder().pinned, true);
+        window.dispatchEvent(new Event(FINDER_FOCUS));
         return;
       }
       if (isTypingTarget(ev.target) || menuOpen.current || finderOpen.current) return;
@@ -1100,9 +1103,17 @@ export function ViewerPage() {
         <ImageFinder
           setId={imageSetId}
           currentId={id}
-          onClose={() => setFinder(false)}
-          onOpen={(to) => {
+          pinned={finderPin}
+          onPin={(on) => {
+            setFinderPin(on);
+            saveFinder(on, true);
+          }}
+          onClose={() => {
             setFinder(false);
+            saveFinder(finderPin, false);
+          }}
+          onOpen={(to) => {
+            if (!finderPin) setFinder(false);
             if (to !== id) navigate(`/images/${to}`);
           }}
         />

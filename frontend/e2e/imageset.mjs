@@ -387,6 +387,33 @@ try {
   await waitFor(async () => (await page.locator('.finder-list [role="option"]').count()) >= 1, "the finder lists the images of the set that match");
   await page.keyboard.press("Enter");
   await waitFor(() => page.url().endsWith(`/images/${i3.id}`), "Enter opens the chosen image");
+  // pinned, the finder stays beside the image: opening an image does not close it, and the viewer's keys keep working
+  await page.goto(`${base}/images/${i1.id}`);
+  await page.waitForSelector(".viewer-bar");
+  await page.waitForTimeout(800);
+  await page.keyboard.press("Control+f");
+  await page.waitForSelector('[data-testid="image-finder"]');
+  await page.click('[data-testid="finder-pin"]');
+  await page.waitForSelector(".finder-dock");
+  await page.keyboard.type(i3.name);
+  await page.keyboard.press("Enter");
+  await waitFor(() => page.url().endsWith(`/images/${i3.id}`), "a pinned finder opens the chosen image");
+  await page.waitForTimeout(800);
+  check((await page.locator(".finder-dock").count()) === 1, "...and stays open");
+  await page.keyboard.press("Escape");
+  await page.locator(".viewer-bar").click({ position: { x: 4, y: 4 } });
+  await page.keyboard.press("c");
+  check((await page.locator('[data-testid="image-finder"]').count()) === 1, "...while the viewer's keys work (C is not typed into the search)");
+  await page.reload();
+  await page.waitForSelector(".finder-dock");
+  check(true, "...and it is still pinned and open after a reload");
+  await page.click('[data-testid="finder-close"]');
+  check((await page.locator(".finder-dock").count()) === 0, "the cross closes the pinned finder");
+  await page.keyboard.press("Control+f");
+  await page.waitForSelector(".finder-dock");
+  await page.click('[data-testid="finder-pin"]');
+  await page.waitForSelector(".modal .finder");
+  await page.keyboard.press("Escape");
   // an image without registration has no overlay control
   await page.goto(`${base}/images/${i3.id}`);
   await page.waitForSelector(".viewer-bar");

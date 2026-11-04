@@ -735,6 +735,13 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 /* find an image of the set (viewer) */
 .finder { display: flex; flex-direction: column; gap: 8px; min-width: min(480px, 80vw); }
 .finder .search { max-width: none; width: 100%; }
+.finder-head { display: flex; align-items: center; gap: 6px; }
+.finder-head .search { flex: 1; min-width: 0; }
+.finder-pin.on { color: var(--purple); }
+.finder-dock { position: fixed; z-index: 6; right: 12px; top: 64px; width: 280px; max-height: calc(100vh - 150px); padding: 8px; display: flex; flex-direction: column; }
+.finder.pinned { min-width: 0; }
+.finder.pinned .finder-list { max-height: calc(100vh - 260px); }
+@media (max-width: 700px) { .finder-dock { width: calc(100vw - 24px); top: auto; bottom: 70px; max-height: 50vh; } .finder.pinned .finder-list { max-height: 30vh; } }
 .finder-list { list-style: none; margin: 0; padding: 0; max-height: 52vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
 .finder-list li.on { background: rgba(150, 110, 255, 0.18); border-radius: 6px; }
 .finder-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 4px 6px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }

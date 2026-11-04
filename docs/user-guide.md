@@ -231,7 +231,7 @@ Press **?** on any page (or the **?** button in the top bar) for the keys, shown
 
 `,` and `.` were chosen for the brush size because they are in the same place on English and German keyboards. The start page now loads more image sets as you scroll to the end of the list (no "Show more" button).
 
-**Finding another image from the viewer.** `Ctrl/Cmd + F` (or `/`) in the viewer and in the three-plane view opens a search over the names of the images of the same image set: type, Up / Down, Enter opens the image (it remembers your last searches).
+**Finding another image from the viewer.** `Ctrl/Cmd + F` (or `/`) in the viewer and in the three-plane view opens a search over the names of the images of the same image set: type, Up / Down, Enter opens the image (it remembers your last searches). **📌 Pin** keeps the search as a panel at the right edge: opening an image does not close it, the viewer's keys keep working while you are not typing in it (`Esc` in the search hands the keys back), and it stays pinned and open next time (the ✕ closes it, the pin again turns it back into a dialog).
 
 **Overlays.** *Preferences → Viewer → Auto-enable first overlay* (off by default): when an image has exactly one registered image to overlay, it is shown as soon as the image opens. `O` switches the overlay off and on. *Preferences → Viewer → Default overlay opacity* (50 % by default) sets how opaque an overlay is when it is first shown; the slider in the viewer still changes it for the image at hand.
 
