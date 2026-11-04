@@ -16,7 +16,7 @@ export interface PointPair {
 }
 
 /** One image in which points are clicked; `points` are shown as numbered markers. */
-function PointViewer({ imageId, points, label, active, onPick }: { imageId: number; points: [number, number][]; label: string; active: boolean; onPick(p: [number, number]): void }) {
+function PointViewer({ imageId, points, label, active, onPick, pendingLast = false }: { imageId: number; points: [number, number][]; label: string; active: boolean; onPick(p: [number, number]): void; /** the last point has no partner yet: its crosshair stays until the partner is set */ pendingLast?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<OpenSeadragon.Viewer | null>(null);
   const pick = useRef(onPick);
@@ -60,12 +60,26 @@ function PointViewer({ imageId, points, label, active, onPick }: { imageId: numb
     if (!v || !item) return;
     v.clearOverlays();
     points.forEach((p, i) => {
+      const at = item.imageToViewportCoordinates(p[0], p[1]);
+      // a dot on the exact point, the number beside it (a number on the point would hide it)
       const el = document.createElement("div");
       el.className = "reg-marker";
-      el.textContent = String(i + 1);
-      v.addOverlay(el, item.imageToViewportCoordinates(p[0], p[1]), OpenSeadragon.Placement.CENTER);
+      const dot = document.createElement("span");
+      dot.className = "reg-dot";
+      const num = document.createElement("span");
+      num.className = "reg-num";
+      num.textContent = String(i + 1);
+      el.append(dot, num);
+      v.addOverlay(el, at, OpenSeadragon.Placement.CENTER);
+      if (pendingLast && i === points.length - 1) {
+        const cross = document.createElement("div");
+        cross.className = "reg-pending-cross";
+        cross.setAttribute("data-testid", `pending-cross-${label}`);
+        cross.innerHTML = "<i class='h'></i><i class='v'></i>";
+        v.addOverlay({ element: cross, location: at, placement: OpenSeadragon.Placement.CENTER, checkResize: false });
+      }
     });
-  }, [points, ready]);
+  }, [points, ready, pendingLast, label]);
 
   return (
     <div className={`reg-viewer ${active ? "active" : ""}`}>
@@ -254,7 +268,7 @@ export function ManualRegistration({ source, target, names, review = false, onCl
         <>
       <p className="muted small">{hint} More points make it more accurate; with three or more it also corrects shear.</p>
       <div className="reg-viewers">
-        <PointViewer imageId={source} label="source" points={[...pairs.map((p) => p.source), ...(pending ? [pending] : [])]} active={!pending} onPick={setPending} />
+        <PointViewer imageId={source} label="source" points={[...pairs.map((p) => p.source), ...(pending ? [pending] : [])]} active={!pending} onPick={setPending} pendingLast={!!pending} />
         <PointViewer
           imageId={target}
           label="target"

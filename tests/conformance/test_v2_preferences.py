@@ -17,8 +17,8 @@ def client(user):
 def test_the_old_navigation_is_off_until_a_user_turns_it_on_and_belongs_to_that_user():
     a, b = client("rt_member"), client("rt_teamadmin")
     try:
-        assert a.get("/api/v2/me/preferences").json() == {"legacy_navigation": False}
-        assert a.put("/api/v2/me/preferences", json={"legacy_navigation": True}).json() == {"legacy_navigation": True}
+        assert a.get("/api/v2/me/preferences").json() == {"legacy_navigation": False, "auto_overlay": False}
+        assert a.put("/api/v2/me/preferences", json={"legacy_navigation": True}).json() == {"legacy_navigation": True, "auto_overlay": False}
         assert a.get("/api/v2/me/preferences").json()["legacy_navigation"] is True
         assert b.get("/api/v2/me/preferences").json()["legacy_navigation"] is False
     finally:

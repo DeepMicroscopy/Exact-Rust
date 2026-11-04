@@ -336,7 +336,13 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .overlay-control select { max-width: 180px; }
 .overlay-control input[type="range"] { width: 90px; }
 .size-change { color: var(--text); max-width: 100%; }
-.reg-marker { width: 22px; height: 22px; border-radius: 50%; background: #e8590c; color: #fff; font: 600 12px/22px system-ui; text-align: center; border: 2px solid #fff; pointer-events: none; box-shadow: 0 0 3px #000; }
+.reg-marker { position: relative; width: 0; height: 0; pointer-events: none; overflow: visible; }
+.reg-marker .reg-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #e8590c; border: 1.5px solid #fff; box-shadow: 0 0 2px #000; box-sizing: border-box; }
+.reg-marker .reg-num { position: absolute; left: 6px; top: -22px; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 9px; background: #e8590c; color: #fff; font: 600 11px/18px system-ui; text-align: center; border: 1.5px solid #fff; box-shadow: 0 0 3px #000; box-sizing: border-box; }
+.reg-pending-cross { position: relative; width: 0; height: 0; pointer-events: none; overflow: visible; }
+.reg-pending-cross i { position: absolute; background: rgba(255, 220, 60, 0.9); box-shadow: 0 0 2px #000; }
+.reg-pending-cross i.h { left: -5000px; width: 10000px; top: 0; height: 1px; }
+.reg-pending-cross i.v { top: -5000px; height: 10000px; left: 0; width: 1px; }
 .reg-pairs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .modal.wide { width: min(1100px, 96vw); max-width: 96vw; }
 @media (max-width: 700px) { .reg-viewers { grid-template-columns: 1fr; } }
@@ -721,3 +727,13 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .shortcut-help dd { margin: 0; }
 .shortcut-help kbd { font: inherit; font-size: 0.85rem; padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; background: rgba(255, 255, 255, 0.06); }
 @media (max-width: 600px) { .shortcut-help dl > div { grid-template-columns: 1fr; gap: 0; } }
+
+/* find an image of the set (viewer) */
+.finder { display: flex; flex-direction: column; gap: 8px; min-width: min(480px, 80vw); }
+.finder .search { max-width: none; width: 100%; }
+.finder-list { list-style: none; margin: 0; padding: 0; max-height: 52vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.finder-list li.on { background: rgba(150, 110, 255, 0.18); border-radius: 6px; }
+.finder-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 4px 6px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.finder-thumb { width: 56px; height: 38px; flex: none; overflow: hidden; border-radius: 4px; background: #0e0e14; }
+.finder-thumb .thumb { width: 100%; height: 100%; object-fit: cover; }
+.finder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

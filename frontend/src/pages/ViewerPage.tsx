@@ -22,6 +22,7 @@ import { SegmentationTool } from "../viewer-core/segmentationTool";
 import { clipboard, pasteVector } from "../viewer-core/clipboard";
 import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
 import { loadTileSource } from "../viewer-core/tileSource";
+import { ImageFinder } from "../components/ImageFinder";
 import { SHOW_HELP } from "../components/GlobalShortcuts";
 import { OVERLAY_TOGGLE, OverlayControl } from "../components/OverlayControl";
 import { ScaleBar } from "../components/ScaleBar";
@@ -216,6 +217,9 @@ export function ViewerPage() {
       /* not remembered */
     }
   }, []);
+  const [finder, setFinder] = useState(false);
+  const finderOpen = useRef(false);
+  finderOpen.current = finder;
   const [toolsOpen, setToolsOpen] = useState(() => window.innerWidth >= 760); // phones view first: the tools open on demand
   const notify = useCallback((msg: string) => {
     setToast(msg);
@@ -835,7 +839,13 @@ export function ViewerPage() {
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (isTypingTarget(ev.target) || menuOpen.current) return;
+      // Ctrl / Cmd + F (and "/"): find another image of the set
+      if (imageSetId != null && !finderOpen.current && ((( ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === "f") || (ev.key === "/" && !ev.ctrlKey && !ev.metaKey && !isTypingTarget(ev.target) && !menuOpen.current))) {
+        ev.preventDefault();
+        setFinder(true);
+        return;
+      }
+      if (isTypingTarget(ev.target) || menuOpen.current || finderOpen.current) return;
       if (kind !== "none" && frames > 1 && (ev.key === "PageUp" || ev.key === "PageDown")) {
         ev.preventDefault();
         const target = Math.round(posRef.current) + (ev.key === "PageUp" ? 1 : -1);
@@ -961,7 +971,7 @@ export function ViewerPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard, segTypeId, readOnly, overviewShown, showOverview]);
+  }, [kind, frames, animateTo, actions, digit, drawing, currentTypeId, drawable, step, syncFromEditor, togglePlay, copySelection, pasteClipboard, segTypeId, readOnly, overviewShown, showOverview, imageSetId]);
 
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
@@ -1060,6 +1070,17 @@ export function ViewerPage() {
         </button>
       </header>
       <GammaFilter gamma={adjust.gamma} />
+      {finder && imageSetId != null && (
+        <ImageFinder
+          setId={imageSetId}
+          currentId={id}
+          onClose={() => setFinder(false)}
+          onOpen={(to) => {
+            setFinder(false);
+            if (to !== id) navigate(`/images/${to}`);
+          }}
+        />
+      )}
       {nrrd && image.data && (
         <ConvertSegmentationDialog
           image={{ id, name: image.data.name }}

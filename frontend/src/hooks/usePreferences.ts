@@ -6,9 +6,11 @@ import { api } from "../api/client";
 export interface Preferences {
   /** navigate slides as the old EXACT did: a click on the background zooms in, a drag always moves the slide */
   legacy_navigation: boolean;
+  /** show the registered image at once when an image has exactly one to overlay */
+  auto_overlay: boolean;
 }
 
-const DEFAULTS: Preferences = { legacy_navigation: false };
+const DEFAULTS: Preferences = { legacy_navigation: false, auto_overlay: false };
 const KEY = ["preferences"];
 
 export function usePreferences(): { prefs: Preferences; set(p: Partial<Preferences>): Promise<void> } {

@@ -25,6 +25,7 @@ export const SHORTCUTS: Shortcut[] = [
   { scope: "lists", keys: "Esc", text: "Close a dialog or a menu" },
 
   { scope: "viewer", keys: "E / Q", text: "Next / previous image of the set" },
+  { scope: "viewer", keys: "/  or  Ctrl/Cmd + F", text: "Find another image of the set by name (Up / Down, Enter opens)" },
   { scope: "viewer", keys: "Shift + E / Shift + Q, Page Up / Page Down", text: "Next / previous frame (stacks, time series)" },
   { scope: "viewer", keys: "Space", text: "Play / pause a movie" },
   { scope: "viewer", keys: "Arrows, + / −, Shift + ↑ / ↓, 0", text: "Move, zoom in / out, fit the slide" },
@@ -45,6 +46,7 @@ export const SHORTCUTS: Shortcut[] = [
 
   { scope: "volume", keys: "Page Up / Page Down, ↑ / ↓", text: "Next / previous slice of the active plane" },
   { scope: "volume", keys: "E / Q", text: "Next / previous image of the set" },
+  { scope: "volume", keys: "/  or  Ctrl/Cmd + F", text: "Find another image of the set by name" },
   { scope: "volume", keys: "O", text: "Linked segmentation files on / off" },
   { scope: "volume", keys: "B / L / W", text: "Mask tools: brush / lasso / wand" },
   { scope: "volume", keys: "Space", text: "Mask tools: switch between adding and subtracting (hold Space and drag to move the plane)" },

@@ -12,6 +12,7 @@ import { Render3D } from "../components/Render3D";
 import { useSegment3D, type Op } from "../hooks/useSegment3D";
 import { BrushLayer } from "../viewer-core/brushLayer";
 import { MaskOverlay } from "../viewer-core/maskOverlay";
+import { ImageFinder } from "../components/ImageFinder";
 import { LinkedPanel, type LinkedView } from "../components/LinkedPanel";
 import { ImportSegmentsDialog } from "../components/ImportSegmentsDialog";
 import type { LinkedFile } from "../components/LinkSegmentationDialog";
@@ -231,8 +232,9 @@ export function MprPage() {
   const step = useCallback((plane: Plane, delta: number) => setVoxel((v) => (v && shape ? stepped(shape, plane, v, delta) : v)), [shape]);
 
   // what the keys below need from the page, without the listener being replaced at every change
-  const live2 = useRef({ id, navigate, images: imageSet.data?.images ?? [], linkedAll, setLinkedView });
-  live2.current = { id, navigate, images: imageSet.data?.images ?? [], linkedAll, setLinkedView };
+  const [finder, setFinder] = useState(false);
+  const live2 = useRef({ id, navigate, images: imageSet.data?.images ?? [], linkedAll, setLinkedView, setFinder, finder, hasSet: imageSetId != null });
+  live2.current = { id, navigate, images: imageSet.data?.images ?? [], linkedAll, setLinkedView, setFinder, finder, hasSet: imageSetId != null };
   const linkedWas = useRef<number[]>([]);
   useEffect(() => {
     // Space: a tap switches the mask tools between adding and subtracting; Space held while dragging moves the plane (see Pane)
@@ -262,6 +264,14 @@ export function MprPage() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
+      const mod = e.ctrlKey || e.metaKey;
+      // Ctrl / Cmd + F (and "/"): find another image of the set
+      if (live2.current.hasSet && !live2.current.finder && ((mod && !e.altKey && e.key.toLowerCase() === "f") || (e.key === "/" && !mod && !isTypingTarget(el)))) {
+        e.preventDefault();
+        live2.current.setFinder(true);
+        return;
+      }
+      if (live2.current.finder) return;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") && isTypingTarget(el)) return;
       if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
@@ -319,6 +329,17 @@ export function MprPage() {
   if (meta.data && !planes) return <p className="muted">This image has no planes to show. <Link to={`/images/${id}`}>Open it</Link></p>;
   return (
     <div className="viewer-shell mpr" data-testid="mpr">
+      {finder && imageSetId != null && (
+        <ImageFinder
+          setId={imageSetId}
+          currentId={id}
+          onClose={() => setFinder(false)}
+          onOpen={(to) => {
+            setFinder(false);
+            if (to !== id) navigate(`/images/${to}`);
+          }}
+        />
+      )}
       <header className="viewer-bar glass">
         <Link to={image.data?.image_set ? `/sets/${image.data.image_set}` : "/"} className="btn ghost">
           ← Back

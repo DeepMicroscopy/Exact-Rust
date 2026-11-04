@@ -297,8 +297,10 @@ try {
     const [sx, sy] = [fx * i1.width, fy * i1.height];
     const [a, b] = await spot("source", sx, sy);
     await page.mouse.click(a, b);
+    await waitFor(async () => (await page.locator('[data-testid="pending-cross-source"]').count()) === 1, "the crosshair stays on the first point while the second is still to be picked");
     const [c, d] = await spot("target", sx * 0.5 + 20, sy * 0.5 + 10);
     await page.mouse.click(c, d);
+    await waitFor(async () => (await page.locator('[data-testid="pending-cross-source"]').count()) === 0, "...and goes when the pair is complete");
   }
   check((await page.locator(".reg-pairs .chip").count()) === 3, "three point pairs were picked");
   await page.locator(".reg-full .btn.primary", { hasText: "Save registration" }).click();
@@ -355,6 +357,36 @@ try {
   await waitFor(() => page.evaluate(() => Math.abs(window.__overlay && window.__viewer.world.getItemAt(window.__viewer.world.getItemCount() - 1).getOpacity() - 0.8) < 0.01), "the opacity slider works");
   await page.selectOption("#overlay-pick", "");
   await waitFor(() => page.evaluate(() => window.__viewer.world.getItemCount() === 1), "choosing none removes the overlay");
+  // "Auto-enable first overlay" (account setting, off by default): the only registered image is shown as the image opens
+  await page.goto(`${base}/images/${i1.id}`);
+  await page.waitForSelector('[data-testid="overlay-control"]');
+  await page.waitForTimeout(600);
+  check((await page.locator("#overlay-pick").inputValue()) === "", "by default no overlay is switched on by itself");
+  const setAuto = (on) => page.evaluate(async (on) => {
+    const me = await (await fetch("/api/v2/auth/me")).json();
+    await fetch("/api/v2/me/preferences", { method: "PUT", headers: { "content-type": "application/json", "x-csrf-token": me.csrf_token }, body: JSON.stringify({ auto_overlay: on }) });
+  }, on);
+  await setAuto(true);
+  try {
+    await page.goto(`${base}/images/${i1.id}`);
+    await waitFor(async () => (await page.locator("#overlay-pick").inputValue()) === String(i2.id), "with the setting on, the only registered image is shown at once");
+    await page.keyboard.press("o");
+    await waitFor(() => page.evaluate(() => window.__overlay && window.__viewer.world.getItemAt(window.__viewer.world.getItemCount() - 1).getOpacity() === 0), "O switches the overlay off...");
+    await page.keyboard.press("o");
+    await waitFor(() => page.evaluate(() => window.__viewer.world.getItemAt(window.__viewer.world.getItemCount() - 1).getOpacity() > 0.3), "...and on again");
+  } finally {
+    await setAuto(false);
+  }
+  // Ctrl + F finds another image of the set from within the viewer
+  await page.goto(`${base}/images/${i1.id}`);
+  await page.waitForSelector(".viewer-bar");
+  await page.waitForTimeout(800);
+  await page.keyboard.press("Control+f");
+  await page.waitForSelector('[data-testid="image-finder"]');
+  await page.keyboard.type(i3.name);
+  await waitFor(async () => (await page.locator('.finder-list [role="option"]').count()) >= 1, "the finder lists the images of the set that match");
+  await page.keyboard.press("Enter");
+  await waitFor(() => page.url().endsWith(`/images/${i3.id}`), "Enter opens the chosen image");
   // an image without registration has no overlay control
   await page.goto(`${base}/images/${i3.id}`);
   await page.waitForSelector(".viewer-bar");
@@ -406,7 +438,7 @@ try {
   const menuTile = page.locator(".tile", { hasText: "img-1" });
   await menuTile.click({ button: "right" });
   await page.waitForSelector(".ctx[aria-label^='Menu of']");
-  check((await page.locator(".ctx[role=menu] [role=menuitem]").allInnerTexts()).map((t) => t.split("\n")[0].trim()).join("|").startsWith("Open|Download|Move…|Related images"), "right click on an image opens its menu: open, download, move, related images");
+  check((await page.locator(".ctx[role=menu] [role=menuitem]").allInnerTexts()).map((t) => t.split("\n")[0].trim()).join("|").startsWith("Open|Download|Rename…|Move…|Related images"), "right click on an image opens its menu: open, download, move, related images");
   const [dl] = await Promise.all([page.waitForEvent("download"), page.locator(".ctx a", { hasText: "Download" }).click()]);
   check(/img-1.*\.png$/.test(dl.suggestedFilename()), `Download sends the file (${dl.suggestedFilename()})`);
   await waitFor(async () => (await page.locator(".ctx").count()) === 0, "the menu closes after the download");

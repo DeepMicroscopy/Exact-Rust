@@ -30,6 +30,7 @@ export function SearchInput({ history, value, onChange, ...rest }: Omit<InputHTM
   return (
     <>
       <input {...rest} list={listId} autoComplete="off" value={value} onChange={(e) => onChange(e.target.value)} onBlur={remember} onKeyDown={(e) => {
+          rest.onKeyDown?.(e);
           if (e.key === "Enter") remember();
           // Esc empties the field, a second Esc leaves it
           if (e.key === "Escape") {

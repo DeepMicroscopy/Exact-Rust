@@ -4,6 +4,7 @@
 //!
 //! - `legacy_navigation` (default false): navigate slides as the old EXACT did: a click on the background zooms in (Shift + click out),
 //!   a drag always moves the slide.
+//! - `auto_overlay` (default false): when an image has exactly one registered image to overlay, show it as soon as the image opens.
 
 use crate::{
     auth::{authenticate, authenticate_account, require_user, AuthKind},
@@ -27,6 +28,7 @@ pub fn routes() -> Router<AppState> {
 fn defaults() -> Map<String, Value> {
     let mut m = Map::new();
     m.insert("legacy_navigation".into(), json!(false));
+    m.insert("auto_overlay".into(), json!(false));
     m
 }
 
@@ -123,15 +125,15 @@ mod tests {
     fn stored_settings_lie_over_the_defaults() {
         assert_eq!(
             with_defaults(&json!({})),
-            json!({"legacy_navigation": false})
+            json!({"legacy_navigation": false, "auto_overlay": false})
         );
         assert_eq!(
             with_defaults(&json!({"legacy_navigation": true, "gone": 1})),
-            json!({"legacy_navigation": true})
+            json!({"legacy_navigation": true, "auto_overlay": false})
         );
         assert_eq!(
             with_defaults(&json!({"legacy_navigation": "yes"})),
-            json!({"legacy_navigation": false})
+            json!({"legacy_navigation": false, "auto_overlay": false})
         );
     }
 }

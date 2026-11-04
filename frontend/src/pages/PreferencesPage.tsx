@@ -151,6 +151,17 @@ function Passkeys() {
   );
 }
 
+function AutoOverlay() {
+  const { prefs, set } = usePreferences();
+  return (
+    <label className="check" title="Disabled by default">
+      <input type="checkbox" checked={prefs.auto_overlay} onChange={(e) => void set({ auto_overlay: e.target.checked })} data-testid="pref-auto-overlay" />
+      Auto-enable first overlay
+      <span className="muted small"> – when an image has exactly one registered image to overlay, show it as soon as the image opens (O switches it off and on)</span>
+    </label>
+  );
+}
+
 function Navigation() {
   const { prefs, set } = usePreferences();
   const choices = [
@@ -208,6 +219,10 @@ export function PreferencesPage() {
       <section className="glass">
         <h2>Passkeys</h2>
         <Passkeys />
+      </section>
+      <section className="glass">
+        <h2>Viewer</h2>
+        <AutoOverlay />
       </section>
       <section className="glass">
         <h2>Slide navigation</h2>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { usePreferences } from "../hooks/usePreferences";
 import type OpenSeadragon from "openseadragon";
 import { api } from "../api/client";
 import type { Page } from "../api/client";
@@ -73,6 +74,14 @@ export function OverlayControl({ viewerRef, imageId, width }: { viewerRef: Mutab
     },
   });
   const candidates = regs.data;
+  // "Auto-enable first overlay" (a setting of the account): the only registered image is shown when the image opens
+  const { prefs } = usePreferences();
+  const autoDone = useRef<number | null>(null);
+  useEffect(() => {
+    if (!prefs.auto_overlay || !candidates || autoDone.current === imageId) return;
+    autoDone.current = imageId;
+    if (candidates.length === 1) setPicked(candidates[0].id);
+  }, [prefs.auto_overlay, candidates, imageId]);
   const chosen = useMemo(() => candidates?.find((c) => c.id === picked) ?? null, [candidates, picked]);
 
   const opacityRef = useRef(opacity);
