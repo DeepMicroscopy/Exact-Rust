@@ -63,9 +63,11 @@ impl ErrorLog {
         let now = Utc::now();
         let Ok(mut g) = self.inner.lock() else { return };
         let len = g.items.len();
-        let same = (len.saturating_sub(DEDUPE_WINDOW)..len)
-            .rev()
-            .find(|&i| g.items[i].level == level && g.items[i].target == target && g.items[i].message == message);
+        let same = (len.saturating_sub(DEDUPE_WINDOW)..len).rev().find(|&i| {
+            g.items[i].level == level
+                && g.items[i].target == target
+                && g.items[i].message == message
+        });
         if let Some(i) = same {
             // the repeat moves to the end, as the newest
             if let Some(mut e) = g.items.remove(i) {
@@ -101,7 +103,12 @@ impl ErrorLog {
             .items
             .iter()
             .rev()
-            .filter(|e| (!errors_only || e.level == "ERROR") && (q.is_empty() || e.message.to_lowercase().contains(&q) || e.target.to_lowercase().contains(&q)))
+            .filter(|e| {
+                (!errors_only || e.level == "ERROR")
+                    && (q.is_empty()
+                        || e.message.to_lowercase().contains(&q)
+                        || e.target.to_lowercase().contains(&q))
+            })
             .collect();
         let total = hits.len();
         (hits.into_iter().take(limit).cloned().collect(), total)

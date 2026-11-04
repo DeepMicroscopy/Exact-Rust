@@ -59,7 +59,11 @@ impl tracing::field::Visit for Text {
 }
 
 impl<S: tracing::Subscriber> Layer<S> for ErrorLogLayer {
-    fn on_event(&self, event: &tracing::Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
         let mut t = Text::default();
         event.record(&mut t);
         let message = if t.fields.is_empty() {

@@ -30,11 +30,12 @@ pub fn v2_routes() -> Router<AppState> {
 const MAX_TILES: usize = 100_000;
 
 async fn readable(s: &AppState, p: &crate::auth::Principal, image: i64) -> ApiResult<()> {
-    let set: Option<i64> = sqlx::query_scalar("SELECT image_set_id FROM images_image WHERE id = $1")
-        .bind(image)
-        .fetch_optional(&s.pool)
-        .await
-        .map_err(db_err)?;
+    let set: Option<i64> =
+        sqlx::query_scalar("SELECT image_set_id FROM images_image WHERE id = $1")
+            .bind(image)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?;
     match set {
         Some(set) if can_read_set(s, p, set).await? => Ok(()),
         _ => Err(ApiError::not_found("No Image matches the given query.")),
@@ -62,7 +63,9 @@ async fn read(
 ) -> ApiResult<Json<Value>> {
     let p = require_user(authenticate_account(&s, &headers, &Method::GET).await?)?;
     readable(&s, &p, id).await?;
-    Ok(Json(stored(&s, id, p.user.id).await?.unwrap_or(Value::Null)))
+    Ok(Json(
+        stored(&s, id, p.user.id).await?.unwrap_or(Value::Null),
+    ))
 }
 
 fn int(body: &Value, key: &str, min: i64) -> ApiResult<Option<i32>> {
@@ -73,7 +76,10 @@ fn int(body: &Value, key: &str, min: i64) -> ApiResult<Option<i32>> {
             .filter(|n| (min..=i64::from(i32::MAX)).contains(n))
             .map(|n| Some(n as i32))
             .ok_or_else(|| {
-                ApiError::detail(StatusCode::BAD_REQUEST, format!("{key} must be an integer >= {min}."))
+                ApiError::detail(
+                    StatusCode::BAD_REQUEST,
+                    format!("{key} must be an integer >= {min}."),
+                )
             }),
     }
 }
@@ -98,7 +104,10 @@ async fn write(
         ));
     }
     readable(&s, &p, id).await?;
-    let (xr, yr) = (int(&body, "x_resolution", 1)?, int(&body, "y_resolution", 1)?);
+    let (xr, yr) = (
+        int(&body, "x_resolution", 1)?,
+        int(&body, "y_resolution", 1)?,
+    );
     let (xs, ys) = (int(&body, "x_steps", 1)?, int(&body, "y_steps", 1)?);
     let cur = int(&body, "current_index", 0)?;
     let tiles = match body.get("screening_tiles") {
@@ -113,10 +122,26 @@ async fn write(
     };
     let old = stored(&s, id, p.user.id).await?;
     let (Some(xr), Some(yr), Some(xs), Some(ys), Some(tiles)) = (
-        xr.or_else(|| old.as_ref().and_then(|o| o["x_resolution"].as_i64()).map(|n| n as i32)),
-        yr.or_else(|| old.as_ref().and_then(|o| o["y_resolution"].as_i64()).map(|n| n as i32)),
-        xs.or_else(|| old.as_ref().and_then(|o| o["x_steps"].as_i64()).map(|n| n as i32)),
-        ys.or_else(|| old.as_ref().and_then(|o| o["y_steps"].as_i64()).map(|n| n as i32)),
+        xr.or_else(|| {
+            old.as_ref()
+                .and_then(|o| o["x_resolution"].as_i64())
+                .map(|n| n as i32)
+        }),
+        yr.or_else(|| {
+            old.as_ref()
+                .and_then(|o| o["y_resolution"].as_i64())
+                .map(|n| n as i32)
+        }),
+        xs.or_else(|| {
+            old.as_ref()
+                .and_then(|o| o["x_steps"].as_i64())
+                .map(|n| n as i32)
+        }),
+        ys.or_else(|| {
+            old.as_ref()
+                .and_then(|o| o["y_steps"].as_i64())
+                .map(|n| n as i32)
+        }),
         tiles.or_else(|| old.as_ref().map(|o| o["screening_tiles"].clone())),
     ) else {
         return Err(ApiError::detail(
@@ -125,7 +150,11 @@ async fn write(
         ));
     };
     let cur = cur
-        .or_else(|| old.as_ref().and_then(|o| o["current_index"].as_i64()).map(|n| n as i32))
+        .or_else(|| {
+            old.as_ref()
+                .and_then(|o| o["current_index"].as_i64())
+                .map(|n| n as i32)
+        })
         .unwrap_or(0);
     if i64::from(cur) >= i64::from(xs) * i64::from(ys) {
         return Err(ApiError::detail(
@@ -149,5 +178,7 @@ async fn write(
     .execute(&s.pool)
     .await
     .map_err(db_err)?;
-    Ok(Json(stored(&s, id, p.user.id).await?.unwrap_or(Value::Null)))
+    Ok(Json(
+        stored(&s, id, p.user.id).await?.unwrap_or(Value::Null),
+    ))
 }

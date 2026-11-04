@@ -306,7 +306,12 @@ fn slide_err_at(image: i64, path: &str, e: exact_wsi::WsiError) -> ApiError {
         .unwrap_or_default();
     let missing = if !file.is_file() {
         Some("the file of this image is missing on the server".to_string())
-    } else if ext == "vsi" && !file.parent().is_some_and(|d| d.join(format!("_{stem}_")).is_dir()) && vsi_scanner_dir(file).is_none() {
+    } else if ext == "vsi"
+        && !file
+            .parent()
+            .is_some_and(|d| d.join(format!("_{stem}_")).is_dir())
+        && vsi_scanner_dir(file).is_none()
+    {
         Some(format!("the data folder `_{stem}_` of this VSI slide is missing next to the file, so there are no pixels to show"))
     } else if ext == "mrxs" && !file.parent().is_some_and(|d| d.join(&stem).is_dir()) {
         Some(format!("the data folder `{stem}` of this MRXS slide is missing next to the file, so there are no pixels to show"))
@@ -415,7 +420,11 @@ async fn thumbnail(
         return Ok(browser_cached("image/png", b));
     }
     if st.thumb_failed.contains_key(&thumb_path) {
-        return Err(slide_err_at(img.id, &path.to_string_lossy(), exact_wsi::WsiError("thumbnail failed before".into())));
+        return Err(slide_err_at(
+            img.id,
+            &path.to_string_lossy(),
+            exact_wsi::WsiError("thumbnail failed before".into()),
+        ));
     }
     // one rendering per thumbnail at a time, and a limited number of renderings altogether
     let flight = {
@@ -1278,7 +1287,10 @@ mod tests {
         assert!(msg(&vsi).contains("file of this image is missing"));
         std::fs::write(&vsi, b"index").unwrap();
         let m = msg(&vsi);
-        assert!(m.starts_with("The slide cannot be read") && m.contains("`_slide-1_`"), "{m}");
+        assert!(
+            m.starts_with("The slide cannot be read") && m.contains("`_slide-1_`"),
+            "{m}"
+        );
         std::fs::create_dir(dir.join("_slide_1_")).unwrap(); // the scanner's spelling counts
         assert_eq!(msg(&vsi), "The slide cannot be read.");
         let mrxs = dir.join("case.mrxs");
@@ -1320,7 +1332,10 @@ mod tests {
         std::fs::create_dir_all(dir.join("_Image_slide_1_")).unwrap();
         let vsi = dir.join("slide-1.vsi");
         std::fs::write(&vsi, b"index").unwrap();
-        assert_eq!(super::vsi_scanner_dir(&vsi), Some(dir.join("_Image_slide_1_")));
+        assert_eq!(
+            super::vsi_scanner_dir(&vsi),
+            Some(dir.join("_Image_slide_1_"))
+        );
         std::fs::create_dir_all(dir.join("_slide_1_")).unwrap();
         assert_eq!(super::vsi_scanner_dir(&vsi), Some(dir.join("_slide_1_")));
         std::fs::remove_dir_all(&dir).unwrap();

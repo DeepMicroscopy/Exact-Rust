@@ -92,7 +92,10 @@ async fn write(
                     format!("Wrong type for {k}."),
                 ))
             }
-            Some(_) if k == "overlay_opacity" && !v.as_i64().is_some_and(|n| (0..=100).contains(&n)) => {
+            Some(_)
+                if k == "overlay_opacity"
+                    && !v.as_i64().is_some_and(|n| (0..=100).contains(&n)) =>
+            {
                 return Err(ApiError::detail(
                     StatusCode::BAD_REQUEST,
                     "overlay_opacity is a whole number from 0 to 100.",

@@ -169,9 +169,12 @@ async fn statistics(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<
                 .map_err(db_err)
         }
     };
-    let annotations = one("SELECT count(*) FROM annotations_annotation WHERE user_id = $1 AND NOT deleted").await?;
+    let annotations =
+        one("SELECT count(*) FROM annotations_annotation WHERE user_id = $1 AND NOT deleted")
+            .await?;
     let images = one("SELECT count(*) FROM images_image WHERE creator_id = $1").await?;
-    let verifications = one("SELECT count(*) FROM annotations_verification WHERE user_id = $1").await?;
+    let verifications =
+        one("SELECT count(*) FROM annotations_verification WHERE user_id = $1").await?;
     let teams: Vec<(i64, String, i64, i64)> = sqlx::query_as(
         "SELECT t.id, t.name,
                 (SELECT count(*) FROM annotations_annotation a JOIN images_image i ON i.id = a.image_id
