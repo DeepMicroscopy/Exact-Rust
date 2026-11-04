@@ -2,7 +2,7 @@ name: ci
 on: [push, pull_request]
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # FFmpeg 6.1: ffmpeg-next 7.1 does not link against the FFmpeg 8 of ubuntu-latest (26.04)
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
