@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ConvertSegmentationDialog, isNrrdName } from "../components/ConvertSegmentationDialog";
 import OpenSeadragon from "openseadragon";
-import { api, listAll } from "../api/client";
+import { api, ApiError, listAll } from "../api/client";
 import type { Page } from "../api/client";
 import { ANNOTATION_FIELDS, createAnnotation } from "../api/annotations";
 import type { Annotation, AnnotationType, ImageSummary, Registration } from "../api/types";
@@ -155,10 +155,12 @@ export function ViewerPage() {
     queryKey: ["image", id],
     queryFn: () => api<ImageSummary>(`/api/v2/images/${id}?fields=id,name,width,height,frames,depth,image_set,mpp,crop_source,crop_x,crop_y,crop_frame`),
   });
-  const failed = image.isError || !!error;
   // an NRRD that was uploaded as an image: the viewer cannot show it, the dialog offers the segmentation file instead
   const nrrd = isNrrdName(image.data?.name);
-  const meta = useQuery({ queryKey: ["image-meta", id], queryFn: () => api<Meta>(`/api/v2/images/${id}/metadata`) });
+  const meta = useQuery({ queryKey: ["image-meta", id], queryFn: () => api<Meta>(`/api/v2/images/${id}/metadata`), retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2 });
+  // the slide itself cannot be read (file or data folder missing, damaged): nothing is ever loaded, so this must be said, not shown as a spinner
+  const unreadable = meta.isError && !image.isError && !nrrd;
+  const failed = image.isError || !!error || unreadable;
   const types = useQuery({
     queryKey: ["annotation-types"],
     queryFn: () => listAll<AnnotationType>("/api/v2/annotation-types", { fields: "id,name,vector_type,color_code,closed,node_count,default_width,default_height,size_unit,sort_order,product,multi_frame" }),
@@ -1124,8 +1126,9 @@ export function ViewerPage() {
         )}
         {failed && (
           <div className="viewer-error glass" role="alert" data-testid="viewer-error">
-            <strong>{image.isError ? `Image ${id} was not found.` : error}</strong>
+            <strong>{image.isError ? `Image ${id} was not found.` : unreadable ? (meta.error instanceof ApiError ? meta.error.detail : "The slide cannot be read.") : error}</strong>
             {image.isError && <p className="muted small">It does not exist, was deleted, or you may not see it.</p>}
+            {unreadable && <p className="muted small">The file may be incomplete or damaged. Please tell an administrator (image {id}); for VSI and MRXS slides the folder next to the file has to be uploaded with it.</p>}
             <Link to="/" className="btn">
               Image sets
             </Link>

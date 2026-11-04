@@ -291,6 +291,40 @@ fn slide_err(e: exact_wsi::WsiError) -> ApiError {
     ApiError::detail(StatusCode::BAD_REQUEST, "The slide cannot be read.")
 }
 
+/// [`slide_err`] with the cause an administrator can act on when the file system tells it: the file is gone, or a VSI / MRXS slide lacks
+/// the data folder that holds the pixels (the index file alone opens as a slide without scenes). The answer still begins with
+/// "The slide cannot be read", as before.
+fn slide_err_at(path: &str, e: exact_wsi::WsiError) -> ApiError {
+    let file = std::path::Path::new(path);
+    let ext = file
+        .extension()
+        .map(|x| x.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let stem = file
+        .file_stem()
+        .map(|x| x.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let missing = if !file.is_file() {
+        Some("the file of this image is missing on the server".to_string())
+    } else if ext == "vsi" && !file.parent().is_some_and(|d| d.join(format!("_{stem}_")).is_dir()) && vsi_scanner_dir(file).is_none() {
+        Some(format!("the data folder `_{stem}_` of this VSI slide is missing next to the file, so there are no pixels to show"))
+    } else if ext == "mrxs" && !file.parent().is_some_and(|d| d.join(&stem).is_dir()) {
+        Some(format!("the data folder `{stem}` of this MRXS slide is missing next to the file, so there are no pixels to show"))
+    } else {
+        None
+    };
+    match missing {
+        Some(why) => {
+            tracing::warn!("slide error: {e} ({why})");
+            ApiError::detail(
+                StatusCode::BAD_REQUEST,
+                format!("The slide cannot be read: {why}."),
+            )
+        }
+        None => slide_err(e),
+    }
+}
+
 fn png(rgb: &image::RgbImage) -> Vec<u8> {
     let mut out = Vec::new();
     let _ = image::codecs::png::PngEncoder::new(&mut out).write_image(
@@ -556,6 +590,7 @@ async fn metadata(
 ) -> ApiResult<Json<Value>> {
     let img = viewer_image(&s, &headers, &pk).await?;
     let path = img.path(&s, 1, 1).to_string_lossy().into_owned();
+    let at = path.clone();
     let st = s.slides.clone();
     let out = tokio::task::spawn_blocking(move || -> exact_wsi::Result<Value> {
         let slide = st.slides.get(&path)?;
@@ -589,7 +624,7 @@ async fn metadata(
     })
     .await
     .map_err(blocking_err)?
-    .map_err(slide_err)?;
+    .map_err(|e| slide_err_at(&at, e))?;
     Ok(Json(out))
 }
 
@@ -639,6 +674,7 @@ pub(crate) async fn get_dz(
         None => None,
     };
     let st = s.slides.clone();
+    let at = path.clone();
     let (dz, measured) = tokio::task::spawn_blocking(move || -> exact_wsi::Result<_> {
         let slide = st.open_slide(&path)?;
         let (offsets, measured) = match stored {
@@ -657,7 +693,7 @@ pub(crate) async fn get_dz(
     })
     .await
     .map_err(blocking_err)?
-    .map_err(slide_err)
+    .map_err(|e| slide_err_at(&at, e))
     .map(|(dz, measured, path)| {
         s.slides.dz_put(&path, plane, dz.clone());
         (dz, measured)
@@ -1216,6 +1252,27 @@ fn add_companions(
 #[cfg(test)]
 mod tests {
     use super::{zip_companions, zip_files};
+
+    #[test]
+    fn an_unreadable_slide_says_what_is_missing() {
+        let dir = std::env::temp_dir().join(format!("exact-vsi-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let msg = |p: &std::path::Path| {
+            let e = super::slide_err_at(&p.to_string_lossy(), exact_wsi::WsiError("x".into()));
+            e.body["detail"].as_str().unwrap_or_default().to_string()
+        };
+        let vsi = dir.join("slide-1.vsi");
+        assert!(msg(&vsi).contains("file of this image is missing"));
+        std::fs::write(&vsi, b"index").unwrap();
+        let m = msg(&vsi);
+        assert!(m.starts_with("The slide cannot be read") && m.contains("`_slide-1_`"), "{m}");
+        std::fs::create_dir(dir.join("_slide_1_")).unwrap(); // the scanner's spelling counts
+        assert_eq!(msg(&vsi), "The slide cannot be read.");
+        let mrxs = dir.join("case.mrxs");
+        std::fs::write(&mrxs, b"index").unwrap();
+        assert!(msg(&mrxs).contains("`case`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn a_vsi_is_zipped_with_the_folder_the_scanner_named() {
