@@ -8,9 +8,11 @@ export interface Preferences {
   legacy_navigation: boolean;
   /** show the registered image at once when an image has exactly one to overlay */
   auto_overlay: boolean;
+  /** how opaque an overlay image is when it is first shown, in whole percent (0 - 100) */
+  overlay_opacity: number;
 }
 
-const DEFAULTS: Preferences = { legacy_navigation: false, auto_overlay: false };
+const DEFAULTS: Preferences = { legacy_navigation: false, auto_overlay: false, overlay_opacity: 50 };
 const KEY = ["preferences"];
 
 export function usePreferences(): { prefs: Preferences; set(p: Partial<Preferences>): Promise<void> } {

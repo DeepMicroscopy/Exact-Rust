@@ -162,6 +162,27 @@ function AutoOverlay() {
   );
 }
 
+function OverlayOpacity() {
+  const { prefs, set } = usePreferences();
+  return (
+    <label className="check" title="50 % by default">
+      Default overlay opacity
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={prefs.overlay_opacity}
+        onChange={(e) => void set({ overlay_opacity: Number(e.target.value) })}
+        aria-label="Default overlay opacity"
+        data-testid="pref-overlay-opacity"
+      />
+      <span>{prefs.overlay_opacity} %</span>
+      <span className="muted small"> – how strongly an overlay image covers the slide when you first show it (the slider in the viewer still changes it for the image you are looking at)</span>
+    </label>
+  );
+}
+
 function Navigation() {
   const { prefs, set } = usePreferences();
   const choices = [
@@ -223,6 +244,7 @@ export function PreferencesPage() {
       <section className="glass">
         <h2>Viewer</h2>
         <AutoOverlay />
+        <OverlayOpacity />
       </section>
       <section className="glass">
         <h2>Slide navigation</h2>

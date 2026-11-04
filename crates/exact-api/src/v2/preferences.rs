@@ -5,6 +5,7 @@
 //! - `legacy_navigation` (default false): navigate slides as the old EXACT did: a click on the background zooms in (Shift + click out),
 //!   a drag always moves the slide.
 //! - `auto_overlay` (default false): when an image has exactly one registered image to overlay, show it as soon as the image opens.
+//! - `overlay_opacity` (default 50, whole percent 0 - 100): how opaque an overlay image is when it is first shown.
 
 use crate::{
     auth::{authenticate, authenticate_account, require_user, AuthKind},
@@ -29,6 +30,7 @@ fn defaults() -> Map<String, Value> {
     let mut m = Map::new();
     m.insert("legacy_navigation".into(), json!(false));
     m.insert("auto_overlay".into(), json!(false));
+    m.insert("overlay_opacity".into(), json!(50));
     m
 }
 
@@ -90,6 +92,12 @@ async fn write(
                     format!("Wrong type for {k}."),
                 ))
             }
+            Some(_) if k == "overlay_opacity" && !v.as_i64().is_some_and(|n| (0..=100).contains(&n)) => {
+                return Err(ApiError::detail(
+                    StatusCode::BAD_REQUEST,
+                    "overlay_opacity is a whole number from 0 to 100.",
+                ))
+            }
             Some(_) => {
                 change.insert(k.clone(), v.clone());
             }
@@ -125,15 +133,15 @@ mod tests {
     fn stored_settings_lie_over_the_defaults() {
         assert_eq!(
             with_defaults(&json!({})),
-            json!({"legacy_navigation": false, "auto_overlay": false})
+            json!({"legacy_navigation": false, "auto_overlay": false, "overlay_opacity": 50})
         );
         assert_eq!(
             with_defaults(&json!({"legacy_navigation": true, "gone": 1})),
-            json!({"legacy_navigation": true, "auto_overlay": false})
+            json!({"legacy_navigation": true, "auto_overlay": false, "overlay_opacity": 50})
         );
         assert_eq!(
             with_defaults(&json!({"legacy_navigation": "yes"})),
-            json!({"legacy_navigation": false, "auto_overlay": false})
+            json!({"legacy_navigation": false, "auto_overlay": false, "overlay_opacity": 50})
         );
     }
 }
