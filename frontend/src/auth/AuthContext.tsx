@@ -1,11 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, setCsrfToken } from "../api/client";
 import type { User } from "../api/types";
+import { passkeyAssertion } from "./webauthn";
 
 interface Auth {
   user: User | null;
   loading: boolean;
   login(username: string, password: string): Promise<void>;
+  /** sign in with a passkey (of the named account, or any that the device offers) */
+  loginWithPasskey(username?: string): Promise<void>;
   logout(): Promise<void>;
 }
 
@@ -33,13 +36,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(r.user);
   }, []);
 
+  const loginWithPasskey = useCallback(async (username?: string) => {
+    const r = await passkeyAssertion<{ user: User; csrf_token: string }>(username);
+    setCsrfToken(r.csrf_token);
+    setUser(r.user);
+  }, []);
+
   const logout = useCallback(async () => {
     await api("/api/v2/auth/logout", { method: "POST" }).catch(() => undefined);
     setCsrfToken(null);
     setUser(null);
   }, []);
 
-  return <Ctx.Provider value={{ user, loading, login, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, loading, login, loginWithPasskey, logout }}>{children}</Ctx.Provider>;
 }
 
 export function useAuth(): Auth {

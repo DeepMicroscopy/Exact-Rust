@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { passkeysSupported } from "../auth/webauthn";
 import { Logo } from "../components/Logo";
 
 export function Login() {
-  const { login } = useAuth();
+  const { login, loginWithPasskey } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +19,19 @@ export function Login() {
       await login(username, password);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Cannot reach the server.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function withPasskey() {
+    setBusy(true);
+    setError(null);
+    try {
+      await loginWithPasskey(username.trim() || undefined);
+    } catch (err) {
+      // the user closing the browser's dialog is no error worth showing
+      if (!(err instanceof DOMException && err.name === "NotAllowedError")) setError(err instanceof ApiError ? err.detail : "Passkey sign-in failed.");
     } finally {
       setBusy(false);
     }
@@ -42,6 +56,11 @@ export function Login() {
         <button className="btn primary" disabled={busy || !username || !password}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
+        {passkeysSupported() && (
+          <button type="button" className="btn ghost" disabled={busy} onClick={() => void withPasskey()} data-testid="passkey-login">
+            Sign in with a passkey
+          </button>
+        )}
       </form>
     </div>
   );

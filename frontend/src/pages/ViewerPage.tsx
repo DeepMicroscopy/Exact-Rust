@@ -293,7 +293,7 @@ export function ViewerPage() {
   const readOnly = !!me?.read_only;
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
-  const { prefs, set: setPref } = usePreferences();
+  const { prefs } = usePreferences();
   const legacyRef = useRef(prefs.legacy_navigation);
   legacyRef.current = prefs.legacy_navigation;
   const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
@@ -1033,16 +1033,6 @@ export function ViewerPage() {
           data-testid="overview-toggle"
         >
           ▣
-        </button>
-        <button
-          className={`btn icon-btn ${prefs.legacy_navigation ? "on" : ""}`}
-          aria-pressed={prefs.legacy_navigation}
-          aria-label="Old navigation"
-          onClick={() => void setPref({ legacy_navigation: !prefs.legacy_navigation })}
-          title={prefs.legacy_navigation ? "Old navigation is on: a click on the background zooms in (Shift + click out), a drag moves the slide. Click to switch it off." : "Switch on the navigation of the old EXACT: a click on the background zooms in (Shift + click out), a drag always moves the slide. A setting of your account."}
-          data-testid="legacy-navigation"
-        >
-          ⊕
         </button>
         <AdjustButton open={adjustOpen} active={!isNeutral(adjust)} onClick={() => setAdjustOpen((o) => !o)} />
         <button className="btn ghost" onClick={() => navigate("/")}>

@@ -655,3 +655,60 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .seg-choice label { display: flex; align-items: center; gap: 8px; }
 .seg-choice input[type="radio"] { width: auto; min-height: 0; padding: 0; flex: none; }
 .mpr .viewer-bar { flex-wrap: wrap; }
+
+/* user menu */
+.user-menu { position: relative; }
+.user-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 190px; padding: 6px; display: flex; flex-direction: column; gap: 2px; background: #14141c; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
+.user-pop .dd-item { display: block; width: 100%; text-align: left; padding: 9px 12px; border: 0; background: none; color: inherit; font: inherit; border-radius: 6px; cursor: pointer; text-decoration: none; }
+.user-pop .dd-item:hover, .user-pop .dd-item:focus-visible { background: rgba(255, 255, 255, 0.08); }
+@media (max-width: 760px) { .user-pop { position: static; box-shadow: none; margin-top: 4px; } }
+
+/* preferences */
+.prefs { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.prefs section { padding: 18px 20px; }
+.prefs h2 { margin: 0 0 4px; font-size: 1.1rem; }
+.prefs h3 { margin: 14px 0 6px; font-size: 0.95rem; }
+.prefs .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.prefs .row input { flex: 1 1 220px; max-width: 360px; }
+.prefs form.col { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.prefs .ok { color: var(--green, #5fd38d); }
+.passkey-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.passkey-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.passkey-list .grow { flex: 1 1 200px; }
+.nav-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 10px; }
+.nav-card { text-align: left; padding: 12px; border: 2px solid var(--border); border-radius: var(--radius); background: rgba(255, 255, 255, 0.03); color: inherit; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }
+.nav-card[aria-checked="true"] { border-color: var(--purple); background: rgba(150, 110, 255, 0.1); }
+.nav-card h3 { margin: 0; display: flex; justify-content: space-between; gap: 8px; }
+.nav-card ul { margin: 0; padding-left: 18px; font-size: 0.88rem; }
+
+/* the small navigation animations (9 s loop) */
+.nav-demo { width: 100%; height: auto; border-radius: 8px; background: #0e0e14; }
+.nav-demo .nd-frame { fill: none; stroke: var(--border); stroke-width: 1.5; }
+.nav-demo .nd-bg { fill: #e9e4f2; }
+.nav-demo .nd-tissue { fill: #c79ad6; stroke: #9d6bb3; stroke-width: 2; }
+.nav-demo .nd-cell { fill: #6b3d86; }
+.nav-demo .nd-slide, .nav-demo .nd-ripple, .nav-demo .nd-select { transform-box: view-box; animation-duration: 9s; animation-iteration-count: infinite; animation-timing-function: ease-in-out; }
+.nav-demo .nd-cursor, .nav-demo .nd-finger { animation-duration: 9s; animation-iteration-count: infinite; animation-timing-function: ease-in-out; }
+.nav-demo .nd-cursor { fill: #fff; stroke: #000; stroke-width: 1; }
+.nav-demo .nd-ripple { fill: none; stroke: var(--purple); stroke-width: 3; opacity: 0; transform-origin: 150px 75px; animation-name: nd-m-ripple; }
+.nav-demo .nd-finger { fill: rgba(150, 110, 255, 0.55); stroke: #fff; stroke-width: 1.5; opacity: 0; }
+.nav-demo .nd-select { fill: rgba(150, 110, 255, 0.18); stroke: var(--purple); stroke-width: 2; stroke-dasharray: 5 3; transform-origin: 80px 40px; opacity: 0; animation-name: nd-t-select; }
+.nav-demo-mouse .nd-slide { transform-origin: 150px 75px; animation-name: nd-m-slide; }
+.nav-demo-mouse .nd-cursor { animation-name: nd-m-cursor; }
+.nav-demo-touch .nd-slide { transform-origin: 120px 75px; animation-name: nd-t-slide; }
+.nav-demo-touch .nd-f1 { animation-name: nd-t-f1; }
+.nav-demo-touch .nd-f2 { animation-name: nd-t-f2; }
+@keyframes nd-m-slide { 0%, 20% { transform: none; } 30%, 50% { transform: scale(1.8); } 62%, 86% { transform: translate(-45px, -25px) scale(1.8); } 95%, 100% { transform: none; } }
+@keyframes nd-m-cursor { 0% { transform: translate(60px, 120px); } 20%, 60% { transform: translate(150px, 75px); } 86% { transform: translate(105px, 50px); } 96%, 100% { transform: translate(60px, 120px); } }
+@keyframes nd-m-ripple { 0%, 20% { opacity: 0; transform: scale(0.3); } 23% { opacity: 0.9; transform: scale(0.4); } 32% { opacity: 0; transform: scale(1.2); } 100% { opacity: 0; } }
+@keyframes nd-t-slide { 0%, 10% { transform: none; } 30%, 36% { transform: scale(1.8); } 56%, 64% { transform: translate(-30px, -15px) scale(1.8); } 70%, 100% { transform: none; } }
+@keyframes nd-t-f1 { 0% { opacity: 0; transform: translate(112px, 75px); } 6%, 10% { opacity: 1; transform: translate(112px, 75px); } 30%, 36% { opacity: 1; transform: translate(80px, 75px); } 56%, 62% { opacity: 1; transform: translate(50px, 60px); } 66% { opacity: 0; transform: translate(50px, 60px); } 72% { opacity: 0; transform: translate(80px, 40px); } 74% { opacity: 1; transform: translate(80px, 40px); } 88% { opacity: 1; transform: translate(150px, 86px); } 94%, 100% { opacity: 0; transform: translate(150px, 86px); } }
+@keyframes nd-t-f2 { 0% { opacity: 0; transform: translate(128px, 75px); } 6%, 10% { opacity: 1; transform: translate(128px, 75px); } 30%, 36% { opacity: 1; transform: translate(160px, 75px); } 56%, 62% { opacity: 1; transform: translate(130px, 60px); } 66%, 100% { opacity: 0; transform: translate(130px, 60px); } }
+@keyframes nd-t-select { 0%, 73% { opacity: 0; transform: scale(0); } 74% { opacity: 1; transform: scale(0.02); } 88%, 94% { opacity: 1; transform: scale(1); } 98%, 100% { opacity: 0; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .nav-demo * { animation: none !important; } .nav-demo .nd-cursor { transform: translate(150px, 75px); } .nav-demo .nd-finger { opacity: 1; } .nav-demo .nd-f1 { transform: translate(112px, 75px); } .nav-demo .nd-f2 { transform: translate(128px, 75px); } }
+
+.day-bars { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin: 6px 0 12px; }
+.day-bars span { flex: 1; background: var(--purple); border-radius: 2px 2px 0 0; min-width: 3px; }
+.day-bars span.none { background: var(--border); }
+.stat-table { width: 100%; border-collapse: collapse; }
+.stat-table th, .stat-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); }

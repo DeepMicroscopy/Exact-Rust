@@ -104,6 +104,16 @@ try {
       }
       return a;
     };
+    /** the Preferences page is where the navigation is chosen; back in the viewer the view is the same as before */
+    const setNav = async (mode) => {
+      await page.goto(base + "/preferences");
+      await page.locator(`[data-testid="nav-${mode}"]`).click();
+      await waitFor(async () => (await page.locator(`[data-testid="nav-${mode}"]`).getAttribute("aria-checked")) === "true", `the ${mode} navigation is selected on the Preferences page`);
+      await page.goBack();
+      await page.waitForSelector(".openseadragon-canvas");
+      await page.waitForTimeout(1500);
+      await page.evaluate(() => { window.__viewer.viewport.maxZoomLevel = 20; });
+    };
     const centre = () => page.evaluate(() => { const c = window.__viewer.viewport.getCenter(); return [c.x, c.y]; });
     const corner = await page.evaluate(() => { const p = window.__viewer.viewport.imageToViewerElementCoordinates(new window.__osd.Point(8, 8)); const r = window.__viewer.canvas.getBoundingClientRect(); return [r.left + p.x, r.top + p.y]; }).catch(() => null);
     if (!corner) check(false, "the viewer exposes OpenSeadragon for the navigation test");
@@ -113,8 +123,7 @@ try {
       await page.mouse.click(cx, cy);
       await page.waitForTimeout(300);
       check(Math.abs((await zoomNow()) / z0 - 1) < 0.01, "by default a click on the background does not zoom");
-      await page.locator('[data-testid="legacy-navigation"]').click();
-      await waitFor(async () => (await page.locator('[data-testid="legacy-navigation"]').getAttribute("aria-pressed")) === "true", "the old navigation is switched on with the button of the viewer");
+      await setNav("mouse");
       const saved = await page.evaluate(async () => (await (await fetch("/api/v2/me/preferences")).json()).legacy_navigation);
       check(saved === true, "...and saved with the account");
       const zOn = await zoomNow();
@@ -135,8 +144,8 @@ try {
       await page.waitForTimeout(900);
       const c1 = await centre();
       check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) > 1e-4 && (await page.locator(".openseadragon-canvas").count()) > 0, "...and a drag on the background moves the slide (no selection frame)");
-      await page.locator('[data-testid="legacy-navigation"]').click();
-      await waitFor(async () => (await page.locator('[data-testid="legacy-navigation"]').getAttribute("aria-pressed")) === "false", "the old navigation is switched off again");
+      await setNav("touch");
+      
     }
   }
 
@@ -152,6 +161,43 @@ try {
     check(!(await shown()), "...it stays hidden after a reload");
     await page.locator('[data-testid="overview-toggle"]').click();
     await waitFor(shown, "the viewer bar button shows it again");
+  }
+
+  // the user menu and the Preferences page
+  {
+    const viewerUrl = page.url();
+    await page.goto(base + "/");
+    await page.waitForSelector('[data-testid="user-menu"]');
+    check((await page.locator('[data-testid="menu-preferences"]').count()) === 0, "the user menu is closed at first");
+    await page.locator('[data-testid="user-menu"]').click();
+    const items = await page.locator('.user-pop [role="menuitem"]').allInnerTexts();
+    check(items.join("|") === "Preferences|User statistics|Sign out", `the user menu offers Preferences, User statistics, Sign out (${items.join("|")})`);
+    await page.locator('[data-testid="menu-user-statistics"]').click();
+    await page.waitForSelector('[data-testid="user-statistics"]');
+    check((await page.locator('[data-testid="user-statistics"] .day-bars span').count()) === 30, "the user statistics show the last 30 days");
+    await page.keyboard.press("Escape");
+    await page.locator('[data-testid="user-menu"]').click();
+    await page.locator('[data-testid="menu-preferences"]').click();
+    await page.waitForSelector('[data-testid="preferences"]');
+    const mail = await page.locator('[data-testid="pref-email"]').inputValue();
+    await page.locator('[data-testid="pref-email"]').fill("prefs-test@example.org");
+    await page.locator('[data-testid="pref-email"]').press("Enter");
+    await waitFor(async () => (await page.evaluate(async () => (await (await fetch("/api/v2/me/account")).json()).email)) === "prefs-test@example.org", "the email address is changed on the Preferences page");
+    await page.locator('[data-testid="pref-email"]').fill(mail);
+    await page.locator('[data-testid="pref-email"]').press("Enter");
+    await waitFor(async () => (await page.evaluate(async () => (await (await fetch("/api/v2/me/account")).json()).email)) === mail, "...and restored");
+    await page.locator('[data-testid="pref-pw-current"]').fill("not the password");
+    await page.locator('[data-testid="pref-pw-new"]').fill("Some-new-Pass-phrase-77");
+    await page.locator('[data-testid="pref-pw-again"]').fill("Some-new-Pass-phrase-77");
+    await page.locator('[data-testid="pref-pw-save"]').click();
+    await page.waitForSelector('[data-testid="preferences"] .col [role="alert"]');
+    check(true, "a wrong current password is refused");
+    check((await page.locator('[data-testid="passkey-list"]').count()) === 1, "the passkeys are listed");
+    check((await page.locator('[data-testid="nav-touch"]').getAttribute("aria-checked")) === "true" && (await page.locator('[data-testid="nav-mouse"]').getAttribute("aria-checked")) === "false", "the slide navigation is trackpad / tablet by default");
+    check((await page.locator(".nav-demo").count()) === 2, "each navigation comes with an animation");
+    await page.goto(viewerUrl);
+    await page.waitForSelector(".openseadragon-canvas");
+    await page.waitForTimeout(1500);
   }
 
   // image adjustments: a movable window behind an icon at the right of the top bar
@@ -482,9 +528,10 @@ try {
   check((await page.locator(".team-select").isVisible()) && !(await page.locator(".teams-aside").isVisible()), "phone: the teams are a drop-down, not a list");
   check((await page.locator(".topnav").isVisible()) === false, "phone: the sign-out and administration entries are folded away...");
   await page.locator(".nav-toggle").click();
-  check((await page.locator(".topnav").getByText("Sign out").isVisible()), "...and shown by the menu button");
+  await page.locator('[data-testid="user-menu"]').click();
+  check(await page.locator('[data-testid="menu-sign-out"]').isVisible(), "...and shown by the menu button (in the user menu)");
   await page.setViewportSize({ width: 1400, height: 850 });
-  check((await page.locator(".nav-toggle").isVisible()) === false && (await page.locator(".topnav").getByText("Sign out").isVisible()), "a wide screen shows them in the top bar as before");
+  check((await page.locator(".nav-toggle").isVisible()) === false && (await page.locator('[data-testid="user-menu"]').isVisible()), "a wide screen shows them in the top bar as before");
 
   check(errors.length === 0, "no console errors: " + errors.join(" | "));
 } finally {

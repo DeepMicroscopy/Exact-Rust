@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { PreferencesPage } from "./pages/PreferencesPage";
 import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
@@ -31,6 +32,7 @@ export function App() {
         <Route path="sets/:setId" element={<ImageSetPage />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="jobs" element={<JobsPage />} />
+        <Route path="preferences" element={<PreferencesPage />} />
         <Route path="invite/:token" element={<InvitePage />} />
       </Route>
       {/* the viewer is full-bleed and has its own chrome */}
