@@ -74,8 +74,11 @@ export function CropDialog({
     .filter((o) => o.region);
   const [withOthers, setWithOthers] = useState(false);
   const [skip, setSkip] = useState<Set<number>>(new Set());
-  const [otherTarget, setOtherTarget] = useState(SAME);
-  const [otherName, setOtherName] = useState("Crops (registered)");
+  // the image set of each registered image's crop: as the first crop, an existing one, or a new one with a name
+  const [targets, setTargets] = useState<Record<number, string>>({});
+  const [newNames, setNewNames] = useState<Record<number, string>>({});
+  const targetOf = (id: number) => targets[id] ?? SAME;
+  const nameOf = (id: number) => newNames[id] ?? "Crops (registered)";
   const chosenOthers = withOthers ? others.filter((o) => !skip.has(o.id)) : [];
   const [done, setDone] = useState<{
     id: number;
@@ -109,6 +112,12 @@ export function CropDialog({
         });
         setId = created.id;
       }
+      if (
+        chosenOthers.some((o) => targetOf(o.id) === NEW && !nameOf(o.id).trim())
+      )
+        throw new Error(
+          "Give each new image set for the registered images a name.",
+        );
       const img = await api<{ id: number }>(`/api/v2/images/${imageId}/crop`, {
         json: { ...region, frame, image_set: setId },
       });
@@ -116,22 +125,28 @@ export function CropDialog({
         onDone(img.id, setId);
         return;
       }
-      let otherSet = setId;
-      if (otherTarget === NEW) {
-        if (!otherName.trim())
-          throw new Error(
-            "Give the image set for the registered images a name.",
-          );
-        otherSet = (
-          await api<{ id: number }>("/api/v2/image-sets", {
-            json: {
-              name: otherName.trim(),
-              team: team ?? teams.data?.items[0]?.id,
-              products: source.products,
-            },
-          })
-        ).id;
-      } else if (otherTarget !== SAME) otherSet = Number(otherTarget);
+      // one new image set per name: registered images that choose the same new name share it
+      const created = new Map<string, number>();
+      const setFor = async (o: (typeof chosenOthers)[number]) => {
+        const t = targetOf(o.id);
+        if (t === SAME) return setId;
+        if (t !== NEW) return Number(t);
+        const nm = nameOf(o.id).trim();
+        let id = created.get(nm);
+        if (id == null) {
+          id = (
+            await api<{ id: number }>("/api/v2/image-sets", {
+              json: {
+                name: nm,
+                team: team ?? teams.data?.items[0]?.id,
+                products: source.products,
+              },
+            })
+          ).id;
+          created.set(nm, id);
+        }
+        return id;
+      };
       const failed: string[] = [];
       let made = 0;
       for (const o of chosenOthers) {
@@ -141,7 +156,7 @@ export function CropDialog({
           try {
             id = (
               await api<{ id: number }>(`/api/v2/images/${o.id}/crop`, {
-                json: { ...o.region, frame: 0, image_set: otherSet },
+                json: { ...o.region, frame: 0, image_set: await setFor(o) },
               })
             ).id;
           } catch (e) {
@@ -286,41 +301,54 @@ export function CropDialog({
                         ({o.region?.w} × {o.region?.h} px)
                       </span>
                     </label>
+                    {!skip.has(o.id) && (
+                      <div className="crop-target">
+                        <select
+                          value={targetOf(o.id)}
+                          onChange={(e) =>
+                            setTargets((t) => ({
+                              ...t,
+                              [o.id]: e.target.value,
+                            }))
+                          }
+                          disabled={busy}
+                          aria-label={`Image set for the crop of ${o.name}`}
+                          data-testid={`crop-target-${o.id}`}
+                        >
+                          <option value={SAME}>
+                            Image set: the same as above
+                          </option>
+                          {[...byTeam.entries()].map(([t, list]) => (
+                            <optgroup key={t} label={t}>
+                              {list.map((st) => (
+                                <option key={st.id} value={st.id}>
+                                  {st.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                          <option value={NEW}>＋ New image set…</option>
+                        </select>
+                        {targetOf(o.id) === NEW && (
+                          <input
+                            value={nameOf(o.id)}
+                            onChange={(e) =>
+                              setNewNames((n) => ({
+                                ...n,
+                                [o.id]: e.target.value,
+                              }))
+                            }
+                            disabled={busy}
+                            maxLength={256}
+                            aria-label={`Name of the new image set for ${o.name}`}
+                            placeholder="Name of the new image set"
+                          />
+                        )}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
-              <label className="field">
-                <span>Image set for these crops</span>
-                <select
-                  value={otherTarget}
-                  onChange={(e) => setOtherTarget(e.target.value)}
-                  disabled={busy}
-                  data-testid="crop-others-target"
-                >
-                  <option value={SAME}>The same as above</option>
-                  {[...byTeam.entries()].map(([t, list]) => (
-                    <optgroup key={t} label={t}>
-                      {list.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                  <option value={NEW}>＋ New image set…</option>
-                </select>
-              </label>
-              {otherTarget === NEW && (
-                <label className="field">
-                  <span>Name of the new image set</span>
-                  <input
-                    value={otherName}
-                    onChange={(e) => setOtherName(e.target.value)}
-                    disabled={busy}
-                    maxLength={256}
-                  />
-                </label>
-              )}
             </>
           )}
         </div>

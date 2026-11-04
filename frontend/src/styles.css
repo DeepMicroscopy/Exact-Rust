@@ -822,3 +822,6 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 
 .crop-others { margin: 10px 0; padding-top: 8px; border-top: 1px solid var(--border); }
 .crop-others .plain-list { list-style: none; margin: 4px 0 8px 22px; padding: 0; max-height: 25vh; overflow: auto; }
+.crop-others li { margin-bottom: 6px; }
+.crop-target { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0 26px; }
+.crop-target select, .crop-target input { min-width: 0; max-width: 100%; flex: 1 1 180px; }
