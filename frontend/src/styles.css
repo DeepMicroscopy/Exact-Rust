@@ -98,7 +98,8 @@ input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
 .tile { padding: 8px; overflow: hidden; transition: border-color 0.15s, background 0.15s; }
 .tile .thumb { border-radius: 8px; margin-bottom: 8px; }
-.tile-name { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* file names are long: two lines (broken anywhere when there is no space), the full name is the tooltip */
+.tile-name { font-size: 0.85rem; line-height: 1.25; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; min-height: 2.5em; }
 
 .viewer-shell { height: 100%; display: flex; flex-direction: column; padding: 10px; gap: 10px; }
 .viewer-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
