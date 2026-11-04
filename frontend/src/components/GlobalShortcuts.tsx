@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { isTypingTarget } from "../viewer-core/shortcuts";
 import { SCOPE_TITLE, SHORTCUTS, scopeOf, type Scope } from "../viewer-core/shortcutTable";
+import { KeyboardView } from "./KeyboardView";
 import { Modal } from "./Modal";
 
 /** Sent by the "?" buttons: opens the list of keys. */
@@ -16,10 +17,20 @@ function searchField(): HTMLInputElement | null {
 /** The list of keys for the page the user is on (the page's own first). */
 export function ShortcutHelp({ onClose }: { onClose(): void }) {
   const here = scopeOf(useLocation().pathname);
+  const [view, setView] = useState<"keyboard" | "list">("keyboard");
   const order: Scope[] = [here, "everywhere", ...(["lists", "viewer", "volume"] as Scope[]).filter((s) => s !== here)];
   return (
     <Modal title="Keyboard shortcuts" onClose={onClose} wide>
-      <div className="shortcut-help" data-testid="shortcut-help">
+      <div className="seg help-tabs" role="tablist" aria-label="View">
+        <button role="tab" aria-selected={view === "keyboard"} className={view === "keyboard" ? "active" : ""} onClick={() => setView("keyboard")} data-testid="help-tab-keyboard">
+          On a keyboard
+        </button>
+        <button role="tab" aria-selected={view === "list"} className={view === "list" ? "active" : ""} onClick={() => setView("list")} data-testid="help-tab-list">
+          As a list
+        </button>
+      </div>
+      {view === "keyboard" && <KeyboardView initialMode={here === "volume" ? "volume" : here === "viewer" ? "viewer" : "lists"} />}
+      <div className="shortcut-help" data-testid="shortcut-help" hidden={view !== "list"}>
         {order.map((scope, n) => (
           <section key={scope} className={n > 1 ? "other" : ""}>
             <h3>{SCOPE_TITLE[scope]}{scope === here && <span className="muted small"> (this page)</span>}</h3>

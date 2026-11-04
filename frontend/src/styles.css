@@ -759,3 +759,25 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 
 /* the search, statistics and "new image set" of the start page stay in view while the cards scroll */
 .toolbar.pinned { position: sticky; top: var(--topbar-h, 58px); z-index: 4; padding: 10px 0; margin-top: -10px; background: rgba(15, 15, 20, 0.85); backdrop-filter: blur(10px); }
+
+/* the shortcuts on a keyboard */
+.help-tabs { margin-bottom: 10px; }
+.kb { --kb-u: clamp(34px, 4.3vw, 50px); display: flex; flex-direction: column; gap: 10px; }
+.kb-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.kb-board { overflow-x: auto; padding: 8px; background: rgba(0, 0, 0, 0.35); border-radius: 10px; display: flex; flex-direction: column; gap: 4px; width: fit-content; max-width: 100%; }
+.kb-row { display: flex; gap: 4px; }
+.kb-key { box-sizing: border-box; height: calc(var(--kb-u) * 1.05); border: 1px solid var(--border); border-radius: 6px; background: rgba(255, 255, 255, 0.05); padding: 2px 3px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; flex: none; font-size: 0.68rem; line-height: 1.1; color: var(--muted); }
+.kb-key.mod { opacity: 0.55; }
+.kb-legend { display: flex; gap: 3px; align-items: baseline; font-size: 0.78rem; font-weight: 600; }
+.kb-legend i { font-style: normal; font-weight: 400; font-size: 0.62rem; opacity: 0.7; }
+.kb-action { font-size: 0.6rem; font-weight: 600; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+.kb-key.bound { color: #fff; border-color: transparent; }
+.kb-key.move, .kb-swatch.move { background: #2f6fd0; }
+.kb-key.edit, .kb-swatch.edit { background: #c0392b; }
+.kb-key.tool, .kb-swatch.tool { background: #7d3fc9; }
+.kb-key.view, .kb-swatch.view { background: #1e8e6e; }
+.kb-key.image, .kb-swatch.image { background: #c47f10; }
+.kb-key.help, .kb-swatch.help { background: #5a6270; }
+.kb-legendbar { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8rem; color: var(--muted); }
+.kb-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; }
+.kb-tip { min-height: 1.4em; margin: 0; }

@@ -210,7 +210,15 @@ try {
     await page.keyboard.press("h");
     await waitFor(async () => (await page.locator('[data-testid="overview-toggle"]').getAttribute("aria-pressed")) === "true", "...and shows it again");
     await page.keyboard.press("Shift+Slash");
-    await page.waitForSelector('[data-testid="shortcut-help"]');
+    await page.waitForSelector('[data-testid="keyboard-view"]');
+    await page.locator('[data-testid="kb-de"]').click();
+    await page.locator('[data-testid="kb-layer-ctrl"]').click();
+    check((await page.locator('[data-testid="kb-key-KeyY"]').getAttribute("data-action")) === "Undo", "the keyboard view puts Undo on the key labelled Z of a German keyboard (Y position)");
+    await page.locator('[data-testid="kb-en"]').click();
+    check((await page.locator('[data-testid="kb-key-KeyZ"]').getAttribute("data-action")) === "Undo", "...and on Z of an English one");
+    await page.locator('[data-testid="kb-layer-none"]').click();
+    check((await page.locator('[data-testid="kb-key-Comma"]').getAttribute("data-action")) === "Brush −", "the brush size is on the comma key");
+    await page.locator('[data-testid="help-tab-list"]').click();
     const first = await page.locator('[data-testid="shortcut-help"] h3').first().innerText();
     check(/Viewer/.test(first), `? lists the keys of the viewer first (${first})`);
     await page.keyboard.press("Escape");

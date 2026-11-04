@@ -224,7 +224,7 @@ If a TIFF's pyramid is damaged the viewer offers a **one-time repair**; the orig
 
 ## Keyboard shortcuts
 
-Press **?** on any page (or the **?** button in the top bar) for the list of keys, with the ones of the current page first. In short:
+Press **?** on any page (or the **?** button in the top bar) for the keys, shown **on a keyboard** (choose English or German layout, the situation: viewer, viewer with screening open, three planes, image sets; hold Shift or Ctrl / ⌘, or use the buttons, to see what they add; colours tell the kind of action) or **as a list** with the ones of the current page first. In short:
 
 - **Everywhere:** `?` the list · `G` then `P` preferences · `/` or `Ctrl/Cmd + F` the search field of the page (`Esc` inside it clears it).
 - **Viewer:** `E` / `Q` next / previous image · `Shift + E` / `Shift + Q` or Page Up / Down frames · `1`–`9` annotation type · `C` select / draw · `A` one-click mode · `Enter` or `V` finish · `Esc` cancel · `Delete`, `Backspace` or `X` delete · `S` / `G` / `D` polygon scissors / glue / knife · `,` and `.` smaller / larger brush · `Y` annotations on / off · `O` overlay image on / off · `H` overview on / off · `Ctrl/Cmd + Z` / `Y` undo / redo.
@@ -246,4 +246,3 @@ Press **?** on any page (or the **?** button in the top bar) for the list of key
 ## No accidental selection
 
 On touch screens the interface text cannot be selected by a long press or drag any more, and in the viewer it never can; text fields still work as usual. Scrolling beyond the end of a list (for example the image finder) no longer reloads the page.
-
