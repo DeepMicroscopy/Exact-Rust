@@ -79,7 +79,11 @@ pub const WRITABLE: &[W] = &[
         required: &["annotation_type", "image", "pluginresultentry"],
         defaults: &[
             ("time", "now()"),
-            ("unique_identifier", "gen_random_uuid()"),
+            // a random (version 4) UUID without `gen_random_uuid()`, which PostgreSQL has built in only from 13
+            (
+                "unique_identifier",
+                "uuid_in(overlay(overlay(md5(random()::text || clock_timestamp()::text) placing '4' from 13) placing to_hex(8 + (random() * 3)::int) from 17)::cstring)",
+            ),
             ("description", "''"),
             ("score", "0"),
         ],

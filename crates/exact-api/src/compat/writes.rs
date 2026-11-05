@@ -208,7 +208,7 @@ pub async fn insert_annotation(
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO annotations_annotation (image_id, vector, _concealed, _blurred, time, annotation_type_id, user_id, \
          last_edit_time, last_editor_id, deleted, description, unique_identifier, meta_data) \
-         VALUES ($1, $2, $3, $4, now(), $5, $6, now(), $7, $8, $9, COALESCE($10, gen_random_uuid()), $11) RETURNING id",
+         VALUES ($1, $2, $3, $4, now(), $5, $6, now(), $7, $8, $9, $10, $11) RETURNING id",
     )
     .bind(a.image_id)
     .bind(&a.vector)
@@ -219,7 +219,8 @@ pub async fn insert_annotation(
     .bind(a.last_editor_id)
     .bind(a.deleted)
     .bind(&a.description)
-    .bind(a.unique_identifier)
+    // generated here: `gen_random_uuid()` is built into PostgreSQL only from 13 (production runs 12)
+    .bind(a.unique_identifier.unwrap_or_else(uuid::Uuid::new_v4))
     .bind(&a.meta_data)
     .fetch_one(&mut **tx)
     .await
