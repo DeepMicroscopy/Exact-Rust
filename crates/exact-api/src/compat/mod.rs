@@ -153,7 +153,7 @@ async fn rest_write(
         )
         .await?;
         let id = match pk {
-            None => return rest_writes::create(s, &p, body.as_ref(), allow).await,
+            None => return rest_writes::create(s, &p, headers, body.as_ref(), allow).await,
             Some(pk) => pk
                 .parse::<i64>()
                 .map_err(|_| ApiError::not_found("Not found."))?,
@@ -174,8 +174,10 @@ async fn rest_write(
         }
         match *method {
             Method::DELETE => rest_writes::delete(s, &p, id).await,
-            Method::PUT => rest_writes::update(s, &p, id, body.as_ref(), false, allow).await,
-            _ => rest_writes::update(s, &p, id, body.as_ref(), true, allow).await,
+            Method::PUT => {
+                rest_writes::update(s, &p, headers, id, body.as_ref(), false, allow).await
+            }
+            _ => rest_writes::update(s, &p, headers, id, body.as_ref(), true, allow).await,
         }
     }
     .await;

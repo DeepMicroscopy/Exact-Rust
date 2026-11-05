@@ -45,6 +45,6 @@ the Django version, most for the lists that exact-sync and workers ask for (Djan
 
 * **Using it:** [User guide](user-guide) and [keyboard shortcuts](shortcuts).
 * **Running a team:** [Administration](administration).
-* **Installing it:** [Beta installation on a copy of production](DEPLOY).
+* **Installing it:** [Beta installation on a copy of production](DEPLOY); [running next to the Django EXACT on the same data](coexistence) (test suite and preflight).
 * **Scripting it:** [API](api) and the [QueueRunner claim](queuerunner-v2).
 * **How it is built:** [Architecture](architecture).

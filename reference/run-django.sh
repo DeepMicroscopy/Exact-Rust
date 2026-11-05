@@ -4,7 +4,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="${EXACT_SRC:-$HOME/code/Exact}"
 export PYTHONPATH="$HERE:$SRC/exact"
-export DJANGO_SETTINGS_MODULE=settings_ref_db
+export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-settings_ref_db}"
 export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
 export SQL_HOST=127.0.0.1 SQL_DATABASE="${SQL_DATABASE:-exact_rust_test}" SQL_USER=exact SQL_PASSWORD=exact
 cd "$SRC/exact"

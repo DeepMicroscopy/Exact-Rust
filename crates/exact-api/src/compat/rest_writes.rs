@@ -8,7 +8,7 @@
 
 use super::{
     engine::{self, db_err},
-    legacy::{rest_ctx, serialize_annotations},
+    legacy::rest_ctx,
     specs,
     writes::{
         annotation_row, delete_annotations, insert_annotation, parse_local, set_last_edit_time,
@@ -214,8 +214,25 @@ fn time_field(
     }
 }
 
-async fn serialize_one(s: &AppState, id: i64) -> ApiResult<Value> {
-    Ok(serialize_annotations(s, &[id])
+/// The annotations as the DRF serializer of the viewset answers them (what `GET /api/v1/annotations/annotations/{id}/` shows): flat, the
+/// related objects as ids. (The legacy `annotation/create` endpoints answer with the expanded shape; these do not.)
+async fn serialize_many(
+    s: &AppState,
+    p: &Principal,
+    headers: &HeaderMap,
+    ids: &[i64],
+) -> ApiResult<Vec<Value>> {
+    let spec = specs::find("annotations", "annotations").ok_or_else(ApiError::not_found_page)?;
+    engine::serialize_ids(&rest_ctx(s, p, headers), spec, ids).await
+}
+
+async fn serialize_one(
+    s: &AppState,
+    p: &Principal,
+    headers: &HeaderMap,
+    id: i64,
+) -> ApiResult<Value> {
+    Ok(serialize_many(s, p, headers, &[id])
         .await?
         .into_iter()
         .next()
@@ -248,12 +265,13 @@ async fn require_annotate(s: &AppState, p: &Principal, image_id: i64) -> ApiResu
 pub async fn create(
     s: &AppState,
     p: &Principal,
+    headers: &HeaderMap,
     body: &[u8],
     allow: &'static str,
 ) -> ApiResult<Response> {
     match body_value(body)? {
-        Value::Array(items) => create_many(s, p, items, allow).await,
-        other => create_one(s, p, object(other)?, allow).await,
+        Value::Array(items) => create_many(s, p, headers, items, allow).await,
+        other => create_one(s, p, headers, object(other)?, allow).await,
     }
 }
 
@@ -262,6 +280,7 @@ pub async fn create(
 async fn create_many(
     s: &AppState,
     p: &Principal,
+    headers: &HeaderMap,
     items: Vec<Value>,
     allow: &'static str,
 ) -> ApiResult<Response> {
@@ -291,13 +310,14 @@ async fn create_many(
         created.push(insert_annotation(&mut tx, r).await?);
     }
     tx.commit().await.map_err(db_err)?;
-    let list = serialize_annotations(s, &created).await?;
+    let list = serialize_many(s, p, headers, &created).await?;
     Ok(out(StatusCode::CREATED, Value::Array(list), allow))
 }
 
 async fn create_one(
     s: &AppState,
     p: &Principal,
+    headers: &HeaderMap,
     d: Map<String, Value>,
     allow: &'static str,
 ) -> ApiResult<Response> {
@@ -351,7 +371,11 @@ async fn create_one(
             .execute(&s.pool)
             .await
             .map_err(db_err)?;
-            return Ok(out(StatusCode::OK, serialize_one(s, id).await?, allow));
+            return Ok(out(
+                StatusCode::OK,
+                serialize_one(s, p, headers, id).await?,
+                allow,
+            ));
         }
     }
 
@@ -385,7 +409,11 @@ async fn create_one(
     if let Some(t) = last_edit {
         set_last_edit_time(s, id, t).await?;
     }
-    Ok(out(StatusCode::CREATED, serialize_one(s, id).await?, allow))
+    Ok(out(
+        StatusCode::CREATED,
+        serialize_one(s, p, headers, id).await?,
+        allow,
+    ))
 }
 
 /// PUT (`partial` false) and PATCH of one annotation the caller may see. `last_editor` defaults to the caller; PUT also
@@ -393,6 +421,7 @@ async fn create_one(
 pub async fn update(
     s: &AppState,
     p: &Principal,
+    headers: &HeaderMap,
     id: i64,
     body: &[u8],
     partial: bool,
@@ -460,7 +489,11 @@ pub async fn update(
     .execute(&s.pool)
     .await
     .map_err(db_err)?;
-    Ok(out(StatusCode::OK, serialize_one(s, id).await?, allow))
+    Ok(out(
+        StatusCode::OK,
+        serialize_one(s, p, headers, id).await?,
+        allow,
+    ))
 }
 
 async fn delete_ids(s: &AppState, p: &Principal, ids: &[i64]) -> ApiResult<Map<String, Value>> {
