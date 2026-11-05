@@ -57,7 +57,8 @@ RUN git clone --depth 1 --branch "${EXACT_REF}" "${EXACT_REPO}" /opt/exact && rm
 RUN if python -c "import slideio" 2>/dev/null; then cd /opt/exact/exact && python -c "import util.slide_server"; else echo "WARNING: no slideio: the registration worker cannot read slides here"; fi
 COPY --from=build /src/target/release/exact-server /src/target/release/exact-cli /usr/local/bin/
 COPY helpers /app/helpers
-COPY --chmod=755 deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod 755 /app/docker-entrypoint.sh
 COPY baseline /app/baseline
 COPY --from=ui /src/frontend/dist /app/frontend/dist
 ENV EXACT_LISTEN=0.0.0.0:8002 \
