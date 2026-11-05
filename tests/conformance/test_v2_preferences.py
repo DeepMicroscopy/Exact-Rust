@@ -17,8 +17,8 @@ def client(user):
 def test_the_old_navigation_is_off_until_a_user_turns_it_on_and_belongs_to_that_user():
     a, b = client("rt_member"), client("rt_teamadmin")
     try:
-        assert a.get("/api/v2/me/preferences").json() == {"legacy_navigation": False, "auto_overlay": False, "overlay_opacity": 50}
-        assert a.put("/api/v2/me/preferences", json={"legacy_navigation": True}).json() == {"legacy_navigation": True, "auto_overlay": False, "overlay_opacity": 50}
+        assert a.get("/api/v2/me/preferences").json() == {"legacy_navigation": False, "auto_overlay": False, "overlay_opacity": 50, "zoom_slider": False, "zoom_step": "low"}
+        assert a.put("/api/v2/me/preferences", json={"legacy_navigation": True}).json() == {"legacy_navigation": True, "auto_overlay": False, "overlay_opacity": 50, "zoom_slider": False, "zoom_step": "low"}
         assert a.get("/api/v2/me/preferences").json()["legacy_navigation"] is True
         assert b.get("/api/v2/me/preferences").json()["legacy_navigation"] is False
     finally:
@@ -43,4 +43,19 @@ def test_the_overlay_opacity_is_a_whole_percent_and_kept():
             assert c.put("/api/v2/me/preferences", json={"overlay_opacity": bad}).status_code == 400
         assert c.get("/api/v2/me/preferences").json()["overlay_opacity"] == 30
     finally:
-        c.put("/api/v2/me/preferences", json={"overlay_opacity": 50})
+        c.put("/api/v2/me/preferences", json={"overlay_opacity": 50, "zoom_slider": False, "zoom_step": "low"})
+
+
+def test_the_zoom_slider_is_off_and_the_zoom_step_is_low_until_a_user_changes_them():
+    c = client("rt_member")
+    try:
+        assert c.put("/api/v2/me/preferences", json={"zoom_slider": True, "zoom_step": "high"}).json()["zoom_step"] == "high"
+        got = c.get("/api/v2/me/preferences").json()
+        assert got["zoom_slider"] is True and got["zoom_step"] == "high"
+        for bad in ({"zoom_step": "huge"}, {"zoom_step": 2}, {"zoom_slider": "yes"}):
+            assert c.put("/api/v2/me/preferences", json=bad).status_code == 400
+        assert c.get("/api/v2/me/preferences").json()["zoom_step"] == "high"
+        for step in ("medium", "low"):
+            assert c.put("/api/v2/me/preferences", json={"zoom_step": step}).json()["zoom_step"] == step
+    finally:
+        c.put("/api/v2/me/preferences", json={"zoom_slider": False, "zoom_step": "low"})

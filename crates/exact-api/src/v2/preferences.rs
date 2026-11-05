@@ -6,6 +6,8 @@
 //!   a drag always moves the slide.
 //! - `auto_overlay` (default false): when an image has exactly one registered image to overlay, show it as soon as the image opens.
 //! - `overlay_opacity` (default 50, whole percent 0 - 100): how opaque an overlay image is when it is first shown.
+//! - `zoom_slider` (default false): show a slider for the zoom level in the viewer.
+//! - `zoom_step` (`low` default, `medium`, `high`): how far one press of + / − zooms (factors 1.25, 1.5, 2).
 
 use crate::{
     auth::{authenticate, authenticate_account, require_user, AuthKind},
@@ -31,6 +33,8 @@ fn defaults() -> Map<String, Value> {
     m.insert("legacy_navigation".into(), json!(false));
     m.insert("auto_overlay".into(), json!(false));
     m.insert("overlay_opacity".into(), json!(50));
+    m.insert("zoom_slider".into(), json!(false));
+    m.insert("zoom_step".into(), json!("low"));
     m
 }
 
@@ -101,6 +105,14 @@ async fn write(
                     "overlay_opacity is a whole number from 0 to 100.",
                 ))
             }
+            Some(_)
+                if k == "zoom_step" && !matches!(v.as_str(), Some("low" | "medium" | "high")) =>
+            {
+                return Err(ApiError::detail(
+                    StatusCode::BAD_REQUEST,
+                    "zoom_step is low, medium or high.",
+                ))
+            }
             Some(_) => {
                 change.insert(k.clone(), v.clone());
             }
@@ -136,15 +148,15 @@ mod tests {
     fn stored_settings_lie_over_the_defaults() {
         assert_eq!(
             with_defaults(&json!({})),
-            json!({"legacy_navigation": false, "auto_overlay": false, "overlay_opacity": 50})
+            json!({"legacy_navigation": false, "auto_overlay": false, "overlay_opacity": 50, "zoom_slider": false, "zoom_step": "low"})
         );
         assert_eq!(
             with_defaults(&json!({"legacy_navigation": true, "gone": 1})),
-            json!({"legacy_navigation": true, "auto_overlay": false, "overlay_opacity": 50})
+            json!({"legacy_navigation": true, "auto_overlay": false, "overlay_opacity": 50, "zoom_slider": false, "zoom_step": "low"})
         );
         assert_eq!(
             with_defaults(&json!({"legacy_navigation": "yes"})),
-            json!({"legacy_navigation": false, "auto_overlay": false, "overlay_opacity": 50})
+            json!({"legacy_navigation": false, "auto_overlay": false, "overlay_opacity": 50, "zoom_slider": false, "zoom_step": "low"})
         );
     }
 }

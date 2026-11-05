@@ -28,6 +28,8 @@ import { FINDER_FOCUS, ImageFinder, readFinder, saveFinder } from "../components
 import { SHOW_HELP } from "../components/GlobalShortcuts";
 import { OVERLAY_TOGGLE, OverlayControl } from "../components/OverlayControl";
 import { ScaleBar } from "../components/ScaleBar";
+import { ZoomSlider } from "../components/ZoomSlider";
+import { zoomFactor } from "../viewer-core/zoomStep";
 import { coverageOf, ZBlender } from "../viewer-core/zBlend";
 import type { ZRange } from "../viewer-core/zFormat";
 import { RepairBanner } from "../components/RepairBanner";
@@ -307,6 +309,8 @@ export function ViewerPage() {
   const { prefs } = usePreferences();
   const legacyRef = useRef(prefs.legacy_navigation);
   legacyRef.current = prefs.legacy_navigation;
+  const zoomStepRef = useRef(prefs.zoom_step);
+  zoomStepRef.current = prefs.zoom_step;
   const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
   hostState.current = { shapes, info, hiddenAll, image: image.data, actions };
   const editorHost: EditorHost = useMemo(
@@ -954,7 +958,7 @@ export function ViewerPage() {
           return;
         }
         case "zoom":
-          viewer?.viewport.zoomBy(a.factor);
+          viewer?.viewport.zoomBy(zoomFactor(zoomStepRef.current, a.factor >= 1));
           return;
         case "home":
           viewer?.viewport.goHome();
@@ -1140,6 +1144,7 @@ export function ViewerPage() {
       <div className={`viewer-body ${overviewShown ? "" : "no-overview"} ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
         {!failed && <ScaleBar viewerRef={viewerRef} mpp={mpp} />}
+        {!failed && prefs.zoom_slider && <ZoomSlider viewerRef={viewerRef} />}
         {opening && !failed && <OpeningSpinner name={image.data?.name} />}
         {planeBusy && !failed && (
           <div className="plane-busy glass" role="status" aria-label="Loading the plane" data-testid="plane-busy">

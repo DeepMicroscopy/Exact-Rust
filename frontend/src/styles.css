@@ -227,6 +227,12 @@ kbd { font: 600 0.72rem/1 ui-monospace, monospace; background: rgba(255, 255, 25
 .viewer-side.closed { display: none; }
 .scale-bar { position: absolute; left: 12px; bottom: 12px; z-index: 3; pointer-events: none; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 6px; border-radius: 6px; background: rgba(15, 15, 20, 0.6); color: #fff; font-size: 0.75rem; }
 .scale-bar i { display: block; height: 6px; border: 2px solid #fff; border-top: 0; box-sizing: content-box; }
+.zoom-slider { position: absolute; top: 12px; right: 12px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 4px 8px; }
+.zoom-slider input[type="range"] { width: 150px; accent-color: var(--purple); cursor: pointer; }
+.zoom-slider .btn { padding: 2px 9px; min-width: 30px; }
+.zoom-slider .zoom-value { min-width: 4.5em; text-align: right; background: none; border: 0; color: inherit; font: inherit; font-size: 0.85rem; cursor: pointer; font-variant-numeric: tabular-nums; }
+.viewer-body.with-z .zoom-slider { right: 116px; }
+@media (max-width: 760px) { .zoom-slider { top: 56px; right: 12px; } .zoom-slider input[type="range"] { width: 100px; } .viewer-body.with-z .zoom-slider { right: 100px; } }
 .tools-toggle { position: absolute; left: 12px; bottom: 12px; z-index: 5; padding: 8px 13px; font-size: 1.05rem; display: none; }
 
 /* tablets: bigger targets; phones: viewing first (types hidden until asked for, the bar below the image) */

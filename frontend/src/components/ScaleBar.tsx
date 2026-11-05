@@ -33,13 +33,11 @@ export function ScaleBar({ viewerRef, mpp, maxPx = 140 }: { viewerRef: MutableRe
       setBar((old) => (um > 0 && old?.px === px ? old : um > 0 ? { px, label: formatScale(um) } : null));
     };
     update();
-    viewer.addHandler("zoom", update);
-    viewer.addHandler("open", update);
-    viewer.addHandler("resize", update);
+    // "zoom" fires when a zoom is asked for, before the animation has moved: the bar follows the animation
+    const events = ["zoom", "animation", "animation-finish", "open", "resize"] as const;
+    for (const e of events) viewer.addHandler(e, update);
     return () => {
-      viewer.removeHandler("zoom", update);
-      viewer.removeHandler("open", update);
-      viewer.removeHandler("resize", update);
+      for (const e of events) viewer.removeHandler(e, update);
     };
   }, [viewer, mpp, maxPx]);
   if (!bar) return null;

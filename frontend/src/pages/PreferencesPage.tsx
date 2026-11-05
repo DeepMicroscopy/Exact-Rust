@@ -162,6 +162,48 @@ function AutoOverlay() {
   );
 }
 
+function ZoomSliderPref() {
+  const { prefs, set } = usePreferences();
+  return (
+    <label className="check" title="Disabled by default">
+      <input type="checkbox" checked={prefs.zoom_slider} onChange={(e) => void set({ zoom_slider: e.target.checked })} data-testid="pref-zoom-slider" />
+      Show a zoom slider
+      <span className="muted small"> – in the viewer (top right): the current zoom, a slider to change it, and buttons for − / + and 100 %</span>
+    </label>
+  );
+}
+
+function ZoomStepPref() {
+  const { prefs, set } = usePreferences();
+  const steps = [
+    { id: "low", label: "Low", hint: "+25 % per press (as always)" },
+    { id: "medium", label: "Medium", hint: "+50 %" },
+    { id: "high", label: "High", hint: "twice as large" },
+  ] as const;
+  return (
+    <div className="check" title="Low by default">
+      Zoom per press of + / −
+      <span className="seg" role="radiogroup" aria-label="Zoom per press of + and −">
+        {steps.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            role="radio"
+            aria-checked={prefs.zoom_step === s.id}
+            className={prefs.zoom_step === s.id ? "active" : ""}
+            title={s.hint}
+            onClick={() => void set({ zoom_step: s.id })}
+            data-testid={`pref-zoom-step-${s.id}`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </span>
+      <span className="muted small"> – how far the + and − keys (and the buttons of the zoom slider) zoom with one press</span>
+    </div>
+  );
+}
+
 function OverlayOpacity() {
   const { prefs, set } = usePreferences();
   return (
@@ -245,6 +287,8 @@ export function PreferencesPage() {
         <h2>Viewer</h2>
         <AutoOverlay />
         <OverlayOpacity />
+        <ZoomSliderPref />
+        <ZoomStepPref />
       </section>
       <section className="glass">
         <h2>Slide navigation</h2>
