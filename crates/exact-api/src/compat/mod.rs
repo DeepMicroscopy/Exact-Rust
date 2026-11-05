@@ -8,6 +8,7 @@ pub mod legacy;
 pub mod perms;
 pub mod rest_writes;
 pub mod specs;
+pub mod team_writes;
 pub mod vector;
 pub mod writes;
 
@@ -128,6 +129,38 @@ async fn rest_write(
         let r = async {
             let principal = authenticate(s, headers, method).await?;
             generic_writes::handle(s, principal, headers, method, spec, w, id, body, false).await
+        }
+        .await;
+        return Some(match r {
+            Ok(r) => with_allow(r, allow),
+            Err(e) => with_allow(e.into_response(), allow),
+        });
+    }
+    if spec.name == "Team" && *method != Method::DELETE {
+        let allow = if pk.is_some() {
+            DETAIL_ALLOW
+        } else {
+            LIST_ALLOW
+        };
+        let r = async {
+            let p = require_model_perm(
+                s,
+                authenticate(s, headers, method).await?,
+                method,
+                spec.perm.0,
+                spec.perm.1,
+            )
+            .await?;
+            match pk {
+                None => team_writes::create(s, &p, headers, body.as_ref()).await,
+                Some(pk) => {
+                    let id = pk
+                        .parse::<i64>()
+                        .map_err(|_| ApiError::not_found("Not found."))?;
+                    team_writes::update(s, &p, headers, id, body.as_ref(), *method == Method::PATCH)
+                        .await
+                }
+            }
         }
         .await;
         return Some(match r {

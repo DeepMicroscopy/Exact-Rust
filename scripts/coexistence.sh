@@ -18,8 +18,16 @@ stop() { pkill -f "target/debug/exact-server.*coexist" 2>/dev/null; lsof -ti tcp
 trap 'stop; [ -n "${KEEP:-}" ] || { dropdb -h 127.0.0.1 -U exact --if-exists "$DB" 2>/dev/null; dropdb -h 127.0.0.1 -U exact --if-exists "$PRISTINE" 2>/dev/null; rm -rf "$WORK"; }' EXIT
 stop; sleep 1
 rm -rf "$WORK"; mkdir -p "$IMAGE_PATH" "$MEDIA_ROOT" "$DATA_PATH" "$EXACT_CACHE_DIR"
+# The Django checkout may be newer than the dump (its models need columns the dump lacks), so each database gets its schema before it is
+# seeded: the shared one from the Rust migration (Django's own `migrate` then has to go through on top of it: test_zz_django_migrate), the
+# pristine one, the reference for "the Rust migration only adds", from Django's `migrate` (what Django alone would have made of the dump).
 for db in "$DB" "$PRISTINE"; do
   TARGET_DB=$db scripts/restore-backup.sh >/dev/null || exit 1
+  if [ "$db" = "$DB" ]; then
+    SQL_DATABASE=$db cargo run -q -p exact-cli -- migrate --confirm-db $db >/dev/null || exit 1
+  else
+    SQL_DATABASE=$db DJANGO_SETTINGS_MODULE=settings_ref_coexist reference/run-django.sh migrate --noinput >/dev/null 2>&1 || exit 1
+  fi
   SQL_DATABASE=$db reference/seed-users.sh >/dev/null 2>&1 || exit 1
 done
 SQL_DATABASE=$DB cargo run -q -p exact-cli -- migrate --confirm-db $DB >/dev/null || exit 1

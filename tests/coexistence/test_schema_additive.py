@@ -73,7 +73,10 @@ def test_no_trigger_was_added_to_a_django_table():
 
 def test_the_migration_state_of_django_is_untouched():
     q = "select app, name from django_migrations order by app, name"
-    assert sql(q, DB) == sql(q, PRISTINE)
+    # the pristine copy went through Django's own `migrate` (a Django checkout newer than the dump needs it), the Rust migration must not have
+    # marked anything as applied that Django alone would not have
+    mine, ref = {(r["app"], r["name"]) for r in sql(q, DB)}, {(r["app"], r["name"]) for r in sql(q, PRISTINE)}
+    assert mine <= ref, f"the Rust migration marked Django migrations as applied: {sorted(mine - ref)}"
 
 
 def test_the_rows_of_django_tables_are_not_rewritten_by_the_migration():

@@ -173,7 +173,7 @@ async fn parse_fields(s: &AppState, d: &Map<String, Value>, partial: bool) -> Ap
     }
 }
 
-fn body_value(body: &[u8]) -> ApiResult<Value> {
+pub(super) fn body_value(body: &[u8]) -> ApiResult<Value> {
     if body.is_empty() {
         return Ok(Value::Object(Map::new()));
     }
@@ -181,7 +181,7 @@ fn body_value(body: &[u8]) -> ApiResult<Value> {
         .map_err(|e| ApiError::detail(StatusCode::BAD_REQUEST, format!("JSON parse error - {e}")))
 }
 
-fn object(v: Value) -> ApiResult<Map<String, Value>> {
+pub(super) fn object(v: Value) -> ApiResult<Map<String, Value>> {
     match v {
         Value::Object(m) => Ok(m),
         other => {

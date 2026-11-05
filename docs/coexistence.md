@@ -39,6 +39,11 @@ What the first run found and fixed: the Rust server answered `POST` / `PUT` / `P
 annotation (objects for type, image, editor) where Django answers flat (ids), which is what `GET` shows and what exact-sync reads. The existing parity
 suite never compared a *successful* write there (its test users get 403 on both). It now answers like Django.
 
+## EXACT PR 169 (teams in the v1 API)
+Django (since [PR 169](https://github.com/DeepMicroscopy/Exact/pull/169)) accepts `POST /api/v1/users/teams/` with only a `name` (the creator becomes admin) and ignores `members`, `image_sets`, `product_set` and `memberships` on `POST` / `PUT` / `PATCH`; before, `create_team` of exact-sync failed with a 400 and a `PUT` with empty lists detached the team's image sets. The Rust server does the same (`compat/team_writes.rs`: the name is validated like Django does, 3 to 100 characters and unique; only teams of the caller; `add_team` / `change_team` permissions), checked against Django in `tests/coexistence/test_teams.py`. Deleting a team on `/api/v1` stays 501 on Rust (`DELETE /api/v2/teams/<id>`).
+
+The same Django update brought migration `processing/0015_registration_plugins`, which adds the columns and tables of the Rust migration 0007 with the same `IF NOT EXISTS` DDL: either side may run first (the suite seeds the shared database after the Rust migration and then runs Django's `migrate` on top).
+
 ## Known differences (not failures)
 * **Personal access tokens cannot be created or revoked on the Rust server** (it validates them): until it can, they are made in Django's UI (`test_a_personal_access_token_can_be_made_on_rust` is an expected failure that turns into an error the day it works, so the note is removed).
 * Django still accepts the token of a **deactivated** user; Rust refuses it (on purpose).
