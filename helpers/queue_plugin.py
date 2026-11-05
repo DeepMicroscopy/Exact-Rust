@@ -6,6 +6,9 @@ registration plugins, in the "register" dialog of the web UI with a form for its
 
 To write a registration plugin: derive from `RegistrationPlugin`, set `name` and `parameters`, implement `register`
 (see helpers/plugins/qt_wsi_registration.py), and put the file in helpers/plugins/ with `PLUGINS = [MyPlugin()]`.
+
+An image analysis plugin (a detector, ...) derives from `ImageAnalysisPlugin` and implements `analyze`: it gets the path of
+the image file on the server and returns detections (see helpers/plugins/midog2025_fcos.py).
 """
 from dataclasses import dataclass, field
 
@@ -27,6 +30,7 @@ class Context:
     """What a plugin may need besides the job."""
     exact_dir: str | None = None  # an EXACT checkout (its `exact` folder): its slide readers handle formats OpenSlide does not
     log: callable = print
+    progress: callable = lambda percent: None  # an analysis plugin reports 0..99 while it works
 
 
 class Plugin:
@@ -74,3 +78,25 @@ class RegistrationPlugin(Plugin):
     def run(self, job, ctx):
         params = {**self.defaults(), **(job.get("params") or {})}
         return self.register(job["source_path"], job["target_path"], params, ctx)
+
+
+@dataclass
+class AnalysisResult:
+    """What an image analysis plugin found. `detections` are `{"vector": {...}, "score": float}`; they are stored as annotations
+    of the annotation type of the image's set whose name contains `annotation_type` (case-insensitive)."""
+    detections: list
+    annotation_type: str
+    name: str = "Result"  # the title of the result entry
+    default_threshold: float = 0.0  # the score above which the UI shows detections at first
+
+
+class ImageAnalysisPlugin(Plugin):
+    plugin_type = IMAGE_ANALYSIS
+
+    def analyze(self, image_path: str, params: dict, ctx: Context) -> AnalysisResult:
+        """Analyzes the image file; `params` are the job's values merged over the defaults. Report progress with `ctx.progress`."""
+        raise NotImplementedError
+
+    def run(self, job, ctx):
+        params = {**self.defaults(), **(job.get("params") or {})}
+        return self.analyze(job["image_path"], params, ctx)

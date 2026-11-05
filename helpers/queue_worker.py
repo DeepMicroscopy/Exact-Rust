@@ -2,9 +2,8 @@
 """Queue worker for the EXACT Rust server: hosts plugins and works off the common job queue.
 
 On start it announces the plugins it can run (`POST /api/v2/plugins/register`), then claims jobs from
-`POST /api/v2/jobs/claim` and runs them with the plugin the job names. Registration plugins (helpers/plugins/*.py, interface in
-helpers/queue_plugin.py) are served today; the plugin base class also describes image analysis plugins, which QueueRunner
-still serves. Several workers can run side by side; a job whose worker disappears is claimed again after its lease (30 minutes).
+`POST /api/v2/jobs/claim` and runs them with the plugin the job names. Registration plugins and image analysis plugins (helpers/plugins/*.py, interface in
+helpers/queue_plugin.py) are served; an analysis plugin finds the image file on the server, as a registration plugin does. Several workers can run side by side; a job whose worker disappears is claimed again after its lease (30 minutes).
 
     queue_worker.py --url http://localhost:8000 --user worker --password ... [--name w1] [--once] [--only quad]
 
@@ -29,7 +28,7 @@ import uuid
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from queue_plugin import REGISTRATION, Context  # noqa: E402
+from queue_plugin import IMAGE_ANALYSIS, REGISTRATION, Context  # noqa: E402
 
 
 class Api:
@@ -95,12 +94,53 @@ def announce(api, plugins):
 def work(api, name, plugins, ctx):
     """One job, if there is one. Returns whether a job was handled."""
     registration = {i: p for i, p in plugins.items() if p.plugin_type == REGISTRATION}
-    status, claimed = api.call("/api/v2/jobs/claim", {"worker": name, "kinds": ["registration"], "plugins": list(registration)})
-    if status == 204:
-        return False
-    if status != 200:
-        raise RuntimeError(f"claim failed: {status} {claimed}")
-    job = claimed["job"]
+    analysis = {i: p for i, p in plugins.items() if p.plugin_type == IMAGE_ANALYSIS}
+    if registration:
+        status, claimed = api.call("/api/v2/jobs/claim", {"worker": name, "kinds": ["registration"], "plugins": list(registration)})
+        if status == 200:
+            return work_registration(api, name, registration, claimed["job"], ctx)
+        if status != 204:
+            raise RuntimeError(f"claim failed: {status} {claimed}")
+    for plugin_id, plugin in analysis.items():  # a claim names one plugin: the jobs of the others wait for their own worker
+        status, claimed = api.call("/api/v2/jobs/claim", {"worker": name, "kinds": ["plugin"], "plugin": plugin_id})
+        if status == 200:
+            return work_analysis(api, name, plugin, claimed["job"], ctx)
+        if status != 204:
+            raise RuntimeError(f"claim failed: {status} {claimed}")
+    return False
+
+
+def work_analysis(api, name, plugin, job, ctx):
+    """An image analysis job: run the plugin, store its detections in one request."""
+    path = f"/api/v2/plugin-jobs/{job['id']}"
+    print(f"job {job['id']}: {plugin.name}: image {job['image']}", flush=True)
+    ctx.progress = lambda percent: api.call(f"{path}/progress", {"worker": name, "progress": percent})
+    started = time.time()
+    try:
+        result = plugin.run(job, ctx)
+        wanted = result.annotation_type.lower()
+        atype = next((t for t in job.get("annotation_types", []) if wanted in t["name"].lower()), None)
+        if atype is None:  # as QueueRunner: the type has to exist, and to belong to the product the plugin is applied under
+            api.call(f"{path}/fail", {"worker": name, "error": "Error: Missing annotation type",
+                                      "detail": f"Annotation class {result.annotation_type!r} is required but the image set has no such type"})
+            print(f"job {job['id']}: no annotation type {result.annotation_type!r} in the image set", file=sys.stderr, flush=True)
+            return True
+    except Exception as e:  # noqa: BLE001 - every failure is reported to the server
+        msg = traceback.format_exc()
+        print(msg, file=sys.stderr, flush=True)
+        api.call(f"{path}/fail", {"worker": name, "error": f"Error: {type(e).__name__}", "detail": msg[-3500:]})
+        return True
+    status, body = api.call(f"{path}/complete", {"worker": name, "annotation_type": atype["id"], "name": result.name,
+                                                "default_threshold": result.default_threshold, "detections": result.detections})
+    if status != 201:
+        print(f"job {job['id']}: the server refused the result: {status} {body}", file=sys.stderr, flush=True)
+        api.call(f"{path}/fail", {"worker": name, "error": "Error: the result was refused", "detail": str(body)[:3500]})
+        return True
+    print(f"job {job['id']}: done, {len(result.detections)} detections in {time.time() - started:.0f} s", flush=True)
+    return True
+
+
+def work_registration(api, name, registration, job, ctx):
     named = (job.get("plugin") or {}).get("id")
     plugin = registration.get(named) or next(iter(registration.values()))  # a job without plugin: the first one we serve
     print(f"job {job['id']}: {plugin.name}: registering image {job['source_image']} onto {job['target_image']}", flush=True)

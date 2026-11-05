@@ -126,6 +126,18 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/plugin-jobs/claim",
             axum::routing::post(super::processing::claim_h),
         )
+        .route(
+            "/api/v2/plugin-jobs/{id}/progress",
+            axum::routing::post(super::processing::progress_h),
+        )
+        .route(
+            "/api/v2/plugin-jobs/{id}/fail",
+            axum::routing::post(super::processing::fail_h),
+        )
+        .route(
+            "/api/v2/plugin-jobs/{id}/complete",
+            axum::routing::post(super::processing::complete_h),
+        )
         .route("/api/v2/{resource}", get(list_h).post(generic_create))
         .route(
             "/api/v2/{resource}/{id}",

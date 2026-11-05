@@ -24,3 +24,7 @@ deploy/exact.env
 tests/perf/reports/local/
 *.swp
 *.swo
+# model files (checkpoints are hundreds of MB)
+deploy/models/
+helpers/models/
+*.ckpt

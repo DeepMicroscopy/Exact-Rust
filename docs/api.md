@@ -28,7 +28,7 @@ JSON, session cookie or token. The interface of the browser UI, free to evolve.
 | Images | upload, `/images/{id}/crop`, `/move`, `/repair`, `/metadata`, `/download`, `/register` |
 | Image sets | `/image-sets/{id}/images`, `/tags`, `/settings`, `/exports`, `/auxiliary-files` |
 | Registration | `/registrations/manual`, `/registrations/{id}`, `/convert`, `/inverse`, `/points`, `/registration-plugins` |
-| Jobs | `GET /jobs`, `POST /jobs/claim`, `/jobs/{kind}/{id}`, `/restart`, workers use `/plugin-jobs/claim`, `/registration-jobs/claim`, `/complete`, `/fail` |
+| Jobs | `GET /jobs`, `POST /jobs/claim`, `/jobs/{kind}/{id}`, `/restart`, workers use `/plugin-jobs/claim`, `/plugin-jobs/{id}/progress`, `/complete`, `/fail`, `/registration-jobs/claim`, `/complete`, `/fail` |
 | Administration | `/admin/plugins`, `/admin/users/{id}/…`, `/invitations`, `/teams/{id}/members`, `/teams/{id}/statistics` |
 
 Slides are served as DeepZoom: `/images/api/image/…` (tiles), thumbnails and `/api/v2/segmentation/{annotation}/tiles/…` for masks.
@@ -40,5 +40,10 @@ Workers take a job with a single request instead of listing, patching and re-rea
 POST /api/v2/plugin-jobs/claim   {"worker": "gpu-1", "plugin": 3}
 200 {"id": 17, "plugin": 3, "images": [42], …}     204 nothing to do
 ```
+
+A claimed job also carries `image_path` (the file on the server) and `annotation_types` (what a detection can be stored as). The worker then
+reports with `POST /api/v2/plugin-jobs/{id}/progress {"worker", "progress"}`, finishes with `POST /api/v2/plugin-jobs/{id}/complete
+{"worker", "annotation_type", "name", "default_threshold", "detections": [{"vector": {...}, "score": 0.9}]}` (201; result, entry and all annotations in
+one transaction instead of one request each) or `POST /api/v2/plugin-jobs/{id}/fail {"worker", "error", "detail"}`. 409 when the job is not attached to that worker.
 
 Details and the comparison with the old QueueRunner flow are in [QueueRunner and the v2 claim](queuerunner-v2).

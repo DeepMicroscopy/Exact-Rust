@@ -67,6 +67,7 @@ services:
     # the worker reads the slide files itself (the paths the server hands out are the server's: /data/images/...)
     volumes:
       - ${IMAGE_PATH}:/data/images:ro
+      - ${MODELS_PATH:-./models}:/models:ro   # model files of the analysis plugins, e.g. FCOS_x50.ckpt of the MIDOG 2025 detector (docs/DEPLOY.md 4e)
     # the registration worker uses the host's NVIDIA GPU (needs the NVIDIA driver and the NVIDIA Container Toolkit, see docs/DEPLOY.md);
     # without a GPU start with the second file `-f deploy/docker-compose.cpu.yml` (Docker Compose 2.24 or newer)
     deploy:

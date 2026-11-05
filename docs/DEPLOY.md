@@ -80,6 +80,22 @@ lower the size. **Without a GPU** (or without the toolkit: "could not select dev
 `dc -f deploy/docker-compose.cpu.yml up -d` (Docker Compose 2.24+), and build with
 `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu` to save about 2 GB.
 
+## 4e. Mitotic figure detection (MIDOG 2025 baseline)
+The worker also serves the image analysis plugin **MIDOG 2025 Baseline FCOS MIDOG++** (`helpers/plugins/midog2025_fcos.py`, a port of the
+QueueRunner plugin of the MIDOG 2025 reference algorithm). It finds mitotic figures in a slide and stores them as a result the viewer
+shows with a threshold slider. Needs: (1) the checkpoint `FCOS_x50.ckpt` of the reference (373 MB, not in the repository) in the folder
+`MODELS_PATH` (default `deploy/models`), mounted at `/models`; without it the worker says "plugin not served: the checkpoint ... is missing"
+and carries on with the others; (2) the worker account needs `processing.change_pluginjob` (it has it if it serves registrations) and has
+to be a member of the teams whose images it serves; (3) the image set needs an annotation type whose name contains "mitotic figure" in a
+product that is applied to the set, as with QueueRunner (the job fails with "Missing annotation type" otherwise). Start a job with
+`POST /api/v2/plugin-jobs {"plugin": <id>, "image": <id>}` (the beta's UI has no button for analysis jobs yet; EXACT's own UI and exact-sync can create them).
+The GPU of the registration worker is used when torch sees one; on a CPU a patch takes about 4 s (measured on a laptop), so a slide needs a GPU
+(not measured here: no GPU on the development machine; the first production job tells).
+Parameters (the plugin defaults decide today; `det_thresh` 0.548 and `overlap` 0.3 are the reference's values; `half_precision` runs the GPU in
+float16, lighter and faster, scores differ in the third decimal). Differences to the reference are listed at the top of the plugin file:
+the model is loaded once, patches that the border clipping produced twice are run once, images without a pyramid and smaller than a patch work,
+and a job's detections are stored in one request (`POST /api/v2/plugin-jobs/{id}/complete`) so that a job never keeps half a result.
+
 ## 4d. System health
 The pulse icon for site admins needs nothing but the compose file, except for the RAID: a cron job on the host (`deploy/host-status.py`)
 writes its state into `HOST_STATUS_DIR`. Setup and what is checked: [System health](system-health.html).
