@@ -840,3 +840,20 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .crop-steps li.ok { color: var(--text); }
 .crop-steps li.ok .mark { color: #5ccf8a; }
 .crop-steps li.fail { color: #ff9a8d; }
+
+/* narrow screens: the system health panel spans the screen instead of hanging off the button (it was cut off on a phone) */
+@media (max-width: 720px) {
+  .health { position: static; }
+  .health-pop { background: rgb(18, 18, 24); position: fixed; left: 8px; right: 8px; top: 60px; width: auto; max-height: calc(100dvh - 76px); overflow-y: auto; }
+}
+
+/* the analysis panel (the robot button of the viewer) */
+.analysis-panel { width: min(380px, calc(100vw - 16px)); max-height: calc(100dvh - 90px); overflow-y: auto; }
+.analysis-panel h4 { margin: 10px 0 6px; }
+.analysis-result { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.analysis-entry { margin: 6px 0 0 4px; }
+.analysis-threshold { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.analysis-threshold input[type=range] { flex: 1; min-width: 0; }
+.analysis-card { padding: 8px 10px; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; }
+.analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.analysis-card progress { display: block; width: 100%; margin-top: 4px; }

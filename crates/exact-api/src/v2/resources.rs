@@ -127,6 +127,18 @@ pub fn routes() -> Router<AppState> {
             axum::routing::post(super::processing::claim_h),
         )
         .route(
+            "/api/v2/images/{id}/analysis",
+            get(super::analysis::analysis_h),
+        )
+        .route(
+            "/api/v2/images/{id}/analyze",
+            axum::routing::post(super::analysis::analyze_h),
+        )
+        .route(
+            "/api/v2/plugin-result-entries/{id}/detections",
+            get(super::analysis::detections_h),
+        )
+        .route(
             "/api/v2/plugin-jobs/{id}/progress",
             axum::routing::post(super::processing::progress_h),
         )

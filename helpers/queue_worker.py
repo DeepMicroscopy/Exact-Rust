@@ -77,7 +77,8 @@ def load_plugins(folder, only=None):
 
 
 def announce(api, plugins):
-    """Registers the plugins that can run here; the server answers their ids. {id: plugin}."""
+    """Registers the plugins that can run here; the server answers their ids. {id: plugin}. A plugin the server refuses is reported
+    and left out: it must not keep the others from being served."""
     ids = {}
     for p in plugins:
         why = p.unavailable()
@@ -86,7 +87,8 @@ def announce(api, plugins):
             continue
         status, body = api.call("/api/v2/plugins/register", p.describe())
         if status not in (200, 201):
-            raise RuntimeError(f"cannot register plugin {p.name!r}: {status} {body}")
+            print(f"plugin {p.name!r} cannot be registered: {status} {body}", file=sys.stderr, flush=True)
+            continue
         ids[body["id"]] = p
     return ids
 
@@ -181,10 +183,15 @@ def main(argv=None):
     plugins = load_plugins(a.plugins, a.only)
     ctx = Context(exact_dir=a.exact_dir)
     served, announced = {}, 0.0
+    print(f"worker {a.name} starting: server {a.url or api.url}, {len(plugins)} plugin(s) loaded from {a.plugins}", flush=True)
+    last_served = None
     while True:
         try:
             if not served or time.time() - announced > 600:  # again now and then, so the server sees plugin changes
                 served, announced = announce(api, plugins), time.time()
+                if sorted(p.name for p in served.values()) != last_served:  # said when it changes: an idle worker is otherwise silent
+                    last_served = sorted(p.name for p in served.values())
+                    print(f"worker {a.name} serves: {', '.join(last_served) or 'nothing'}", flush=True)
                 if not served:
                     print("no plugin can run here", file=sys.stderr, flush=True)
                     if a.once:

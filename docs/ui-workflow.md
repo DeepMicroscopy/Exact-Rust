@@ -23,7 +23,7 @@ The interface is a single-page application (React, TypeScript, OpenSeadragon). I
 | **Login** | `/` | Sign in with a user name and password, or with a **passkey** (fingerprint, security key). New users arrive through an **invitation link** (`/invite/<token>`) and choose their user name and password. |
 | **Image sets** | `/` | The image sets of your teams. Pick a team on the left, search by name, **New image set**, and **Statistics** for a team (images, annotations, storage per set and file format). More sets load as you scroll. |
 | **Image set** | `/sets/{id}` | Thumbnails of the images. Upload by drag and drop, filter and sort, select several to move, delete, download or register. Right click (long press on a tablet) for an image's menu: open, download, rename, move, related images. **Settings**, **Export**, **Files**. The **Registration** tab lists registrations and their jobs. |
-| **Viewer** | `/images/{id}` | Look at and annotate one image. Left panel: annotation types with counts (untick to hide). Bottom: the toolbox. Top bar: previous / next image, overlay, screening, screenshot, crop, image adjustments. |
+| **Viewer** | `/images/{id}` | Look at and annotate one image. Left panel: annotation types with counts (untick to hide). Bottom: the toolbox. Top bar: previous / next image, overlay, screening, screenshot, **analysis (robot button)**, crop, image adjustments. |
 | **Three planes** | `/images/{id}/planes` | NIfTI and DICOM volumes: axial, coronal and sagittal planes with a crosshair, a 3D render, and 3D segmentation tools. |
 | **Jobs** | `/jobs` | Registrations, analyses and segmentations with their status (queued, running with progress, done, failed with the error). Restart failed jobs, cancel queued or running ones. Shows whether a worker has asked for work lately. |
 | **Administration** | `/admin` | Teams, Products (annotation types), Plugins, Log, Users (for administrators). See [Administration](administration). |
@@ -63,6 +63,15 @@ While you draw, the area (µm² or mm² when the image has a resolution) or the 
 * **Frames:** z-stacks and movies get a slider (`Shift+E` / `Shift+Q`, `Space` plays).
 * **Screening:** a guided walk over the slide in windows of a size and overlap you choose, remembering what you have seen (WASD steps and counts, IJKL steps without counting).
 * **Screenshot** saves the view as a PNG with annotations and adjustments; **Crop to new image** cuts a region into a new image that remembers where it came from.
+
+### Analysis: plugin results in the viewer
+
+The **robot button** in the top bar (a dot on it says that the image has results) opens the movable *Analysis* panel:
+
+* **Results for this image**: every result a plugin calculated, with its entries. Tick an entry to draw its detections over the image; the slider sets the **score threshold** (it starts at the plugin's default) and the panel counts how many detections remain. Tens of thousands of detections stay fast, and detections too small to see at the current zoom are drawn as small squares.
+* **Run an analysis**: every analysis plugin that is available for the image set (a plugin that names no products is available everywhere; one that names products must share one with the set). *Parameters* opens the plugin's form; **Run** queues the job. The panel shows *waiting for a worker* (and says so when no worker has asked for that plugin lately), the progress while it runs, the error when it fails (**Run again**), and the new result as soon as it is stored.
+
+Closing the panel keeps the detections on the image; changing the image clears them. Starting an analysis needs only membership in the team that owns the image set.
 
 ### Volumes
 

@@ -98,7 +98,7 @@ A plugin that returns text here is **not announced**; the worker prints the reas
 What to know:
 
 * **`image_path`** is a file on the server. **`open_slide(path, ctx.exact_dir)`** returns an object with `dimensions`, `level_dimensions`, `level_downsamples` and `read_region((x, y), level, (w, h))` (x and y in *level-0* pixels, like OpenSlide), for every format the worker can open.
-* **Coordinates in the result are level-0 pixels** of the image. A box is `{"x1", "y1", "x2", "y2"}` with `x2 > x1` and `y2 > y1`; a polygon is `x1, y1, x2, y2, x3, y3, ...` (at least three points); a type of another shape needs the vector of that shape. The server does not check the vectors against the type when you store a result, so look at them in a viewer that shows plugin results before you trust them.
+* **Coordinates in the result are level-0 pixels** of the image. A box is `{"x1", "y1", "x2", "y2"}` with `x2 > x1` and `y2 > y1`; a polygon is `x1, y1, x2, y2, x3, y3, ...` (at least three points); a type of another shape needs the vector of that shape. **The server checks every detection against the annotation type** when you store the result, with the rule that applies to annotations made by hand: a result with an invalid vector is refused whole, with a `400` that names the detection (`detections[17]: the vector is not valid for the annotation type "Mitotic figure" (a box needs ...)`). Round and clip your coordinates, and drop boxes that end up empty.
 * **`score`** is any number; users can threshold on it. `default_threshold` is the score from which the result is shown at first.
 * The second argument of `AnalysisResult` names the annotation type: the **first type of the image set whose name contains it** (case-insensitive) is used. If the set has none, the job fails with "Missing annotation type", which tells the user what to add.
 * **`params`** are your defaults merged with the job's values. (Analysis jobs created today carry no parameters, so the defaults decide; give them sensible values.)
@@ -121,7 +121,7 @@ python helpers/queue_worker.py --plugins helpers/plugin_examples --only dark --o
 #   job 223: Example: dark regions: image 2
 #   job 223: done, 1 detections in 0 s
 ```
-The job shows as **done** on the Jobs page. Without `--once` the worker keeps polling every five seconds (`--interval`). The detections are a plugin result you can read with `GET /api/v2/plugin-results`; the new web interface does not draw plugin results yet, the Django EXACT does.
+The job shows as **done** on the Jobs page. Without `--once` the worker keeps polling every five seconds (`--interval`). Open the image in the viewer and click the **robot button**: the *Analysis* panel lists the result (tick it to draw the boxes over the image, with a threshold slider on `score`) and every plugin available for the image set with a **Run** button and its parameters. The same data is at `GET /api/v2/plugin-results`.
 
 ## 3. A registration plugin, step by step
 

@@ -103,6 +103,10 @@ def test_the_claim_shows_the_file_and_the_annotation_types(setup):
     assert bad.status_code == 400
     bad = c.post(f"/api/v2/plugin-jobs/{job['id']}/complete", json={"worker": "probe", "annotation_type": 1, "detections": [{"vector": {"x1": 1}}]})
     assert bad.status_code == 400 and "detections[0]" in bad.text
+    # the vector has to be valid for the type (type 1 is a box): reversed corners, a missing corner, a polygon's keys
+    for vector in ({"x1": 50, "y1": 10, "x2": 10, "y2": 60}, {"x1": 1, "y1": 1, "x2": 5}, {"x1": 1, "y1": 1, "x2": 5, "y2": 5, "x3": 7, "y3": 7}):
+        bad = c.post(f"/api/v2/plugin-jobs/{job['id']}/complete", json={"worker": "probe", "annotation_type": 1, "detections": [{"vector": vector, "score": 0.5}]})
+        assert bad.status_code == 400 and "detections[0]" in bad.text and "not valid for the annotation type" in bad.text, bad.text
     ok = c.post(f"/api/v2/plugin-jobs/{job['id']}/complete", json={"worker": "probe", "annotation_type": 1, "name": "x", "detections": []})
     assert ok.status_code == 201 and ok.json()["annotations"] == 0
     assert c.post(f"/api/v2/plugin-jobs/{job['id']}/complete", json={"worker": "probe", "annotation_type": 1, "detections": []}).status_code == 409
@@ -122,3 +126,31 @@ def test_a_failing_plugin_and_a_missing_annotation_type_are_reported(setup):
     assert out.returncode == 0, out.stdout + out.stderr
     j = c.get(f"/api/v2/plugin-jobs/{job['id']}").json()
     assert j["error_message"] == "Error: RuntimeError" and "asked to fail" in j["error_detail"]
+
+
+def test_the_viewer_lists_results_and_plugins_runs_with_parameters_and_serves_detections(setup):
+    c, folder, plugin = setup
+    a = c.get(f"/api/v2/images/{IMAGE}/analysis")
+    assert a.status_code == 200, a.text
+    mine = next(p for p in a.json()["plugins"] if p["id"] == plugin["id"])
+    assert {x["name"] for x in mine["parameters_schema"]} == {"n", "fail", "type"} and mine["job"] is None
+    # parameters are checked against the plugin's schema
+    assert c.post(f"/api/v2/images/{IMAGE}/analyze", json={"plugin": plugin["id"], "params": {"nope": 1}}).status_code == 400
+    assert c.post(f"/api/v2/images/{IMAGE}/analyze", json={"plugin": 99999999}).status_code == 400
+    assert c.post("/api/v2/images/99999999/analyze", json={"plugin": plugin["id"]}).status_code == 404
+    queued = c.post(f"/api/v2/images/{IMAGE}/analyze", json={"plugin": plugin["id"], "params": {"n": 5}})
+    assert queued.status_code == 202 and queued.json()["reused"] is False, queued.text
+    again = c.post(f"/api/v2/images/{IMAGE}/analyze", json={"plugin": plugin["id"], "params": {"n": 5}})
+    assert again.status_code == 200 and again.json()["id"] == queued.json()["id"] and again.json()["reused"] is True
+    out = run_worker(folder)  # the claimed job carries the parameters: 5 detections, not the default 3
+    assert "done, 5 detections" in out.stdout, out.stdout + out.stderr
+    a = c.get(f"/api/v2/images/{IMAGE}/analysis").json()
+    result = next(r for r in a["results"] if r["plugin"]["id"] == plugin["id"])
+    entry = result["entries"][0]
+    assert entry["name"] == "Finds" and entry["count"] == 5 and entry["default_threshold"] == 0.55
+    assert next(p for p in a["plugins"] if p["id"] == plugin["id"])["job"]["status"] == "done"
+    d = c.get(f"/api/v2/plugin-result-entries/{entry['id']}/detections").json()
+    assert len(d["boxes"]) == 5 and d["polygons"] == [] and d["truncated"] is False
+    x1, y1, x2, y2, score, atype = d["boxes"][0]
+    assert x2 - x1 == 10 and 0.5 <= score < 0.6 and str(atype) in d["types"]
+    assert c.get("/api/v2/plugin-result-entries/99999999/detections").status_code == 404

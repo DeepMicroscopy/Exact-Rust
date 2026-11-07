@@ -142,12 +142,12 @@ class Midog2025Fcos(ImageAnalysisPlugin):
         self._model, self._device, self._lock = None, None, threading.Lock()
 
     def unavailable(self):
-        try:
-            import cv2  # noqa: F401
-            import torch  # noqa: F401
-            import torchvision  # noqa: F401
-        except Exception as e:  # noqa: BLE001
-            return f"torch, torchvision and opencv are required ({e.__class__.__name__}: {e})"
+        # no imports here: the worker asks at every announcement, and importing torch takes seconds and memory
+        import importlib.util
+
+        for module in ("cv2", "torch", "torchvision"):
+            if importlib.util.find_spec(module) is None:
+                return f"{module} is not installed in this Python (torch, torchvision and opencv are required)"
         if not checkpoint_path():
             return "the checkpoint FCOS_x50.ckpt is missing: set MIDOG25_CHECKPOINT or mount it at /models/FCOS_x50.ckpt"
         return None
@@ -221,7 +221,10 @@ class Midog2025Fcos(ImageAnalysisPlugin):
             boxes[:, 1::2].clamp_(0, height)
             keep = batched_nms(boxes, scores, torch.zeros(len(scores), dtype=torch.long), 0.3)  # across the patches, as the reference
             for b, s in zip(boxes[keep].tolist(), scores[keep].tolist()):
-                found.append({"vector": {"x1": round(b[0]), "y1": round(b[1]), "x2": round(b[2]), "y2": round(b[3])}, "score": s})
+                x1, y1, x2, y2 = round(b[0]), round(b[1]), round(b[2]), round(b[3])
+                if x2 - x1 < 1 or y2 - y1 < 1:  # a box the server accepts needs x2 > x1 and y2 > y1; clipped to nothing: not a detection
+                    continue
+                found.append({"vector": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}, "score": s})
         return AnalysisResult(found, "mitotic figure", "Mitotic Figures", float(params["det_thresh"]))
 
 

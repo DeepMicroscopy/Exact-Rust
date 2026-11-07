@@ -4,6 +4,7 @@
 pub mod account;
 pub mod admin;
 pub mod admin_log;
+pub mod analysis;
 pub mod annotation_media;
 pub mod annotation_writes;
 pub mod catalog;

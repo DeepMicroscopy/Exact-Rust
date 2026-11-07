@@ -60,7 +60,11 @@ pub async fn claim_h(
         })?
         .to_string();
     let plugin = d.get("plugin").and_then(Value::as_i64);
-    crate::v2::jobs::seen(&worker, &["plugin"], &[]);
+    crate::v2::jobs::seen(
+        &worker,
+        &["plugin"],
+        &plugin.into_iter().collect::<Vec<_>>(),
+    );
     let host = headers
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())
@@ -135,6 +139,13 @@ pub(crate) async fn claim_plugin(
             .to_string_lossy()
             .to_string();
         obj.insert("image_path".into(), json!(path));
+        let params: Option<Value> =
+            sqlx::query_scalar("SELECT parameters FROM processing_pluginjob WHERE id = $1")
+                .bind(id)
+                .fetch_one(&s.pool)
+                .await
+                .map_err(db_err)?;
+        obj.insert("params".into(), params.unwrap_or_else(|| json!({})));
         let types: Vec<Value> = sqlx::query(
             "SELECT t.id::bigint, t.name, t.vector_type::bigint FROM annotations_annotationtype t WHERE t.active AND t.product_id IN \
              (SELECT ap.product_id FROM administration_product_imagesets ap WHERE ap.imageset_id::bigint = $1) ORDER BY t.sort_order, t.id",
@@ -299,20 +310,18 @@ pub async fn complete_h(
         .get("annotation_type")
         .and_then(Value::as_i64)
         .ok_or_else(|| bad("annotation_type: an id is required."))?;
-    let known: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM annotations_annotationtype t WHERE t.id = $1 AND t.product_id IN \
-         (SELECT ap.product_id FROM administration_product_imagesets ap JOIN images_image i ON i.image_set_id = ap.imageset_id WHERE i.id::bigint = $2))",
+    let atype_row = sqlx::query(
+        "SELECT t.vector_type::bigint, t.node_count::bigint, t.name FROM annotations_annotationtype t WHERE t.id = $1 AND t.product_id IN \
+         (SELECT ap.product_id FROM administration_product_imagesets ap JOIN images_image i ON i.image_set_id = ap.imageset_id WHERE i.id::bigint = $2)",
     )
     .bind(atype as i32)
     .bind(image)
-    .fetch_one(&s.pool)
+    .fetch_optional(&s.pool)
     .await
-    .map_err(db_err)?;
-    if !known {
-        return Err(bad(
-            "annotation_type: not an annotation type of this image's set.",
-        ));
-    }
+    .map_err(db_err)?
+    .ok_or_else(|| bad("annotation_type: not an annotation type of this image's set."))?;
+    let (vector_type, node_count, type_name): (i64, i64, String) =
+        (atype_row.get(0), atype_row.get(1), atype_row.get(2));
     let name: String = d
         .get("name")
         .and_then(Value::as_str)
@@ -340,7 +349,17 @@ pub async fn complete_h(
             .and_then(Value::as_f64)
             .filter(|v| v.is_finite());
         match (vector, score) {
-            (Some(v), Some(sc)) => rows.push(json!({"v": v, "s": sc})),
+            (Some(v), Some(sc)) => {
+                // the rule of the annotation type, as for annotations made by hand (`AnnotationType.validate_vector`)
+                let mut v = v.clone();
+                if !crate::compat::vector::validate(vector_type as i32, node_count as i32, &mut v) {
+                    return Err(bad(&format!(
+                        "detections[{n}]: the vector is not valid for the annotation type {type_name:?} ({}).",
+                        vector_rule(vector_type)
+                    )));
+                }
+                rows.push(json!({"v": v, "s": sc}));
+            }
             _ => {
                 return Err(bad(&format!(
                     "detections[{n}]: a vector object and a numeric score are required."
@@ -393,4 +412,16 @@ pub async fn complete_h(
         Json(json!({"result": result, "entry": entry, "annotations": detections.len()})),
     )
         .into_response())
+}
+
+/// What a vector of this type looks like, for the error message.
+fn vector_rule(vector_type: i64) -> &'static str {
+    match vector_type {
+        1 | 6 | 7 => "a box needs exactly x1, y1, x2, y2 with x2 > x1 and y2 > y1",
+        2 => "a point needs x1, y1, x2, y2",
+        3 => "a line needs two distinct points x1, y1, x2, y2",
+        4 => "a polyline needs x1, y1, x2, y2, ... (an even number of coordinates, at least two points)",
+        5 => "a polygon needs x1, y1, x2, y2, x3, y3, ... (at least three points)",
+        _ => "this type takes no detections",
+    }
 }

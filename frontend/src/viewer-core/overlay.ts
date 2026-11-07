@@ -103,13 +103,24 @@ export class RegistrationOverlay {
             else {
               this.item = e.item;
               this.keepOnTop();
-              const done = (e2: { fullyLoaded: boolean }) => {
-                if (!e2.fullyLoaded) return;
-                this.item?.removeHandler("fully-loaded-change", done);
+              // finished when everything in view is loaded, or as soon as the first tile is drawn: an overlay that is fully
+              // transparent (opacity 0) loads no tiles at all, so "fully loaded" alone could never arrive
+              const finish = () => {
+                this.item?.removeHandler("fully-loaded-change", done as (ev: unknown) => void);
+                viewer.removeHandler("tile-drawn", drawn as (ev: unknown) => void);
                 onLoading(false);
               };
+              const done = (e2: { fullyLoaded: boolean }) => {
+                if (e2.fullyLoaded) finish();
+              };
+              const drawn = (e2: { tiledImage?: OpenSeadragon.TiledImage }) => {
+                if (e2.tiledImage === this.item) finish();
+              };
               if (e.item.getFullyLoaded()) onLoading(false);
-              else e.item.addHandler("fully-loaded-change", done as (ev: unknown) => void);
+              else {
+                e.item.addHandler("fully-loaded-change", done as (ev: unknown) => void);
+                viewer.addHandler("tile-drawn", drawn as (ev: unknown) => void);
+              }
             }
           },
           error: () => {

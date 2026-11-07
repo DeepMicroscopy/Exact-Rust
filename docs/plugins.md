@@ -49,7 +49,7 @@ class MyPlugin(ImageAnalysisPlugin):
 ```
 
 **Parameter types** are `int`, `float`, `bool`, `text` and `choice` (with `choices=[...]`); `min`, `max`, `step`, `help` and `label` shape the form. The server checks a registration job's values against the schema and refuses unknown names.
-(Image analysis jobs created today carry no parameters: the plugin's defaults decide.)
+(An analysis started from the viewer's *Analysis* panel carries the values chosen there in `params`; a job created by `POST /api/v2/plugin-jobs` carries none, so the plugin's defaults decide.)
 
 `ctx` is what a plugin may need besides the job: `ctx.log(text)`, `ctx.progress(percent)` (shown on the Jobs page) and `ctx.exact_dir` (see below). `open_slide(path, ctx.exact_dir)` from `plugins_common` gives a slide object with `dimensions`, `level_dimensions`, `level_downsamples` and `read_region(location, level, size)`, whichever format the file has.
 
@@ -82,7 +82,7 @@ Differences to the QueueRunner plugin it comes from: the model is loaded once an
 
 Setup: the checkpoint `FCOS_x50.ckpt` (373 MB, not in the repository) in the folder `MODELS_PATH`, mounted at `/models`; the worker account needs membership in the teams, and the image set a type with *mitotic figure* in its name (the job fails with "Missing annotation type" otherwise). Details in [Installation §4e](DEPLOY#4e-mitotic-figure-detection-midog-2025-baseline).
 
-<div class="callout warn"><strong>Showing the result.</strong> The new web interface does not display plugin results yet. They are stored like QueueRunner's (so the Django EXACT shows them), and readable through the API (<code>/api/v2/plugin-results</code>, <code>/api/v2/plugin-result-annotations</code>) and exact-sync.</div>
+**Seeing and starting it in the viewer.** The robot button in the viewer's top bar opens the *Analysis* panel: the results this image has (tick one to draw its detections over the image, move the slider to choose the score threshold and see how many remain) and the plugins available for the image set, each with a **Run** button and its parameters. See [UI and workflow](ui-workflow#analysis-plugin-results-in-the-viewer).
 
 ### Segmenters
 

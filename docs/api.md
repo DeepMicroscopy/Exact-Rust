@@ -265,7 +265,34 @@ curl "${H[@]}" -X POST /api/v2/plugin-jobs/222/fail -d '{"worker":"gpu-1","error
 ```json
 {"result":70,"entry":67,"annotations":1}
 ```
-`complete` stores the result, its entry and **all detections in one transaction** (a job never keeps half a result) and finishes the job at 100 %. `409` if the job is not attached to that worker, or is finished already. Registration jobs use `/registration-jobs/{id}/complete` with `transformation_matrix`, `registration_error` and `runtime` (JSON, or multipart with the pickled quad tree as `file`).
+`complete` stores the result, its entry and **all detections in one transaction** (a job never keeps half a result) and finishes the job at 100 %. Every detection's vector is **validated against the annotation type**, as for annotations made by hand; one invalid vector refuses the whole result with `400 detections[17]: the vector is not valid for the annotation type "..." (a box needs exactly x1, y1, x2, y2 with x2 > x1 and y2 > y1)`. `409` if the job is not attached to that worker, or is finished already. Registration jobs use `/registration-jobs/{id}/complete` with `transformation_matrix`, `registration_error` and `runtime` (JSON, or multipart with the pickled quad tree as `file`).
+
+### Analysis from the viewer (v2)
+
+What the *Analysis* panel uses:
+
+```bash
+curl -b jar.txt /api/v2/images/2/analysis
+```
+```json
+{"results":[{"id":88,"plugin":{"id":196,"name":"Shot detector"},"job":null,"completed_time":"2026-11-07T22:02:14Z",
+             "entries":[{"id":85,"name":"Mitotic Figures","default_threshold":0.5,"count":400}]}],
+ "plugins":[{"id":196,"name":"Shot detector","package":"org.example.shot","author":"","served":true,
+             "parameters_schema":[{"name":"threshold","type":"float","default":0.5,"label":"Threshold"}],
+             "job":{"id":230,"status":"done","progress":100.0,"error":null}}]}
+```
+`plugins` are the analysis plugins that name no product or share one with the image's set; `served` says whether a worker asked for them lately; `job` is the latest job of the plugin on this image.
+
+```bash
+curl "${H[@]}" -X POST /api/v2/images/2/analyze -d '{"plugin": 196, "params": {"threshold": 0.7}}'      # 202 {"id": 231, "status": "queued", "reused": false}
+curl -b jar.txt /api/v2/plugin-result-entries/85/detections
+```
+```json
+{"id":85,"name":"Mitotic Figures","default_threshold":0.5,"truncated":false,
+ "types":{"1":{"name":"Annotation","color":"#ff0000"}},
+ "boxes":[[2153,880,2326,1052,0.93,1], ...],"polygons":[]}
+```
+`params` are checked against the plugin's schema (unknown names are refused) and reach the worker as `job["params"]`. An open job of the plugin on the image is returned (200, `"reused": true`) instead of a second one. `boxes` are `[x1, y1, x2, y2, score, annotation type]`, `polygons` `{"t", "s", "p": [x1, y1, x2, y2, ...]}`; an entry with more than 300,000 detections says `"truncated": true`.
 
 ### Look at the queue
 ```bash

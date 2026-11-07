@@ -58,7 +58,7 @@ Where the Django version already had a feature, the new one re-implements it; th
 | **The old viewer's heat map**, and scissors and glue for polygons | brush and knife replace the scissors and glue; the heat map had a flawed implementation. `Ctrl+Z` is undo only. |
 | **Datasets, tables, tools and messages screens** | not part of the new interface (their data stays in the database). |
 | **Per-image statistics** | team statistics are there; the per-image page is not. |
-| **Navigator overlay from plugin bitmaps, and the display of plugin results** | the data is stored (so Django's UI shows it) but the new interface does not draw plugin results yet. |
+| **Navigator overlay from plugin bitmaps** | results with bitmaps are stored but not drawn; detections (boxes, polygons) of results are shown by the *Analysis* panel |
 
 ## Where behaviour differs
 

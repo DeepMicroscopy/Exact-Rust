@@ -52,14 +52,22 @@ static SEEN: std::sync::OnceLock<Seen> = std::sync::OnceLock::new();
 pub(crate) fn seen(worker: &str, kinds: &[&str], plugins: &[i64]) {
     let map = SEEN.get_or_init(Default::default);
     if let Ok(mut m) = map.lock() {
-        m.insert(
-            worker.to_string(),
-            (
-                kinds.iter().map(|k| k.to_string()).collect(),
-                plugins.to_vec(),
-                std::time::Instant::now(),
-            ),
-        );
+        // a worker claims per plugin, one request after the other: what it asked for within the last half minute counts together
+        let (mut ks, mut ps): (Vec<String>, Vec<i64>) = match m.get(worker) {
+            Some((k, p, t)) if t.elapsed().as_secs() < 30 => (k.clone(), p.clone()),
+            _ => (Vec::new(), Vec::new()),
+        };
+        for k in kinds {
+            if !ks.iter().any(|x| x == k) {
+                ks.push(k.to_string());
+            }
+        }
+        for p in plugins {
+            if !ps.contains(p) {
+                ps.push(*p);
+            }
+        }
+        m.insert(worker.to_string(), (ks, ps, std::time::Instant::now()));
         m.retain(|_, (_, _, t)| t.elapsed().as_secs() < 3600);
     }
 }
@@ -230,12 +238,14 @@ async fn claim_h(
         Some(Value::Array(a)) => Some(a.iter().filter_map(Value::as_i64).collect()),
         Some(_) => return Err(bad("plugins must be a list of plugin ids.")),
     };
+    let plugin = d.get("plugin").and_then(Value::as_i64);
+    let mut served = plugins.clone().unwrap_or_default();
+    served.extend(plugin);
     seen(
         &worker,
         &kinds.iter().map(String::as_str).collect::<Vec<_>>(),
-        plugins.as_deref().unwrap_or(&[]),
+        &served,
     );
-    let plugin = d.get("plugin").and_then(Value::as_i64);
     let mut allowed = Vec::new();
     for k in &kinds {
         let (app, codename) = match k.as_str() {

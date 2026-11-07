@@ -83,13 +83,12 @@ lower the size. **Without a GPU** (or without the toolkit: "could not select dev
 ## 4e. Mitotic figure detection (MIDOG 2025 baseline)
 The worker also serves the image analysis plugin **MIDOG 2025 Baseline FCOS MIDOG++** (`helpers/plugins/midog2025_fcos.py`, a port of the
 QueueRunner plugin of the MIDOG 2025 reference algorithm). It finds mitotic figures in a slide and stores them as a plugin result (an entry of *Mitotic Figures*
-with the detections as annotations with a score, and the threshold 0.548 as the default). **The new web interface does not show plugin results yet**: read them with the API
-(`/api/v2/plugin-results`, `/api/v2/plugin-result-annotations`) or exact-sync, or look at them in the Django EXACT, which shows them with a threshold slider. Needs: (1) the checkpoint `FCOS_x50.ckpt` of the reference (373 MB, not in the repository) in the folder
+with the detections as annotations with a score, and the threshold 0.548 as the default). Open an image and click the **robot button** in the top bar: the *Analysis* panel lists the plugins available for the image set (with **Run** and the parameters), and the results the image has, which you tick to draw them over the image with a score threshold (the Django EXACT shows the same results). Needs: (1) the checkpoint `FCOS_x50.ckpt` of the reference (373 MB, not in the repository) in the folder
 `MODELS_PATH` (default `deploy/models`), mounted at `/models`; without it the worker says "plugin not served: the checkpoint ... is missing"
 and carries on with the others; (2) the worker account needs `processing.change_pluginjob` (it has it if it serves registrations) and has
 to be a member of the teams whose images it serves; (3) the image set needs an annotation type whose name contains "mitotic figure" in a
-product that is applied to the set, as with QueueRunner (the job fails with "Missing annotation type" otherwise). Start a job with
-`POST /api/v2/plugin-jobs {"plugin": <id>, "image": <id>}` (the beta's UI has no button for analysis jobs yet; EXACT's own UI and exact-sync can create them).
+product that is applied to the set, as with QueueRunner (the job fails with "Missing annotation type" otherwise). Start a job with the **Run** button of the panel, or
+`POST /api/v2/images/<id>/analyze {"plugin": <id>, "params": {}}` (or `POST /api/v2/plugin-jobs`, as exact-sync does).
 The GPU of the registration worker is used when torch sees one; on a CPU a patch takes about 4 s (measured on a laptop), so a slide needs a GPU
 (not measured here: no GPU on the development machine; the first production job tells).
 Parameters (the plugin defaults decide today; `det_thresh` 0.548 and `overlap` 0.3 are the reference's values; `half_precision` runs the GPU in

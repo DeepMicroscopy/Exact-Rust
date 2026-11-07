@@ -47,6 +47,9 @@ import { prefersThreePlanes, rememberThreePlanes } from "./MprPage";
 import { ContextMenu } from "../components/ContextMenu";
 import { usePreferences } from "../hooks/usePreferences";
 import { CropDialog } from "../components/CropDialog";
+import { AnalysisButton, AnalysisLayers, AnalysisPanel, type ShownEntries } from "../components/AnalysisPanel";
+import { useAnalysis } from "../hooks/useAnalysis";
+import { PluginResultLayer } from "../viewer-core/pluginResultLayer";
 import { VectorType, type Shape, type TypeStyle } from "../viewer-core/types";
 
 const PLANES = ["Axial", "Coronal", "Sagittal"];
@@ -129,6 +132,7 @@ export function ViewerPage() {
   const host = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null);
   const layerRef = useRef<AnnotationLayer | null>(null);
+  const resultLayerRef = useRef<PluginResultLayer | null>(null);
   const blenderRef = useRef<ZBlender | null>(null);
   const [pos, setPosState] = useState(0); // (fractional) frame position
   const posRef = useRef(0);
@@ -455,6 +459,8 @@ export function ViewerPage() {
     (window as unknown as { __coverage?: typeof coverageOf }).__coverage = coverageOf; // used by the e2e tests
     const layer = new AnnotationLayer(viewer);
     layerRef.current = layer;
+    const resultLayer = new PluginResultLayer(viewer); // detections of plugin results, above the annotations
+    resultLayerRef.current = resultLayer;
     const editor = new AnnotationEditor(viewer, layer, hostProxy(editorHostRef));
     editorRef.current = editor;
     const removeGestures = installGestures(viewer, (e) => e.altKey || editor.brushActive());
@@ -516,11 +522,13 @@ export function ViewerPage() {
       masks.destroy();
       editor.destroy();
       layer.destroy();
+      resultLayer.destroy();
       viewer.destroy();
       masksRef.current = null;
       segToolRef.current = null;
       viewerRef.current = null;
       layerRef.current = null;
+      resultLayerRef.current = null;
       editorRef.current = null;
     };
   }, []);
@@ -528,6 +536,11 @@ export function ViewerPage() {
   // display adjustments (brightness, contrast, ...) are applied to the drawn tiles only, not to the annotations on top
   const [adjust, setAdjust] = useState<Adjust>(loadAdjust);
   const [adjustOpen, setAdjustOpen] = useState(false);
+  // plugin results: the panel of the robot button, and the result entries drawn over the image
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [shownResults, setShownResults] = useState<ShownEntries>({});
+  useEffect(() => setShownResults({}), [id]);
+  const analysis = useAnalysis(id, analysisOpen);
   useEffect(() => {
     saveAdjust(adjust);
     const canvas = (viewerRef.current as unknown as { drawer?: { canvas?: HTMLElement } } | null)?.drawer?.canvas;
@@ -1104,6 +1117,7 @@ export function ViewerPage() {
             <rect x="9" y="9" width="6" height="6" fill="currentColor" stroke="none" />
           </svg>
         </button>
+        <AnalysisButton open={analysisOpen} results={analysis.data?.results.length ?? 0} onClick={() => setAnalysisOpen((o) => !o)} />
         <button className="btn icon-btn" onClick={() => window.dispatchEvent(new Event(SHOW_HELP))} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" data-testid="help-button">
           ?
         </button>
@@ -1113,6 +1127,8 @@ export function ViewerPage() {
         </button>
       </header>
       <GammaFilter gamma={adjust.gamma} />
+      <AnalysisLayers shown={shownResults} layerRef={resultLayerRef} />
+      {analysisOpen && <AnalysisPanel imageId={id} shown={shownResults} setShown={setShownResults} onClose={() => setAnalysisOpen(false)} />}
       {screening && image.data && <ScreeningPanel key={id} viewerRef={viewerRef} imageId={id} width={image.data.width} height={image.data.height} onClose={() => setScreening(false)} />}
       {finder && imageSetId != null && (
         <ImageFinder

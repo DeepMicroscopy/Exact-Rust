@@ -132,7 +132,7 @@ export function OverlayControl({
           title={`Opacity ${Math.round(opacity * 100)} %`}
         />
       )}
-      {chosen && loading && (
+      {chosen && loading && opacity > 0 && (
         <span
           className="overlay-loading"
           role="status"
