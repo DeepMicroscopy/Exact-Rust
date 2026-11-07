@@ -19,15 +19,17 @@ EXACT-Rust has two public interfaces on the same data. This page shows both with
 ## Authentication
 
 ```bash
+export EXACT_PASSWORD=...   # in your shell, never in a file that is committed
+
 # HTTP Basic (every request): fine for scripts
-curl -u alice:secret https://exact.example.org/api/v2/auth/me
+curl -u "alice:$EXACT_PASSWORD" https://exact.example.org/api/v2/auth/me
 
 # A personal access token (made in Django's UI today)
 curl -H "Authorization: Bearer <token>" https://exact.example.org/api/v2/auth/me
 
 # A session, as the web interface does it
 curl -c jar.txt -X POST https://exact.example.org/api/v2/auth/login \
-     -H 'content-type: application/json' -d '{"username":"alice","password":"secret"}'
+     -H 'content-type: application/json' -d "{\"username\":\"alice\",\"password\":\"$EXACT_PASSWORD\"}"
 ```
 ```json
 {"csrf_token":"ivxWpF8imVqUdIfpN3C97zWNZqpLT3EhZi9aN6yf",
@@ -310,26 +312,28 @@ curl -b jar.txt "/api/v2/jobs?status=queued&limit=1"
 The REST interface of the Django version, byte for byte for everything that existed: the resources of `/api/v1/…`, the legacy endpoints that exact-sync uses (`/annotations/api/…`, `/images/api/…`), and token authentication.
 
 ```python
+import os
 from exact_sync.exact_manager import ExactManager
 
-manager = ExactManager(username="alice", password="secret", serverurl="https://exact.example.org/")
+manager = ExactManager(username="alice", password=os.environ["EXACT_PASSWORD"], serverurl="https://exact.example.org/")
 for image_set in manager.retrieve_imagesets():
     print(image_set["id"], image_set["name"])
 annotations = manager.retrieve_annotations(image_id=2)
 ```
 or with the generated client:
 ```python
+import os
 from exact_sync.v1.api_client import ApiClient
 from exact_sync.v1.configuration import Configuration
 from exact_sync.v1.api.image_sets_api import ImageSetsApi
 
-cfg = Configuration(); cfg.host = "https://exact.example.org"; cfg.username = "alice"; cfg.password = "secret"
+cfg = Configuration(); cfg.host = "https://exact.example.org"; cfg.username = "alice"; cfg.password = os.environ["EXACT_PASSWORD"]
 sets = ImageSetsApi(ApiClient(cfg)).list_image_sets(limit=5)
 print(sets.count, [s.name for s in sets.results])
 ```
 Raw, the answers are Django REST Framework's:
 ```bash
-curl -u alice:secret "https://exact.example.org/api/v1/images/image_sets/?limit=1"
+curl -u "alice:$EXACT_PASSWORD" "https://exact.example.org/api/v1/images/image_sets/?limit=1"
 ```
 ```json
 {"count":8,"next":"https://exact.example.org/api/v1/images/image_sets/?limit=1&offset=1","previous":null,
@@ -343,11 +347,12 @@ What v1 does not have: registration jobs and plugins of type registration (v1 re
 ## A complete script
 
 ```python
+import os
 import httpx
 
 url = "https://exact.example.org"
 c = httpx.Client(base_url=url, timeout=60)
-csrf = c.post("/api/v2/auth/login", json={"username": "alice", "password": "secret"}).json()["csrf_token"]
+csrf = c.post("/api/v2/auth/login", json={"username": "alice", "password": os.environ["EXACT_PASSWORD"]}).json()["csrf_token"]
 c.headers["x-csrf-token"] = csrf
 
 team = c.post("/api/v2/teams", json={"name": "Docs Demo Team"}).json()
