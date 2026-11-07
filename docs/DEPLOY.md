@@ -1,6 +1,6 @@
 ---
 title: Installation
-nav_order: 7
+nav_order: 12
 ---
 
 # Beta installation on a copy of the production data
@@ -82,8 +82,9 @@ lower the size. **Without a GPU** (or without the toolkit: "could not select dev
 
 ## 4e. Mitotic figure detection (MIDOG 2025 baseline)
 The worker also serves the image analysis plugin **MIDOG 2025 Baseline FCOS MIDOG++** (`helpers/plugins/midog2025_fcos.py`, a port of the
-QueueRunner plugin of the MIDOG 2025 reference algorithm). It finds mitotic figures in a slide and stores them as a result the viewer
-shows with a threshold slider. Needs: (1) the checkpoint `FCOS_x50.ckpt` of the reference (373 MB, not in the repository) in the folder
+QueueRunner plugin of the MIDOG 2025 reference algorithm). It finds mitotic figures in a slide and stores them as a plugin result (an entry of *Mitotic Figures*
+with the detections as annotations with a score, and the threshold 0.548 as the default). **The new web interface does not show plugin results yet**: read them with the API
+(`/api/v2/plugin-results`, `/api/v2/plugin-result-annotations`) or exact-sync, or look at them in the Django EXACT, which shows them with a threshold slider. Needs: (1) the checkpoint `FCOS_x50.ckpt` of the reference (373 MB, not in the repository) in the folder
 `MODELS_PATH` (default `deploy/models`), mounted at `/models`; without it the worker says "plugin not served: the checkpoint ... is missing"
 and carries on with the others; (2) the worker account needs `processing.change_pluginjob` (it has it if it serves registrations) and has
 to be a member of the teams whose images it serves; (3) the image set needs an annotation type whose name contains "mitotic figure" in a

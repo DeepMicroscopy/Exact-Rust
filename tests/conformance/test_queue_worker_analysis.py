@@ -9,6 +9,7 @@ import uuid
 import httpx
 import pytest
 from common import BASE, PW
+from test_example_plugins import remove_plugin
 from test_queue_worker import ROOT, psql
 
 pytestmark = pytest.mark.skipif(httpx.get(BASE + "/api/version").status_code != 200, reason="server has no /api/version (Django)")
@@ -59,9 +60,7 @@ def setup(tmp_path):
     assert out.returncode == 0, out.stdout + out.stderr
     plugin = next(p for p in c.get("/api/v2/plugins").json()["items"] if p["name"] == name)
     yield c, tmp_path, plugin
-    psql(f"delete from processing_pluginresult where plugin_id = {plugin['id']}")
-    psql(f"delete from processing_pluginjob where plugin_id = {plugin['id']}")
-    psql(f"delete from processing_plugin where id = {plugin['id']}")
+    remove_plugin(c, plugin["id"])
 
 
 def job_of(c, plugin, params=None):

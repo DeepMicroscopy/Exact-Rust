@@ -1,0 +1,1 @@
+The animated diagrams of the documentation are generated from these scripts (`python3 diagrams1.py && python3 diagrams2.py && python3 diagrams3.py`, output in `../assets/diagrams/`). Plain SVG with SMIL animation, no dependencies.

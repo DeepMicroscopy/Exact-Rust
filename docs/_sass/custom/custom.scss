@@ -1,0 +1,12 @@
+// Animated diagrams (docs/assets/diagrams/*.svg) and a few helpers of the documentation
+figure.diagram {
+  margin: 1.5rem 0;
+  padding: 0;
+  img { display: block; width: 100%; height: auto; border-radius: 12px; }
+  figcaption { margin-top: .4rem; font-size: .8rem; color: #9aa4b2; }
+}
+.callout {
+  border-left: 4px solid #5aa2ff; background: rgba(90, 162, 255, .08); padding: .6rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0;
+  &.warn { border-color: #fbbf24; background: rgba(251, 191, 36, .08); }
+}
+.badge { display: inline-block; padding: 0 .5rem; border-radius: 1rem; font-size: .75rem; border: 1px solid #3a4660; }

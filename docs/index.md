@@ -41,10 +41,20 @@ Median response times of the same read-only requests, one at a time, on producti
 the Django version, most for the lists that exact-sync and workers ask for (Django checks the password on every Basic-auth request). How it was measured, and the numbers, are in the
 [README](https://github.com/DeepMicroscopy/Exact-Rust#speed).
 
+## How it fits together
+
+<figure class="diagram"><img src="assets/diagrams/system-overview.svg" alt="Browser, exact-sync and workers talk to one Rust binary that uses PostgreSQL, the image store, a cache and helper processes"><figcaption>One binary and PostgreSQL. The dots are requests; the dashed box is the optional, unchanged Django EXACT that can share the data.</figcaption></figure>
+
 ## Where to go next
 
-* **Using it:** [User guide](user-guide) and [keyboard shortcuts](shortcuts).
-* **Running a team:** [Administration](administration).
-* **Installing it:** [Beta installation on a copy of production](DEPLOY); [running next to the Django EXACT on the same data](coexistence) (test suite and preflight).
-* **Scripting it:** [API](api) and the [QueueRunner claim](queuerunner-v2).
-* **How it is built:** [Architecture](architecture).
+| I want to... | Read |
+|---|---|
+| **start using it** | [User guide](user-guide), [the web interface and its workflow](ui-workflow), [keyboard shortcuts](shortcuts) |
+| **set up a project with my colleagues** | [How to create a team and manage your images](howto-team) |
+| **align two stains** | [How to use image registration](howto-registration) (with a short explanation of what registration is) |
+| **run a team** | [Administration](administration) |
+| **install it** | [Installation](DEPLOY), then [running next to the Django EXACT](coexistence) |
+| **script it** | [API](api) with examples, the [QueueRunner claim](queuerunner-v2) |
+| **add my own analysis** | [How to write a plugin](howto-plugin), [Plugins and workers](plugins) |
+| **understand how it is built** | [Architecture](architecture), [file formats](file-formats) |
+| **know what changed from EXACT** | [Changes from the Django version](django-differences) |
