@@ -65,6 +65,7 @@ pub async fn claim_h(
         &["plugin"],
         &plugin.into_iter().collect::<Vec<_>>(),
     );
+    crate::v2::jobs::touch_plugins(&s.pool, &plugin.into_iter().collect::<Vec<_>>()).await;
     let host = headers
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())

@@ -49,9 +49,14 @@ async fn visible_image(s: &AppState, p: &Principal, image: i64) -> ApiResult<i64
 }
 
 /// Plugins of type image analysis that may run on images of `set`: those without products, and those that share one with the set.
-const AVAILABLE_SQL: &str = "pl.plugin_type = 1 AND (NOT EXISTS (SELECT 1 FROM processing_plugin_products pp WHERE pp.plugin_id = pl.id) \
-     OR EXISTS (SELECT 1 FROM processing_plugin_products pp JOIN administration_product_imagesets ap ON ap.product_id = pp.product_id \
-                WHERE pp.plugin_id = pl.id AND ap.imageset_id::bigint = $1))";
+fn available_sql() -> String {
+    format!(
+        "pl.plugin_type = 1 AND (NOT EXISTS (SELECT 1 FROM processing_plugin_products pp WHERE pp.plugin_id = pl.id) \
+         OR EXISTS (SELECT 1 FROM processing_plugin_products pp JOIN administration_product_imagesets ap ON ap.product_id = pp.product_id \
+                    WHERE pp.plugin_id = pl.id AND ap.imageset_id::bigint = $1)) AND {}",
+        super::jobs::CONNECTED_SQL
+    )
+}
 
 pub async fn analysis_h(
     State(s): State<AppState>,
@@ -94,7 +99,8 @@ pub async fn analysis_h(
         .collect();
 
     let plugin_rows = sqlx::query(&format!(
-        "SELECT pl.id::bigint, pl.name, pl.package, pl.author, pl.parameters_schema FROM processing_plugin pl WHERE {AVAILABLE_SQL} ORDER BY pl.name"
+        "SELECT pl.id::bigint, pl.name, pl.package, pl.author, pl.parameters_schema FROM processing_plugin pl WHERE {} ORDER BY pl.name",
+        available_sql()
     ))
     .bind(set)
     .fetch_all(&s.pool)
@@ -163,7 +169,8 @@ pub async fn analyze_h(
         .and_then(Value::as_i64)
         .ok_or_else(|| bad("plugin: an id is required."))?;
     let row = sqlx::query(&format!(
-        "SELECT pl.parameters_schema FROM processing_plugin pl WHERE pl.id::bigint = $2 AND {AVAILABLE_SQL}"
+        "SELECT pl.parameters_schema FROM processing_plugin pl WHERE pl.id::bigint = $2 AND {}",
+        available_sql()
     ))
     .bind(set)
     .bind(plugin)

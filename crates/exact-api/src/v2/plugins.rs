@@ -100,7 +100,7 @@ pub(crate) fn schema_names(schema: &Value) -> Vec<String> {
 
 /// The registration plugin used when none is named: the oldest one.
 pub(crate) async fn default_registration_plugin(s: &AppState) -> ApiResult<Option<i32>> {
-    sqlx::query_scalar("SELECT id FROM processing_plugin WHERE plugin_type = 2 ORDER BY id LIMIT 1")
+    sqlx::query_scalar(&format!("SELECT pl.id FROM processing_plugin pl WHERE pl.plugin_type = 2 AND {} ORDER BY pl.id LIMIT 1", crate::v2::jobs::CONNECTED_SQL))
         .fetch_optional(&s.pool)
         .await
         .map_err(db_err)
@@ -122,7 +122,8 @@ async fn registration_plugins_h(
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     require_user(authenticate(&s, &headers, &Method::GET).await?)?;
-    let rows = sqlx::query(&format!("SELECT {PLUGIN_COLUMNS} FROM processing_plugin WHERE plugin_type = {REGISTRATION} ORDER BY id"))
+    // only plugins whose worker has been there within a week are offered
+    let rows = sqlx::query(&format!("SELECT {PLUGIN_COLUMNS} FROM processing_plugin pl WHERE plugin_type = {REGISTRATION} AND {} ORDER BY id", crate::v2::jobs::CONNECTED_SQL))
         .fetch_all(&s.pool)
         .await
         .map_err(db_err)?;
@@ -245,6 +246,7 @@ async fn register_h(
     .fetch_one(&s.pool)
     .await
     .map_err(db_err)?;
+    crate::v2::jobs::touch_plugins(&s.pool, &[id as i64]).await;
     let mut out = plugin_json(&row);
     out["created"] = json!(created);
     Ok((

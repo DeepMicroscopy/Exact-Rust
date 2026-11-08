@@ -33,7 +33,7 @@ The first two share one worker program and one plugin interface (`helpers/queue_
 * **Access to the image files**, under the same paths as the server (the jobs carry absolute paths), read-only is enough. Or, for segmenters, nothing: the voxels come over HTTP.
 * **The Python it needs** (the container image has numpy, OpenCV, PyTorch with CUDA, slideio, qt-wsi-registration, DeeperHistReg).
 
-Several workers can run side by side. The claim is atomic, so a job goes to exactly one; a job whose worker goes silent for 30 minutes is offered again. The Jobs page shows whether any worker has asked for work lately, so users see why a queued job does not move. A worker that is busy with a long job sends a heartbeat (`POST /api/v2/jobs/heartbeat`) every 20 seconds, so it stays listed (and its plugins stay *served*) while it computes.
+Several workers can run side by side. The claim is atomic, so a job goes to exactly one; a job whose worker goes silent for 30 minutes is offered again. The Jobs page shows whether any worker has asked for work lately, so users see why a queued job does not move. **A plugin whose worker has not been seen for 7 days is not offered**: not in the viewer's *Analysis* panel, not in the *Register* dialog (and not as the default registration plugin), and an analysis of it cannot be started. "Seen" means the worker announced the plugin, asked for its jobs, sent a heartbeat or took a job (QueueRunner counts through its jobs). Starting the worker again makes the plugin appear again within seconds. A worker that is busy with a long job sends a heartbeat (`POST /api/v2/jobs/heartbeat`) every 20 seconds, so it stays listed (and its plugins stay *served*) while it computes.
 
 ## The plugin interface in short
 

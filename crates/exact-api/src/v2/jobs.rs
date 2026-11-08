@@ -73,6 +73,42 @@ pub(crate) fn seen(worker: &str, kinds: &[&str], plugins: &[i64]) {
     }
 }
 
+/// Plugins whose worker has asked for jobs, announced them or worked on one within a week (for a plugin `pl`): only those are offered.
+/// The table is written by [`touch_plugins`]; jobs a worker took (QueueRunner through `/api/v1` does not announce itself in a way
+/// that is recorded) count as well.
+pub(crate) const CONNECTED_SQL: &str = "GREATEST((SELECT ps.seen_at FROM exact_rust_plugin_seen ps WHERE ps.plugin_id = pl.id), \
+     (SELECT max(cq.updated_time) FROM processing_pluginjob cq WHERE cq.plugin_id = pl.id AND cq.attached_worker IS NOT NULL AND cq.attached_worker <> '')) \
+     > now() - interval '7 days'";
+
+static TOUCHED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<i64, std::time::Instant>>> = std::sync::OnceLock::new();
+
+/// Records that a worker is serving these plugins now (at most one write a minute per plugin).
+pub(crate) async fn touch_plugins(pool: &sqlx::PgPool, ids: &[i64]) {
+    let due: Vec<i32> = {
+        let Ok(mut m) = TOUCHED.get_or_init(Default::default).lock() else {
+            return;
+        };
+        let mut due = Vec::new();
+        for id in ids {
+            if m.get(id).is_none_or(|t| t.elapsed().as_secs() >= 60) {
+                m.insert(*id, std::time::Instant::now());
+                due.push(*id as i32);
+            }
+        }
+        due
+    };
+    if due.is_empty() {
+        return;
+    }
+    let _ = sqlx::query(
+        "INSERT INTO exact_rust_plugin_seen (plugin_id, seen_at) SELECT id, now() FROM processing_plugin WHERE id = ANY($1) \
+         ON CONFLICT (plugin_id) DO UPDATE SET seen_at = now()",
+    )
+    .bind(&due)
+    .execute(pool)
+    .await;
+}
+
 /// The workers that asked for work in the last 90 seconds, most recent first.
 pub(crate) fn workers_seen() -> Vec<Value> {
     let mut out: Vec<(u64, Value)> = SEEN
@@ -235,6 +271,7 @@ async fn heartbeat_h(
         .map(|a| a.iter().filter_map(Value::as_i64).collect())
         .unwrap_or_default();
     seen(worker, &kinds, &plugins);
+    touch_plugins(&s.pool, &plugins).await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -278,6 +315,7 @@ async fn claim_h(
         &kinds.iter().map(String::as_str).collect::<Vec<_>>(),
         &served,
     );
+    touch_plugins(&s.pool, &served).await;
     let mut allowed = Vec::new();
     for k in &kinds {
         let (app, codename) = match k.as_str() {
