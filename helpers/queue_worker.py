@@ -14,12 +14,14 @@ does not.
 """
 import argparse
 import base64
+import contextlib
 import importlib.util
 import json
 import os
 import pathlib
 import socket
 import sys
+import threading
 import time
 import traceback
 import urllib.error
@@ -91,6 +93,28 @@ def announce(api, plugins):
             continue
         ids[body["id"]] = p
     return ids
+
+
+@contextlib.contextmanager
+def heartbeat(api, name, plugins, every=20.0):
+    """Tells the server now and then that this worker is alive. While a long job runs the worker does not claim, and the server
+    would otherwise stop listing its plugins as served after a minute or so."""
+    kinds = sorted({"registration" if p.plugin_type == REGISTRATION else "plugin" for p in plugins.values()})
+    done = threading.Event()
+
+    def beat():
+        while not done.wait(every):
+            try:
+                api.call("/api/v2/jobs/heartbeat", {"worker": name, "kinds": kinds, "plugins": list(plugins)})
+            except Exception:  # noqa: BLE001 - a missed beat is not worth stopping the job
+                pass
+
+    t = threading.Thread(target=beat, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        done.set()
 
 
 def work(api, name, plugins, ctx):
@@ -198,7 +222,8 @@ def main(argv=None):
                         return 1
                     time.sleep(a.interval)
                     continue
-            busy = work(api, a.name, served, ctx)
+            with heartbeat(api, a.name, served):
+                busy = work(api, a.name, served, ctx)
         except Exception as e:  # noqa: BLE001 - keep polling when the server is unreachable
             print(f"worker error: {e}", file=sys.stderr, flush=True)
             busy = False

@@ -154,3 +154,40 @@ def test_the_viewer_lists_results_and_plugins_runs_with_parameters_and_serves_de
     x1, y1, x2, y2, score, atype = d["boxes"][0]
     assert x2 - x1 == 10 and 0.5 <= score < 0.6 and str(atype) in d["types"]
     assert c.get("/api/v2/plugin-result-entries/99999999/detections").status_code == 404
+
+
+def test_heartbeat_keeps_a_busy_worker_listed():
+    """A worker computing a long job does not claim; its heartbeat keeps it (and its plugins) in the list of workers."""
+    c = client()
+    name = "hb-" + uuid.uuid4().hex[:8]
+    r = c.post("/api/v2/jobs/heartbeat", json={"worker": name, "kinds": ["plugin"], "plugins": [424242]})
+    assert r.status_code == 204
+    mine = [w for w in c.get("/api/v2/jobs").json()["workers"] if w["name"] == name]
+    assert mine and mine[0]["plugins"] == [424242] and mine[0]["kinds"] == ["plugin"]
+    assert c.post("/api/v2/jobs/heartbeat", json={}).status_code == 400
+    plain = client("rt_member")
+    assert plain.post("/api/v2/jobs/heartbeat", json={"worker": name}).status_code == 403
+
+
+def test_worker_sends_heartbeats_while_a_job_runs():
+    sys.path.insert(0, str(ROOT / "helpers"))
+    import queue_worker
+    from queue_plugin import IMAGE_ANALYSIS
+
+    calls = []
+
+    class FakeApi:
+        def call(self, path, body=None, files=None):
+            calls.append((path, body))
+            return 204, {}
+
+    class P:
+        plugin_type = IMAGE_ANALYSIS
+
+    import time
+    with queue_worker.heartbeat(FakeApi(), "w", {7: P()}, every=0.05):
+        time.sleep(0.3)
+    n = len(calls)
+    assert n >= 3 and calls[0] == ("/api/v2/jobs/heartbeat", {"worker": "w", "kinds": ["plugin"], "plugins": [7]})
+    time.sleep(0.2)
+    assert len(calls) == n  # stopped with the job

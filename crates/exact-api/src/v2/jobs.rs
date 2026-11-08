@@ -31,6 +31,7 @@ pub fn v2_routes() -> Router<AppState> {
     Router::new()
         .route("/api/v2/jobs", get(list_h))
         .route("/api/v2/jobs/claim", post(claim_h))
+        .route("/api/v2/jobs/heartbeat", post(heartbeat_h))
         .route("/api/v2/jobs/{kind}/{id}", delete(remove_h))
         .route("/api/v2/jobs/{kind}/{id}/restart", post(restart_h))
 }
@@ -204,6 +205,37 @@ fn object(body: &[u8]) -> ApiResult<Map<String, Value>> {
         Ok(Value::Object(m)) => Ok(m),
         _ => Err(bad("Expected a JSON object.")),
     }
+}
+
+/// `POST /api/v2/jobs/heartbeat {"worker", "kinds", "plugins"}`: "I am here", sent by a worker that is busy with a long job and so
+/// does not claim. Without it the plugins it serves would show as not served while it computes. Answers 204.
+async fn heartbeat_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
+    if !users::has_perm(&s.pool, &p.user, "processing", "change_pluginjob").await? {
+        return Err(ApiError::permission_denied());
+    }
+    let d = object(&body)?;
+    let worker = d
+        .get("worker")
+        .and_then(Value::as_str)
+        .filter(|w| !w.is_empty() && w.chars().count() <= 200)
+        .ok_or_else(|| bad("worker: a name of 1 to 200 characters is required."))?;
+    let kinds: Vec<&str> = d
+        .get("kinds")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).filter(|k| KINDS.contains(k)).collect())
+        .unwrap_or_default();
+    let plugins: Vec<i64> = d
+        .get("plugins")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_i64).collect())
+        .unwrap_or_default();
+    seen(worker, &kinds, &plugins);
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 /// `{"worker": "name", "kinds": ["registration", "plugin"], "plugin": 3}`: `kinds` (default: all) are the kinds the worker
