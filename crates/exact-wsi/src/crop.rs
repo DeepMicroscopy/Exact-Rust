@@ -134,19 +134,23 @@ pub fn crop_to_pyramid(
     Ok(dims.len())
 }
 
-/// 256x256 RGB tile starting at column `x0` of a band of `band_h` rows; what lies outside the band stays black.
+/// 256x256 RGB tile starting at column `x0` of a band of `band_h` rows. The slide's pixels are straight RGBA (transparent where the
+/// file has no data); the tile is JPEG, which has no alpha, so they are laid over white. What lies outside the band is white, too.
 fn rgb_tile(band: &RgbaImage, x0: u32, band_h: u32) -> Vec<u8> {
     let t = TILE as usize;
-    let mut out = vec![0u8; t * t * 3];
+    let mut out = vec![255u8; t * t * 3];
     for ty in 0..band_h.min(TILE as u32) {
         for tx in 0..TILE as u32 {
             let sx = x0 + tx;
             if sx >= band.width() {
                 break;
             }
-            let p = band.get_pixel(sx, ty);
+            let p = band.get_pixel(sx, ty).0;
+            let a = p[3] as u32;
             let o = (ty as usize * t + tx as usize) * 3;
-            out[o..o + 3].copy_from_slice(&p.0[..3]);
+            for k in 0..3 {
+                out[o + k] = ((p[k] as u32 * a + 255 * (255 - a) + 127) / 255) as u8;
+            }
         }
     }
     out
@@ -195,6 +199,22 @@ mod tests {
                 ])
             }))
         }
+    }
+
+    #[test]
+    fn transparent_pixels_become_white_not_black() {
+        let mut band = RgbaImage::from_pixel(300, 4, image::Rgba([10, 20, 30, 255]));
+        band.put_pixel(0, 0, image::Rgba([0, 0, 0, 0])); // no data
+        band.put_pixel(1, 0, image::Rgba([0, 0, 0, 128])); // half transparent black
+        let t = rgb_tile(&band, 0, 4);
+        assert_eq!(&t[0..3], &[255, 255, 255]);
+        assert!(t[3..6].iter().all(|&v| (126..=129).contains(&v)), "{:?}", &t[3..6]);
+        assert_eq!(&t[6..9], &[10, 20, 30]);
+        // outside the band (rows 4.. and the columns past 300) is white
+        let t2 = rgb_tile(&band, 256, 4);
+        assert_eq!(&t2[(43 * 3)..(43 * 3 + 3)], &[10, 20, 30]);
+        assert_eq!(&t2[(44 * 3)..(44 * 3 + 3)], &[255, 255, 255]);
+        assert_eq!(&t2[(4 * 256 * 3)..(4 * 256 * 3 + 3)], &[255, 255, 255]);
     }
 
     #[test]
