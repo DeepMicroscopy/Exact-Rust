@@ -113,6 +113,9 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
       <div className="toolbar">
         <h3>{product.name}</h3>
         <span className="muted small">{teams.find((t) => t.id === product.team)?.name}</span>
+        <span className="muted small" title="The product's ID, as the API uses it">
+          ID {product.id}
+        </span>
         <span className="spacer" />
         {perms.change_product && (
           <button className="btn small" onClick={() => setEditProduct(true)}>
@@ -134,6 +137,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
         <thead>
           <tr>
             <th />
+            <th title="The annotation type's ID, as the API uses it">ID</th>
             <th>Annotation type</th>
             <th>Shape</th>
             <th>Used</th>
@@ -148,6 +152,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
               <td>
                 <span className="swatch" style={{ background: t.color_code }} />
               </td>
+              <td className="muted small" data-testid="type-id">{t.id}</td>
               <td>{t.name}</td>
               <td className="muted small">{shapeName(t.vector_type)}</td>
               <td className="muted small">{t.annotation_count}</td>
@@ -171,7 +176,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
           ))}
           {types.data && rows.length === 0 && (
             <tr>
-              <td colSpan={7} className="muted">
+              <td colSpan={8} className="muted">
                 This product has no annotation types yet.
               </td>
             </tr>
