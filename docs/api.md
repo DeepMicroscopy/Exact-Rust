@@ -190,6 +190,14 @@ curl -b jar.txt "/api/v2/annotations?image=2&limit=1&fields=id,annotation_type,v
 {"items":[{"annotation_type":1,"id":193,"vector":{"x1":10,"x2":60,"y1":20,"y2":90}}],"next_cursor":"aWQ6MTkz"}
 ```
 
+### A snapshot centred on a point
+```bash
+curl -u alice:"$EXACT_PASSWORD" -o snap.png \
+  https://exact.example.org/images/image/centered_snapshot/2/5000/3200/2048/2048/
+```
+`GET /images/image/centered_snapshot/{image_id}/{cx}/{cy}/{w}/{h}/` answers the region of the slide at **full resolution** (level 0, the image's default frame) centred on the pixel (`cx`, `cy`), **exactly `w` × `h` pixels**. Where the region lies outside the slide (or the slide has no data) the pixels are white. The corner is `cx - w/2`, `cy - h/2` (integer division), as in the Django EXACT, which has the same path.
+The answer is `image/png`; `?format=jpeg` gives `image/jpeg` (quality 90). Authentication is Basic or a token (`Authorization: Bearer ...`), as everywhere in the API, and the image must belong to one of your teams (404 otherwise). The sides may be 1 to 8192 pixels, at most 16 million pixels in all (400 otherwise). A 2048 × 2048 snapshot takes well under a second on a local file.
+
 ## Examples: registration
 
 How to use it is in the [registration HOWTO](howto-registration); this is the wire format.

@@ -173,6 +173,14 @@ pub fn routes() -> Router<AppState> {
         "/api/v1/images/images/{pk}/update_image_cache/",
         axum::routing::patch(update_image_cache),
     )
+    .route(
+        "/images/image/centered_snapshot/{pk}/{cx}/{cy}/{w}/{h}/",
+        get(centered_snapshot),
+    )
+    .route(
+        "/images/image/centered_snapshot/{pk}/{cx}/{cy}/{w}/{h}",
+        get(centered_snapshot),
+    )
     .route("/images/api/image/download/{pk}/", get(download))
     .route("/api/v2/images/{pk}/download", get(download))
     .route("/api/v2/images/download", get(download_many))
@@ -481,6 +489,95 @@ async fn thumbnail(
             Err(slide_err_at(img.id, &file_for_log, e))
         }
     }
+}
+
+/// Largest side and largest area of a centred snapshot (2048 x 2048 is the use case; a PNG of 16 MP is about 48 MB of pixels).
+const MAX_SNAPSHOT_SIDE: i64 = 8192;
+const MAX_SNAPSHOT_PIXELS: i64 = 16_000_000;
+
+/// `GET /images/image/centered_snapshot/{id}/{cx}/{cy}/{w}/{h}/[?format=png|jpeg]`: the region of the slide at full resolution
+/// (level 0, the image's default frame) centred on (cx, cy), exactly w x h pixels, white where it lies outside the slide.
+/// The path is the one the Django EXACT has (there: PNG only). Authentication as everywhere in the API: Basic or token (a session
+/// cookie works too, as elsewhere).
+async fn centered_snapshot(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path((pk, cx, cy, w, h)): Path<(String, i64, i64, i64, i64)>,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Response> {
+    let p = principal(&s, &headers).await?;
+    let img = image_of(&s, &p, &pk).await?;
+    let (w, h) = (w, h);
+    if w < 1
+        || h < 1
+        || w > MAX_SNAPSHOT_SIDE
+        || h > MAX_SNAPSHOT_SIDE
+        || w * h > MAX_SNAPSHOT_PIXELS
+    {
+        return Err(ApiError::detail(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "The snapshot must be at least 1x1 and at most {MAX_SNAPSHOT_SIDE} pixels per side and {MAX_SNAPSHOT_PIXELS} pixels in all."
+            ),
+        ));
+    }
+    let jpeg = match q.get("format").map(|f| f.to_ascii_lowercase()).as_deref() {
+        None | Some("png") => false,
+        Some("jpeg") | Some("jpg") => true,
+        Some(_) => {
+            return Err(ApiError::detail(
+                StatusCode::BAD_REQUEST,
+                "format must be png or jpeg.",
+            ))
+        }
+    };
+    let default_frame: i32 = sqlx::query_scalar("SELECT \"defaultFrame\" FROM images_image WHERE id = $1")
+        .bind(img.id)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?
+        .unwrap_or(0);
+    let path = img.path(&s, 1, 1).to_string_lossy().into_owned();
+    let st = s.slides.clone();
+    // the corner: Django's int(cx - w / 2)
+    let (x0, y0) = (cx - w / 2, cy - h / 2);
+    let bytes = tokio::task::spawn_blocking(move || -> exact_wsi::Result<Vec<u8>> {
+        let slide = st.slides.get(&path)?;
+        let (sw, sh) = slide.level_dimensions().first().copied().unwrap_or((0, 0));
+        let (sw, sh) = (sw as i64, sh as i64);
+        let mut canvas = image::RgbImage::from_pixel(w as u32, h as u32, image::Rgb([255, 255, 255]));
+        // the part of the wanted region that lies inside the slide
+        let (ix0, iy0) = (x0.max(0), y0.max(0));
+        let (ix1, iy1) = ((x0 + w).min(sw), (y0 + h).min(sh));
+        if ix1 > ix0 && iy1 > iy0 {
+            let frame = if slide.frame_count() > 1 {
+                (default_frame.max(0) as u32).min(slide.frame_count() - 1)
+            } else {
+                0
+            };
+            let part = slide.read_region(ix0, iy0, 0, (ix1 - ix0) as u32, (iy1 - iy0) as u32, frame)?;
+            for (px, py, c) in part.enumerate_pixels() {
+                // transparent pixels (a slide with no data there) are white, too
+                let a = c[3] as u32;
+                let mix = |v: u8| ((v as u32 * a + 255 * (255 - a) + 127) / 255) as u8;
+                canvas.put_pixel(
+                    (ix0 - x0) as u32 + px,
+                    (iy0 - y0) as u32 + py,
+                    image::Rgb([mix(c[0]), mix(c[1]), mix(c[2])]),
+                );
+            }
+        }
+        Ok(encode(&canvas, if jpeg { "jpeg" } else { "png" }))
+    })
+    .await
+    .map_err(blocking_err)?
+    .map_err(slide_err)?;
+    let mut r = (StatusCode::OK, Bytes::from(bytes)).into_response();
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(if jpeg { "image/jpeg" } else { "image/png" }),
+    );
+    Ok(r)
 }
 
 async fn get_patch(
