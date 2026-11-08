@@ -348,9 +348,11 @@ curl -u "alice:$EXACT_PASSWORD" "https://exact.example.org/api/v1/images/image_s
  "results":[{"collaboration_type":0,"creator":1,"description":"","id":1,"images":[2,6,11, ...],
              "name":"Whole Slide Images","path":"exact_1_1","product_set":[1],"set_tags":[],"team":1}]}
 ```
+Image sets can be created through v1 with `POST /api/v1/images/image_sets/` (`{"name", "team", ...}`, the caller must be a member of the team, answer 201 with the v1 representation, errors in DRF's shape `{"name": ["..."]}`).
+
 Teams can be created through v1 since EXACT [PR 169](https://github.com/DeepMicroscopy/Exact/pull/169): `POST /api/v1/users/teams/` with only a `name` (3 to 100 characters, unique); the creator becomes admin, and `members`, `image_sets`, `product_set` and `memberships` in the body are ignored. This matches the Django behaviour and is tested against it.
 
-What v1 does not have: registration jobs and plugins of type registration (v1 reports image analyses only), creating image sets with `POST /api/v1/images/image_sets/` (use `POST /api/v2/image-sets` or the legacy `images/api/imageset/create/` exact-sync uses), deleting teams (`DELETE /api/v2/teams/{id}`). The [list of differences](django-differences) has the rest; the unmodified QueueRunner keeps working, see [its claim](queuerunner-v2).
+What v1 does not have: registration jobs and plugins of type registration (v1 reports image analyses only), changing or deleting image sets (`POST /api/v1/images/image_sets/` creates them; for the rest use `PATCH` / `DELETE /api/v2/image-sets/{id}`), deleting teams (`DELETE /api/v2/teams/{id}`). The [list of differences](django-differences) has the rest; the unmodified QueueRunner keeps working, see [its claim](queuerunner-v2).
 
 ## A complete script
 

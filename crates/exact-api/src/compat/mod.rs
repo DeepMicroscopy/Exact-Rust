@@ -168,6 +168,24 @@ async fn rest_write(
             Err(e) => with_allow(e.into_response(), allow),
         });
     }
+    if spec.name == "ImageSet" && pk.is_none() && *method == Method::POST {
+        let r = async {
+            let p = require_model_perm(
+                s,
+                authenticate(s, headers, method).await?,
+                method,
+                spec.perm.0,
+                spec.perm.1,
+            )
+            .await?;
+            crate::v2::image_sets::v1_create(s, &p, headers, body.as_ref()).await
+        }
+        .await;
+        return Some(match r {
+            Ok(r) => with_allow(r, LIST_ALLOW),
+            Err(e) => with_allow(e.into_response(), LIST_ALLOW),
+        });
+    }
     if !rest_writes::is_annotation(spec) {
         return None;
     }

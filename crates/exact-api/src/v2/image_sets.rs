@@ -335,6 +335,7 @@ fn parse_new(d: &Map<String, Value>) -> ApiResult<NewSet> {
         collaboration_type,
         products: d
             .get("products")
+            .or_else(|| d.get("product_set")) // the name /api/v1 uses
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(id_of).collect())
             .unwrap_or_default(),
@@ -496,6 +497,41 @@ async fn legacy_create(
         .next()
         .unwrap_or(Value::Null);
     Ok(Json(set).into_response())
+}
+
+/// `POST /api/v1/images/image_sets/`: as Django's `ImageSetViewSet.create`: the caller is the creator, the folder is made, the answer
+/// is the v1 representation (201) and errors are DRF's `{"field": ["message"]}`. Needs `images.add_imageset` and membership of the team.
+pub async fn v1_create(
+    s: &AppState,
+    p: &Principal,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> ApiResult<Response> {
+    let drf = |e: ApiError| match e.body.get("errors").cloned() {
+        Some(errors) if e.status == StatusCode::BAD_REQUEST => ApiError {
+            status: e.status,
+            body: errors,
+        },
+        _ => e,
+    };
+    let n = parse_new(&object(body)?).map_err(drf)?;
+    let id = create_set(s, p, n).await.map_err(drf)?;
+    let ctx = Ctx {
+        s,
+        viewer: p.viewer(),
+        host: headers
+            .get(header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("localhost")
+            .to_string(),
+        v2: false,
+    };
+    let v = engine::serialize_ids(&ctx, specs::by_name("ImageSet"), &[id])
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| ApiError::not_found("Not found."))?;
+    Ok((StatusCode::CREATED, Json(v)).into_response())
 }
 
 pub async fn patch_h(
