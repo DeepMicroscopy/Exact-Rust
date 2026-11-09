@@ -54,7 +54,7 @@ export interface EditorHost {
   /** annotations that are shown (hidden types left out) */
   shapes(): Shape[];
   type(id: number): TypeInfo | undefined;
-  image(): { width: number; height: number; mpp: number };
+  image(): { width: number; height: number; mpp: number; free?: boolean };
   onCreate(typeId: number, vector: Record<string, number>): void;
   onUpdate(shape: Shape, vector: Record<string, number>): void;
   onDelete(shape: Shape): void;
@@ -729,8 +729,8 @@ export class AnnotationEditor {
       s.moved = true;
       // the group keeps its shape at the edge of the image: one shift for all
       const [minx, miny, maxx, maxy] = [Math.min(...s.shapes.map((q) => q.bbox[0])), Math.min(...s.shapes.map((q) => q.bbox[1])), Math.max(...s.shapes.map((q) => q.bbox[2])), Math.max(...s.shapes.map((q) => q.bbox[3]))];
-      const dx = Math.min(Math.max(dx0, -minx), bounds.width - maxx);
-      const dy = Math.min(Math.max(dy0, -miny), bounds.height - maxy);
+      const dx = bounds.free ? dx0 : Math.min(Math.max(dx0, -minx), bounds.width - maxx);
+      const dy = bounds.free ? dy0 : Math.min(Math.max(dy0, -miny), bounds.height - maxy);
       this.previews = s.shapes.map((q) => shiftedShape(q, dx, dy, bounds));
       this.refresh();
       return;

@@ -315,13 +315,15 @@ export function ViewerPage() {
   legacyRef.current = prefs.legacy_navigation;
   const zoomStepRef = useRef(prefs.zoom_step);
   zoomStepRef.current = prefs.zoom_step;
+  const allowOutsideRef = useRef(prefs.allow_outside);
+  allowOutsideRef.current = prefs.allow_outside;
   const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
   hostState.current = { shapes, info, hiddenAll, image: image.data, actions };
   const editorHost: EditorHost = useMemo(
     () => ({
       shapes: () => hostState.current.shapes.filter((s) => s.id > 0 && !hostState.current.hiddenAll.has(s.typeId)),
       type: (tid) => hostState.current.info(tid),
-      image: () => ({ width: hostState.current.image?.width ?? 1, height: hostState.current.image?.height ?? 1, mpp: hostState.current.image?.mpp ?? 0 }),
+      image: () => ({ width: hostState.current.image?.width ?? 1, height: hostState.current.image?.height ?? 1, mpp: hostState.current.image?.mpp ?? 0, free: allowOutsideRef.current }),
       onCreate: (tid, v) => void hostState.current.actions.create(tid, v),
       onUpdate: (s, v) => void hostState.current.actions.update(s.id, v),
       onDelete: (s) => void hostState.current.actions.remove(s.id),

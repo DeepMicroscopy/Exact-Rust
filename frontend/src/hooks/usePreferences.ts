@@ -14,9 +14,11 @@ export interface Preferences {
   zoom_slider: boolean;
   /** how far one press of + / − zooms: low (25 %, the default), medium (50 %) or high (a factor of 2) */
   zoom_step: "low" | "medium" | "high";
+  /** annotations may reach outside the image (negative coordinates, or beyond its size); off: they are held at the edge */
+  allow_outside: boolean;
 }
 
-const DEFAULTS: Preferences = { legacy_navigation: false, auto_overlay: false, overlay_opacity: 50, zoom_slider: false, zoom_step: "low" };
+const DEFAULTS: Preferences = { legacy_navigation: false, auto_overlay: false, overlay_opacity: 50, zoom_slider: false, zoom_step: "low", allow_outside: false };
 const KEY = ["preferences"];
 
 export function usePreferences(): { prefs: Preferences; set(p: Partial<Preferences>): Promise<void> } {

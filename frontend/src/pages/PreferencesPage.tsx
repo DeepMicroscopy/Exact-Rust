@@ -173,6 +173,17 @@ function ZoomSliderPref() {
   );
 }
 
+function AllowOutsidePref() {
+  const { prefs, set } = usePreferences();
+  return (
+    <label className="check" title="Disabled by default">
+      <input type="checkbox" checked={prefs.allow_outside} onChange={(e) => void set({ allow_outside: e.target.checked })} data-testid="pref-allow-outside" />
+      Allow annotations outside the image
+      <span className="muted small"> – points may lie beyond the edge (coordinates below 0 or past the size of the image) when you draw, move or paste. Off: they stop at the edge</span>
+    </label>
+  );
+}
+
 function ZoomStepPref() {
   const { prefs, set } = usePreferences();
   const steps = [
@@ -289,6 +300,7 @@ export function PreferencesPage() {
         <OverlayOpacity />
         <ZoomSliderPref />
         <ZoomStepPref />
+        <AllowOutsidePref />
       </section>
       <section className="glass">
         <h2>Slide navigation</h2>

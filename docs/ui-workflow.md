@@ -27,7 +27,7 @@ The interface is a single-page application (React, TypeScript, OpenSeadragon). I
 | **Three planes** | `/images/{id}/planes` | NIfTI and DICOM volumes: axial, coronal and sagittal planes with a crosshair, a 3D render, and 3D segmentation tools. |
 | **Jobs** | `/jobs` | Registrations, analyses and segmentations with their status (queued, running with progress, done, failed with the error). Restart failed jobs, cancel queued or running ones. Shows whether a worker has asked for work lately. |
 | **Administration** | `/admin` | Teams, Products (annotation types), Plugins, Log, Users (for administrators). See [Administration](administration). |
-| **Preferences** | `/preferences` | Email, password, **passkeys**, slide navigation, overlays, an optional **zoom slider**, zoom step of the `+`/`-` keys. |
+| **Preferences** | `/preferences` | Email, password, **passkeys**, slide navigation, overlays, an optional **zoom slider**, zoom step of the `+`/`-` keys, **allow annotations outside the image**. |
 
 The **pulse icon** in the top bar (site admins) shows system health; the **?** opens help with the keyboard, the mouse and trackpad gestures; **What's new** repeats the welcome tour.
 
@@ -53,6 +53,8 @@ The **pulse icon** in the top bar (site admins) shows system health; the **?** o
 | Undo | `Ctrl+Z`, redo `Ctrl+Shift+Z` |
 
 While you draw, the area (µm² or mm² when the image has a resolution) or the length is shown on the shape. Moving the slide while drawing: `Shift` + drag, `Space` + drag, the middle mouse button, or a finger.
+
+**Annotations outside the image.** Points are held at the edge of the image by default, which makes drawing along the border easy. If you need coordinates below 0 or beyond the size of the image (for example to mark a structure that is cut off by the scan), switch on *Allow annotations outside the image* in *Preferences → Viewer*: boxes, lines, polygons and points can then be drawn, dragged and pasted past the edge and keep their negative or too large coordinates. The API never restricted them: `POST /api/v2/annotations` and `/api/v1/annotations/annotations/` store whatever integers they get.
 
 ### Tools for looking
 
