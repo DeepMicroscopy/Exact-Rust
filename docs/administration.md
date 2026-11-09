@@ -16,6 +16,10 @@ Products group annotation types. Each type has a name (unique per product), colo
 line, polygon, global …), a default size for fixed-size boxes in pixels, µm or mm, and a key `1`–`9`. An image set uses the types
 of its products.
 
+A **segmentation** type can be given a **Group** (a free name). Segmentation types of one product that share a group name *exclude each other* on a volume:
+no voxel is in two of their masks, painting one takes the voxels from the others (see the [user guide](user-guide#3d-segmentation)). An empty group means none.
+The group is stored in the Rust-only table `exact_rust_type_group`, so the Django schema is untouched; Django does not know groups.
+
 ## Plugins
 Lists the analysis and registration plugins that workers have announced, with the worker that served them last. Plugins register
 themselves when a worker starts.

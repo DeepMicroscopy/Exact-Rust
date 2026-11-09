@@ -12,6 +12,7 @@ import { Render3D } from "../components/Render3D";
 import { useSegment3D, type Op } from "../hooks/useSegment3D";
 import { BrushLayer } from "../viewer-core/brushLayer";
 import { MaskOverlay } from "../viewer-core/maskOverlay";
+import { SegClassList, type SegClass } from "../components/SegClassList";
 import { FINDER_FOCUS, ImageFinder, readFinder, saveFinder } from "../components/ImageFinder";
 import { LinkedPanel, type LinkedView } from "../components/LinkedPanel";
 import { ImportSegmentsDialog } from "../components/ImportSegmentsDialog";
@@ -137,7 +138,24 @@ export function MprPage() {
   const [segError, setSegError] = useState<string | null>(null);
   const segType = segTypes.find((t) => t.id === segTypeId) ?? null;
   const segAnnotation = segTypeId == null ? null : (annotations.data ?? []).find((a) => a.annotation_type === segTypeId && !a.deleted && a.id > 0) ?? null;
-  const seg3d = useSegment3D(segAnnotation?.id ?? null);
+  // masks of the same group that lost voxels to the one being painted (or got them back by undo) are drawn anew
+  const [maskVersions, setMaskVersions] = useState<Record<number, number>>({});
+  const bumpOthers = useCallback((ids: number[]) => setMaskVersions((m) => Object.fromEntries([...Object.entries(m), ...ids.map((i) => [i, (m[i] ?? 0) + 1])])), []);
+  const seg3d = useSegment3D(segAnnotation?.id ?? null, bumpOthers);
+  // groups of segmentation types: the masks of one group exclude each other
+  const groupRows = useQuery({ queryKey: ["segmentation-groups"], queryFn: () => api<{ annotation_type: number; group: string }[]>("/api/v2/segmentation-groups") });
+  const groupOf = useMemo(() => new Map((groupRows.data ?? []).map((g) => [g.annotation_type, g.group])), [groupRows.data]);
+  // the masks shown next to the one being painted (the eyes of the list), striped
+  const [shownTypes, setShownTypes] = useState<Set<number>>(new Set());
+  useEffect(() => setShownTypes(new Set()), [id]);
+  const toggleShown = useCallback((t: number) => setShownTypes((cur) => { const n = new Set(cur); if (!n.delete(t)) n.add(t); return n; }), []);
+  const maskOf = (typeId: number) => (annotations.data ?? []).find((a) => a.annotation_type === typeId && !a.deleted && a.id > 0) ?? null;
+  const classes: SegClass[] = segTypes.map((t) => ({ id: t.id, name: t.name, color: t.color_code, group: groupOf.get(t.id) ?? null, hasMask: !!maskOf(t.id) }));
+  const others: OtherMask[] = segTypes.flatMap((t) => {
+    const a = t.id !== segTypeId && shownTypes.has(t.id) ? maskOf(t.id) : null;
+    return a ? [{ annotationId: a.id, color: t.color_code, version: maskVersions[a.id] ?? 0 }] : [];
+  });
+  const mates = segType ? segTypes.filter((t) => t.id !== segType.id && groupOf.get(t.id) && groupOf.get(t.id) === groupOf.get(segType.id)).map((t) => t.name) : [];
   const [autoOpen, setAutoOpen] = useState(false);
   // ---- segmentation files linked to the volume (read-only overlay, see v2/linked.rs) ----
   const linkedFiles = useQuery({ queryKey: ["linked-image", id], queryFn: () => api<LinkedFile[]>(`/api/v2/images/${id}/linked-volumes`) });
@@ -420,10 +438,11 @@ export function MprPage() {
       <div className={`mpr-grid ${maxed != null ? "maxed" : ""}`}>
         {shape && planes && voxel
           ? ([0, 1, 2] as Plane[]).map((p) => (
-              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} maxed={maxed === p} hidden={maxed != null && maxed !== p} onMaximize={() => { setActive(p); setMaxed((m) => (m === p ? null : p)); }}  onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} linked={linked} linkedOpacity={linkedOpacity} />
+              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} maxed={maxed === p} hidden={maxed != null && maxed !== p} onMaximize={() => { setActive(p); setMaxed((m) => (m === p ? null : p)); }}  onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} others={others} maskOpacity={tool.opacity} linked={linked} linkedOpacity={linkedOpacity} />
             ))
           : null}
         <div className={`mpr-info glass ${render3d ? "has-render" : ""}`} hidden={maxed != null} data-testid="mpr-info">
+          {classes.length > 0 && <SegClassList classes={classes} activeId={segTypeId} shown={shownTypes} onToggle={toggleShown} onActivate={(t) => setSegTypeId(t)} />}
           {render3d ? (
             <Render3D imageId={id} mask={segAnnotation && segType ? { annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version } : null} linked={renderLinked} onHide={() => setRender3d(false)} />
           ) : voxel && shape ? (
@@ -438,6 +457,7 @@ export function MprPage() {
       {segType && shape && voxel && (
         <Segment3DPanel
           type={{ name: segType.name, color: segType.color_code }}
+          exclusiveWith={mates}
           state={seg3d.state}
           message={seg3d.message}
           busy={seg3d.busy}
@@ -526,13 +546,20 @@ interface SegPane {
   onSize(steps: number): void;
 }
 
+/** The mask of a type that is shown next to the one being painted: drawn striped. */
+interface OtherMask {
+  annotationId: number;
+  color: string;
+  version: number;
+}
+
 /** A linked segmentation file as the planes draw it: which one and which of its segments are hidden. */
 interface LinkedPane {
   id: number;
   hide: number[];
 }
 
-function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxed, hidden, onMaximize, onActivate, onPick, onStep, seg, linked, linkedOpacity }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; maxed: boolean; hidden: boolean; onMaximize(): void; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null; linked: LinkedPane[]; linkedOpacity: number }) {
+function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxed, hidden, onMaximize, onActivate, onPick, onStep, seg, others, maskOpacity, linked, linkedOpacity }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; maxed: boolean; hidden: boolean; onMaximize(): void; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null; others: OtherMask[]; maskOpacity: number; linked: LinkedPane[]; linkedOpacity: number }) {
   const host = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null);
   const blender = useRef<ZBlender | null>(null);
@@ -541,10 +568,11 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
   const brush = useRef<BrushLayer | null>(null);
   const overlay = useRef<MaskOverlay | null>(null);
   const linkedOverlays = useRef<Map<number, MaskOverlay>>(new Map());
+  const otherOverlays = useRef<Map<number, MaskOverlay>>(new Map());
   /** the frame of the image on display: the mask of another frame waits until it is */
   const shownFrame = useRef<number | null>(null);
-  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked });
-  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked };
+  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked, others });
+  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked, others };
   const pointer = useRef<[number, number] | null>(null);
   const [busy, setBusy] = useState(false);
   const frame = frameOf(plane, voxel);
@@ -729,6 +757,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
         shownFrame.current = f;
         overlay.current?.setDisplayed(f);
         linkedOverlays.current.forEach((o) => o.setDisplayed(f));
+        otherOverlays.current.forEach((o) => o.setDisplayed(f));
       },
     });
     blender.current = b;
@@ -800,6 +829,34 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
   useEffect(() => {
     linkedOverlays.current.forEach((o) => o.setOpacity(linkedOpacity));
   }, [linkedOpacity, linkedKey, imageId, info.frames, info.width, info.height, plane]);
+  // the masks of the other types that are shown (the eyes): striped, drawn below the one being painted
+  const othersKey = others.map((o) => o.annotationId).join(",");
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+    const made = new Map<number, MaskOverlay>();
+    for (const aid of othersKey ? othersKey.split(",").map(Number) : []) {
+      const o = new MaskOverlay(v, info.width, info.height);
+      o.setStriped(true);
+      if (shownFrame.current != null) o.setDisplayed(shownFrame.current);
+      made.set(aid, o);
+    }
+    otherOverlays.current = made;
+    return () => {
+      made.forEach((o) => o.destroy());
+      otherOverlays.current = new Map();
+    };
+  }, [othersKey, info.width, info.height, imageId, plane, info.frames]);
+  const othersLook = others.map((o) => `${o.annotationId}:${o.color}:${o.version}`).join("|");
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      for (const o of live.current.others) otherOverlays.current.get(o.annotationId)?.load(`/api/v2/segmentation/${o.annotationId}/slice/${plane}/${frame}?color=${hexDigits(o.color)}&alpha=255&v=${o.version}`, frame);
+    }, 30);
+    return () => window.clearTimeout(t);
+  }, [othersKey, othersLook, plane, frame, imageId, info.frames]);
+  useEffect(() => {
+    otherOverlays.current.forEach((o) => o.setOpacity(Math.min(1, maskOpacity + 0.25)));
+  }, [maskOpacity, othersKey, imageId, info.frames, info.width, info.height, plane]);
   const color = seg?.color;
   const version = seg?.version;
   useEffect(() => {

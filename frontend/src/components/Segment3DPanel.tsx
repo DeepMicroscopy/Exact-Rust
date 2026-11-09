@@ -29,6 +29,8 @@ export const DEFAULT_TOOL: SegTool = { tool: "brush", erase: false, ball: false,
 
 interface Props {
   type: { name: string; color: string };
+  /** names of the other types of the group of this type: painting takes voxels from their masks */
+  exclusiveWith?: string[];
   state: MaskState | null;
   message: Message | null;
   busy: boolean;
@@ -120,7 +122,7 @@ function useInverting(): boolean {
 }
 
 /** The movable window of the 3D mask tools. */
-export function Segment3DPanel({ type, state, message, busy, tool, onTool, readOnly, z, slices, onOp, onUndo, onRedo, onClose, extra, dock }: Props) {
+export function Segment3DPanel({ type, exclusiveWith, state, message, busy, tool, onTool, readOnly, z, slices, onOp, onUndo, onRedo, onClose, extra, dock }: Props) {
   const inverting = useInverting();
   const effectiveErase = tool.erase !== inverting;
   const [steps, setSteps] = useState(1);
@@ -228,6 +230,11 @@ export function Segment3DPanel({ type, state, message, busy, tool, onTool, readO
         <span className="swatch" style={{ background: type.color }} />
         <strong>{type.name}</strong>
       </div>
+      {exclusiveWith && exclusiveWith.length > 0 && (
+        <p className="muted small" data-testid="seg3d-exclusive" title="Voxels painted here are taken from these masks; undo gives them back">
+          ⛓ Exclusive with {exclusiveWith.join(", ")}
+        </p>
+      )}
       <p className="seg3d-readout" data-testid="seg3d-readout">
         {state ? (
           <>

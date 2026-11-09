@@ -38,6 +38,8 @@ interface AType {
   size_unit: string;
   closed: boolean;
   area_hit_test: boolean;
+  /** segmentation types with the same group name exclude each other on a volume: no voxel is in two of them */
+  seg_group: string | null;
   /** annotations (not deleted) of this type */
   annotation_count: number;
 }
@@ -154,7 +156,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
               </td>
               <td className="muted small" data-testid="type-id">{t.id}</td>
               <td>{t.name}</td>
-              <td className="muted small">{shapeName(t.vector_type)}</td>
+              <td className="muted small">{shapeName(t.vector_type)}{t.seg_group ? <span className="group-tag" data-testid="type-group" title="The masks of the types in this group exclude each other"> ⛓ {t.seg_group}</span> : null}</td>
               <td className="muted small">{t.annotation_count}</td>
               <td className="muted small">{t.sort_order}</td>
               <td>
@@ -188,7 +190,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
           New annotation type…
         </button>
       )}
-      {editing && <TypeDialog productId={product.id} type={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={reload} />}
+      {editing && <TypeDialog productId={product.id} groups={[...new Set(rows.map((t) => t.seg_group).filter((g): g is string => !!g))]} type={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={reload} />}
       {editProduct && <ProductDialog product={product} teams={teams} products={[]} onClose={() => setEditProduct(false)} onSaved={onChanged} />}
     </div>
   );
@@ -269,7 +271,7 @@ function ProductDialog({ product, teams, products, onClose, onSaved }: { product
   );
 }
 
-const DEFAULT: Omit<AType, "id" | "annotation_count"> = { name: "", active: true, vector_type: 1, node_count: 0, color_code: "#cc4444", sort_order: 0, enable_blurred: true, enable_concealed: true, multi_frame: false, default_width: 50, default_height: 50, size_unit: "px", closed: true, area_hit_test: true };
+const DEFAULT: Omit<AType, "id" | "annotation_count"> = { name: "", active: true, vector_type: 1, node_count: 0, color_code: "#cc4444", sort_order: 0, enable_blurred: true, enable_concealed: true, multi_frame: false, default_width: 50, default_height: 50, size_unit: "px", closed: true, area_hit_test: true, seg_group: null };
 
 /** The fields of an annotation type that matter for a shape (the others stay at their defaults). */
 export function fieldsFor(shape: number) {
@@ -282,7 +284,7 @@ export function fieldsFor(shape: number) {
   };
 }
 
-function TypeDialog({ productId, type, onClose, onSaved }: { productId: number; type: AType | null; onClose(): void; onSaved(): void }) {
+function TypeDialog({ productId, groups, type, onClose, onSaved }: { productId: number; groups: string[]; type: AType | null; onClose(): void; onSaved(): void }) {
   const [f, setF] = useState<Omit<AType, "id" | "annotation_count">>(type ? { ...type } : DEFAULT);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -366,6 +368,18 @@ function TypeDialog({ productId, type, onClose, onSaved }: { productId: number; 
           <label className="field">
             <span>Required number of points (0 = any)</span>
             <input type="number" min={0} value={f.node_count} onChange={(e) => set("node_count", Number(e.target.value))} aria-label="Node count" style={{ width: 100 }} />
+          </label>
+        )}
+        {f.vector_type === 8 && (
+          <label className="field">
+            <span>Group (optional)</span>
+            <input list="seg-groups" value={f.seg_group ?? ""} onChange={(e) => set("seg_group", e.target.value.slice(0, 50) || null)} aria-label="Group" data-testid="type-group-input" placeholder="e.g. organs" maxLength={50} />
+            <datalist id="seg-groups">
+              {groups.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+            <small className="muted">Segmentation types of one product with the same group exclude each other: no voxel of a volume can be in two of them. Leave empty for none.</small>
           </label>
         )}
         <div className="checks">

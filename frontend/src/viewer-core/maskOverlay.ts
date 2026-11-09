@@ -30,6 +30,14 @@ export class MaskOverlay {
     this.img.style.opacity = String(o);
   }
 
+  /** Stripes instead of a solid fill: the mask of a type that is shown but not the one being painted. The stripes keep their size on screen. */
+  setStriped(on: boolean): void {
+    const stripes = on ? "repeating-linear-gradient(135deg, #000 0, #000 2px, transparent 2px, transparent 6px)" : "";
+    this.img.style.maskImage = stripes;
+    this.img.style.setProperty("-webkit-mask-image", stripes);
+    this.img.setAttribute("data-striped", on ? "1" : "0");
+  }
+
   /**
    * Shows the mask at `url` (the mask of plane `frame`) once it has loaded and the image of that frame is on display: the mask
    * comes from a small PNG and is there long before the tiles of the image, and must not run ahead of them. The mask on display

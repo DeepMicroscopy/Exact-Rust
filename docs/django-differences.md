@@ -39,7 +39,7 @@ Where the Django version already had a feature, the new one re-implements it; th
 | Area | New or extended |
 |---|---|
 | **API** | `/api/v2` (JSON, cursor paging, conditional edits with 409, soft delete and undo); an atomic **job claim** and a one-request **result upload**; `GET /jobs` with worker visibility |
-| **Interface** | contextual toolbox, one-click mode, polygon brush and knife, pen mode, zoom slider and zoom step, image adjustments, search history, `?` help with a keyboard, mouse and trackpad view, welcome tour; the three-plane viewer with a 3D render and segmentation tools (brush, lasso, wand, interpolation) and segmentation workers |
+| **Interface** | contextual toolbox, one-click mode, polygon brush and knife, pen mode, zoom slider and zoom step, image adjustments, search history, `?` help with a keyboard, mouse and trackpad view, welcome tour; the three-plane viewer with a 3D render and segmentation tools (brush, lasso, wand, interpolation), several masks shown at once (eye, striped), groups of exclusive segmentation types, and segmentation workers |
 | **Accounts** | **invitation links** instead of self-registration; **read-only accounts** (enforced on every route, however the account signs in); worker accounts created with the right permissions in one step |
 | **Images** | **pyramid repair** in place with a restorable backup; measured pyramid shifts for CZI, VSI, DICOM and TIFF; a crop that carries its region to **registered images** |
 | **Registration** | **DeeperHistReg** including deformable registration; registrations as jobs on one queue with a Jobs page that shows whether a worker is there |

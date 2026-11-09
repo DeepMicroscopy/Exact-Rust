@@ -137,6 +137,8 @@ curl "${H[@]}" -X POST /api/v2/image-sets -d '{"name":"Study images","team":4,"p
 `vector_type` is `1` box · `2` point · `3` line · `4` polyline · `5` polygon · `6` fixed-size box · `7` global (a label for the whole image) · `8` segmentation mask.
 `size_unit` is `px`, `um` or `mm`.
 
+**Groups of segmentation types (v2 only).** `"seg_group": "organs"` in the body of `POST` / `PATCH /api/v2/annotation-types` puts a segmentation type into a group (`null` or `""` takes it out; up to 50 characters). The masks of the types of one product with the same group name exclude each other on volumes: the 3D operations (`/segmentation/{annotation}/ops`, `labels`, `undo`, `redo`) take every voxel they add from the other masks of the group on that image, and the answer lists the masks that changed as `"changed_others": [annotation ids]`. `GET /api/v2/products/{id}/annotation-types` shows `seg_group`, and `GET /api/v2/segmentation-groups` lists `[{"annotation_type", "product", "group"}]` for the types of your teams that are in a group.
+
 ### Upload images
 ```bash
 curl -b jar.txt -H "x-csrf-token: $CSRF" -F "files=@slide1.svs" -F "files=@slide2.tiff" \

@@ -66,6 +66,107 @@ const WAND_MAX_VOXELS: usize = 40_000_000;
 struct Step {
     before: Vec<(Key, Option<Vec<u8>>)>,
     after: Vec<(Key, Option<Vec<u8>>)>,
+    /// the voxels this step took from the other masks of its group: (annotation, tile, bits taken); undo gives them back
+    linked: Vec<(i64, Key, Tile)>,
+}
+
+/// Masks of the same group on the same image: types of one product with the same group name exclude each other.
+async fn group_mates(s: &AppState, annotation: i64) -> ApiResult<Vec<i64>> {
+    let rows: Vec<i64> = sqlx::query_scalar(
+        "SELECT b.id FROM annotations_annotation a \
+         JOIN annotations_annotationtype ta ON ta.id = a.annotation_type_id \
+         JOIN exact_rust_type_group ga ON ga.annotation_type_id = ta.id \
+         JOIN annotations_annotationtype tb ON tb.product_id IS NOT DISTINCT FROM ta.product_id AND tb.id <> ta.id \
+         JOIN exact_rust_type_group gb ON gb.annotation_type_id = tb.id AND gb.group_name = ga.group_name \
+         JOIN annotations_annotation b ON b.annotation_type_id = tb.id AND b.image_id = a.image_id AND NOT b.deleted AND b.id <> a.id \
+         WHERE a.id = $1 ORDER BY b.id",
+    )
+    .bind(annotation)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    Ok(rows)
+}
+
+/// Group operations lock several masks: one at a time, and before the first mask is locked, so that two of them cannot wait for each
+/// other. `None` when the mask has no mates.
+async fn group_lock(
+    s: &AppState,
+    annotation: i64,
+) -> ApiResult<(Vec<i64>, Option<tokio::sync::MutexGuard<'static, ()>>)> {
+    static GROUPS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let mates = group_mates(s, annotation).await?;
+    let guard = if mates.is_empty() { None } else { Some(GROUPS.lock().await) };
+    Ok((mates, guard))
+}
+
+/// The bits `after` has and `before` has not, per tile that gained any.
+fn gained(before: &HashMap<Key, Option<Tile>>, after: &[(Key, Option<Tile>)]) -> Vec<(Key, Tile)> {
+    let mut out = Vec::new();
+    for (k, a) in after {
+        let Some(a) = a else { continue };
+        let b = before.get(k).and_then(|b| b.as_ref());
+        let mut bits = vec![0u8; T * T];
+        let mut any = false;
+        for i in 0..T * T {
+            if a[i] != 0 && b.is_none_or(|b| b[i] == 0) {
+                bits[i] = 1;
+                any = true;
+            }
+        }
+        if any {
+            if let Ok(t) = <Tile>::try_from(bits.into_boxed_slice()) {
+                out.push((*k, t));
+            }
+        }
+    }
+    out
+}
+
+/// Applies `f(mask tile, bits)` to the tile `key` of the mask of `mate` (loaded if need be), stores the result, and drops the undo
+/// history of that mask: its steps hold whole tiles that no longer match. Returns the bits that really changed.
+async fn touch_mate(
+    s: &AppState,
+    mate: i64,
+    image: i64,
+    key: Key,
+    bits: &Tile,
+    take: bool,
+) -> ApiResult<Option<Tile>> {
+    let open = load_entry(s, mate, &Target { image }).await?;
+    let mut e = open.lock().await;
+    let cur = e.vol.tile(key).cloned();
+    let mut next = cur.clone().unwrap_or_else(|| vec![0u8; T * T].into_boxed_slice().try_into().expect("tile"));
+    let mut moved = vec![0u8; T * T];
+    let mut any = false;
+    for i in 0..T * T {
+        if bits[i] == 0 {
+            continue;
+        }
+        if take && next[i] != 0 {
+            next[i] = 0;
+            moved[i] = 1;
+            any = true;
+        } else if !take && next[i] == 0 {
+            next[i] = 1;
+            moved[i] = 1;
+            any = true;
+        }
+    }
+    if !any {
+        return Ok(None);
+    }
+    let empty = next.iter().all(|v| *v == 0);
+    let png = if empty { None } else { Some(png_of(&next)) };
+    if let Err(err) = write_tiles(s, mate, &[(key, png)]).await {
+        drop(e);
+        forget(mate);
+        return Err(err);
+    }
+    e.vol.put_tile(key, if empty { None } else { Some(next) });
+    e.undo.clear();
+    e.redo.clear();
+    Ok(<Tile>::try_from(moved.into_boxed_slice()).ok())
 }
 
 pub(crate) struct Entry {
@@ -629,7 +730,8 @@ fn run(e: &mut Entry, op: &Op) -> Result<(Journal, Option<String>), ApiError> {
     Ok((j, note))
 }
 
-/// Settles the journal, stores the changed tiles and records the step for undo.
+/// Settles the journal, stores the changed tiles and records the step for undo. Voxels the step gave to this mask are taken from the
+/// masks of `mates` (the same group): the answer lists the masks that lost voxels as `changed_others`.
 async fn commit(
     s: &AppState,
     annotation: i64,
@@ -637,11 +739,14 @@ async fn commit(
     j: Journal,
     note: Option<String>,
     image: i64,
+    mates: &[i64],
 ) -> ApiResult<Response> {
     let settled = volmask::settle(&mut guard.vol, &j);
-    let (before, after) = tokio::task::spawn_blocking(move || {
-        let before: Vec<(Key, Option<Vec<u8>>)> = j
-            .into_before()
+    let want_bits = !mates.is_empty();
+    let (before, after, bits) = tokio::task::spawn_blocking(move || {
+        let before_tiles = j.into_before();
+        let bits = if want_bits { gained(&before_tiles, &settled) } else { Vec::new() };
+        let before: Vec<(Key, Option<Vec<u8>>)> = before_tiles
             .into_iter()
             .map(|(k, t)| (k, t.map(|t| png_of(&t))))
             .collect();
@@ -649,7 +754,7 @@ async fn commit(
             .into_iter()
             .map(|(k, t)| (k, t.map(|t| png_of(&t))))
             .collect();
-        (before, after)
+        (before, after, bits)
     })
     .await
     .map_err(|e| exact_core::Error::Internal(e.to_string()))?;
@@ -659,9 +764,19 @@ async fn commit(
         forget(annotation);
         return Err(e);
     }
+    let mut linked: Vec<(i64, Key, Tile)> = Vec::new();
+    for mate in mates {
+        for (key, b) in &bits {
+            if let Some(taken) = touch_mate(s, *mate, image, *key, b, true).await? {
+                linked.push((*mate, *key, taken));
+            }
+        }
+    }
     let changed = !after.is_empty();
+    let mut others: Vec<i64> = linked.iter().map(|l| l.0).collect();
+    others.dedup();
     if changed {
-        guard.undo.push(Step { before, after });
+        guard.undo.push(Step { before, after, linked });
         if guard.undo.len() > MAX_UNDO {
             guard.undo.remove(0);
         }
@@ -673,6 +788,7 @@ async fn commit(
     }
     if let Some(o) = body.as_object_mut() {
         o.insert("changed".into(), json!(changed));
+        o.insert("changed_others".into(), json!(others));
     }
     Ok(Json(body).into_response())
 }
@@ -686,6 +802,7 @@ async fn ops_h(
     let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
     let t = annotation_for(&s, &p, annotation, true).await?;
     let open = load_entry(&s, annotation, &t).await?;
+    let (mates, _group) = group_lock(&s, annotation).await?;
     if let Op::Wand { plane, volume, .. } = &op {
         if *plane != 0 || *volume {
             // a plane of another direction (or the volume) is made of all axial slices: read them before the mask is locked,
@@ -706,7 +823,7 @@ async fn ops_h(
     })
     .await
     .map_err(|e| exact_core::Error::Internal(e.to_string()))??;
-    commit(&s, annotation, guard, j, note, t.image).await
+    commit(&s, annotation, guard, j, note, t.image, &mates).await
 }
 
 enum Dir {
@@ -718,6 +835,7 @@ async fn step_h(s: AppState, headers: HeaderMap, annotation: i64, dir: Dir) -> A
     let p = require_user(authenticate(&s, &headers, &Method::POST).await?)?;
     let t = annotation_for(&s, &p, annotation, true).await?;
     let open = load_entry(&s, annotation, &t).await?;
+    let (_mates, _group) = group_lock(&s, annotation).await?;
     let mut e = open.lock().await;
     let step = match dir {
         Dir::Undo => e.undo.pop(),
@@ -747,6 +865,14 @@ async fn step_h(s: AppState, headers: HeaderMap, annotation: i64, dir: Dir) -> A
     for (k, t) in tiles {
         e.vol.put_tile(k, t);
     }
+    // the voxels the step took from the other masks of the group: back on undo, taken again on redo
+    let mut others: Vec<i64> = Vec::new();
+    for (mate, key, bits) in &step.linked {
+        if touch_mate(&s, *mate, t.image, *key, bits, matches!(dir, Dir::Redo)).await?.is_some() {
+            others.push(*mate);
+        }
+    }
+    others.dedup();
     match dir {
         Dir::Undo => e.redo.push(step),
         Dir::Redo => e.undo.push(step),
@@ -754,6 +880,7 @@ async fn step_h(s: AppState, headers: HeaderMap, annotation: i64, dir: Dir) -> A
     let mut body = state_json(&e, annotation, t.image);
     if let Some(o) = body.as_object_mut() {
         o.insert("changed".into(), json!(true));
+        o.insert("changed_others".into(), json!(others));
     }
     Ok(Json(body).into_response())
 }
@@ -792,6 +919,7 @@ async fn labels_h(
     let p = require_user(authenticate(&s, &headers, &Method::PUT).await?)?;
     let t = annotation_for(&s, &p, annotation, true).await?;
     let open = load_entry(&s, annotation, &t).await?;
+    let (mates, _group) = group_lock(&s, annotation).await?;
     let guard = open.clone().lock_owned().await;
     let gz = headers
         .get(header::CONTENT_ENCODING)
@@ -833,7 +961,7 @@ async fn labels_h(
     })
     .await
     .map_err(|e| exact_core::Error::Internal(e.to_string()))??;
-    commit(&s, annotation, guard, j, None, t.image).await
+    commit(&s, annotation, guard, j, None, t.image, &mates).await
 }
 
 /// Writes the voxels of the mask grid where `pick(column, row, slice)` holds into the mask of `annotation` (`replace`, or unite
@@ -847,6 +975,7 @@ pub(crate) async fn import_with(
     pick: impl Fn(usize, usize, usize) -> bool + Send + 'static,
 ) -> ApiResult<Response> {
     let open = load_entry(s, annotation, &Target { image }).await?;
+    let (mates, _group) = group_lock(s, annotation).await?;
     let guard = open.clone().lock_owned().await;
     let (guard, j) = tokio::task::spawn_blocking(move || {
         let mut guard = guard;
@@ -859,7 +988,7 @@ pub(crate) async fn import_with(
     })
     .await
     .map_err(|e| exact_core::Error::Internal(e.to_string()))?;
-    commit(s, annotation, guard, j, None, image).await
+    commit(s, annotation, guard, j, None, image, &mates).await
 }
 
 /// Reads the whole mask of an annotation as raw voxels of the mask grid (the form `labels` takes), for the programs that

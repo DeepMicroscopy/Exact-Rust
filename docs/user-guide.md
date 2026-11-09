@@ -140,6 +140,18 @@ that hold some of it.
 * A click or stroke also moves the crosshair to that point, so the other two planes show it. `Ctrl` (`Cmd`) + click moves the crosshair without painting;
   Shift + mouse wheel (or the wheel, in "Wheel: slices" mode) and Page Up / Down still step through the slices. Accounts that are read-only see the mask and have no tools.
 
+### Several masks at once, and groups
+The **Segmentation** list in the info cell (bottom right of the planes) names every segmentation type of the image set.
+
+* The **eye** shows or hides the mask of a type on the planes. The type being painted is always shown, **solid**; every other mask you switch on is drawn **striped**, so
+  you can tell at a glance which one the tools change. Without a type chosen, all shown masks are striped (you are only looking). Click a **name** to paint that type.
+* A **group** is a set of segmentation types that exclude each other, for example the organs of one study: *no voxel can be in two masks of a group*.
+  Painting a voxel for one type takes it from the others of its group (their striped masks follow at once), and **undo** gives the voxels back to them. Erasing never changes another mask.
+  The tool window says which masks the painted type is exclusive with. Types without a group do not interact and may overlap.
+  Groups are made in *Administration → Products*: edit a segmentation type and give it a **Group**; types of one product with the same name are in one group.
+  Only the voxels the stroke really adds are taken, and a mask that loses voxels this way starts a new undo history (its earlier undo steps would otherwise bring the overlap back).
+  Groups apply to volumes; masks of 2D slides are not touched.
+
 The single-plane view of a volume paints masks on the axial plane only; for the other planes its toolbox points to the three-plane view.
 
 ## Segmentation files (3D Slicer)

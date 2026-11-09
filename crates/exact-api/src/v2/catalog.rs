@@ -58,6 +58,7 @@ pub fn v2_routes() -> Router<AppState> {
             "/api/v2/products/{id}/annotation-types",
             axum::routing::get(product_types_h),
         )
+        .route("/api/v2/segmentation-groups", axum::routing::get(groups_h))
         .route("/api/v2/image-sets/{id}/tags", post(tag_add_h))
         .route("/api/v2/image-sets/{id}/tags/{name}", delete(tag_delete_h))
         .route(
@@ -505,6 +506,8 @@ struct TypeFields {
     closed: Option<bool>,
     area_hit_test: Option<bool>,
     multi_frame: Option<bool>,
+    /// Some(None) = leave the group, Some(Some(name)) = join it; absent = unchanged
+    seg_group: Option<Option<String>>,
 }
 
 fn float(v: Option<&Value>) -> Result<Option<f64>, ()> {
@@ -546,6 +549,13 @@ fn type_fields(d: &Map<String, Value>) -> ApiResult<TypeFields> {
         Some(Value::String(t)) if t.chars().count() <= 10 => Some(t.clone()),
         Some(_) => return Err(field_err("color_code", "A color like #ff0000 is required.")),
     };
+    let seg_group = match d.get("seg_group") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(Value::String(t)) if t.trim().is_empty() => Some(None),
+        Some(Value::String(t)) if t.trim().chars().count() <= 50 => Some(Some(t.trim().to_string())),
+        Some(_) => return Err(field_err("seg_group", "A group name of up to 50 characters, or empty for none.")),
+    };
     let w = float(d.get("default_width"))
         .map_err(|_| field_err("default_width", "A number is required."))?;
     let h = float(d.get("default_height"))
@@ -569,6 +579,7 @@ fn type_fields(d: &Map<String, Value>) -> ApiResult<TypeFields> {
         closed: flag(d.get("closed")),
         area_hit_test: flag(d.get("area_hit_test")),
         multi_frame: flag(d.get("multi_frame")),
+        seg_group,
     })
 }
 
@@ -610,7 +621,8 @@ async fn insert_type(s: &AppState, f: TypeFields) -> ApiResult<i64> {
     if let Some(n) = &f.name {
         check_unique_name(s, n, f.product.flatten(), None).await?;
     }
-    sqlx::query_scalar(
+    let group = f.seg_group.clone();
+    let id: i64 = sqlx::query_scalar(
         "INSERT INTO annotations_annotationtype (name, active, node_count, vector_type, enable_blurred, enable_concealed, \
          color_code, default_height, default_width, sort_order, closed, product_id, area_hit_test, multi_frame, size_unit) \
          VALUES ($1, COALESCE($2, true), COALESCE($3, 0), COALESCE($4, 1), COALESCE($5, false), COALESCE($6, false), \
@@ -634,7 +646,55 @@ async fn insert_type(s: &AppState, f: TypeFields) -> ApiResult<i64> {
     .bind(f.size_unit)
     .fetch_one(&s.pool)
     .await
-    .map_err(db_err)
+    .map_err(db_err)?;
+    set_group(s, id, &group).await?;
+    Ok(id)
+}
+
+/// Puts a type into a group of segmentation types (their masks exclude each other), or takes it out (`None`).
+async fn set_group(s: &AppState, id: i64, group: &Option<Option<String>>) -> ApiResult<()> {
+    match group {
+        None => {}
+        Some(None) => {
+            sqlx::query("DELETE FROM exact_rust_type_group WHERE annotation_type_id = $1")
+                .bind(id)
+                .execute(&s.pool)
+                .await
+                .map_err(db_err)?;
+        }
+        Some(Some(name)) => {
+            sqlx::query(
+                "INSERT INTO exact_rust_type_group (annotation_type_id, group_name) VALUES ($1, $2) \
+                 ON CONFLICT (annotation_type_id) DO UPDATE SET group_name = EXCLUDED.group_name",
+            )
+            .bind(id)
+            .bind(name)
+            .execute(&s.pool)
+            .await
+            .map_err(db_err)?;
+        }
+    }
+    Ok(())
+}
+
+/// `GET /api/v2/segmentation-groups`: `[{"annotation_type", "product", "group"}]` for the types of the user's teams that are in a group.
+async fn groups_h(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let rows = sqlx::query(
+        "SELECT g.annotation_type_id, t.product_id, g.group_name FROM exact_rust_type_group g \
+         JOIN annotations_annotationtype t ON t.id = g.annotation_type_id \
+         WHERE t.product_id IN (SELECT pr.id FROM administration_product pr WHERE pr.team_id IN \
+         (SELECT team_id FROM users_teammembership WHERE user_id = $1)) ORDER BY g.group_name, t.sort_order, t.id",
+    )
+    .bind(p.user.id)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|r| json!({"annotation_type": r.get::<i64, _>(0), "product": r.get::<Option<i64>, _>(1), "group": r.get::<String, _>(2)}))
+        .collect();
+    Ok(Json(items).into_response())
 }
 
 /// Rows that protect an annotation type from deletion (`on_delete=PROTECT`).
@@ -835,6 +895,7 @@ pub async fn type_patch_h(
     if n == 0 {
         return Err(ApiError::not_found("Not found."));
     }
+    set_group(&s, id, &f.seg_group).await?;
     // the vector type of a type in use cannot change: annotations hold vectors of that shape
     if f.vector_type.is_some() && type_usage(&s, id).await? == 0 {
         sqlx::query("UPDATE annotations_annotationtype SET vector_type = $2 WHERE id = $1")
@@ -1089,7 +1150,8 @@ async fn product_types_h(
     let rows = sqlx::query(
         "SELECT t.id, t.name, t.active, t.vector_type, t.node_count, t.color_code, t.sort_order, t.enable_blurred, \
          t.enable_concealed, t.multi_frame, t.default_width, t.default_height, t.size_unit, t.closed, t.area_hit_test, \
-         (SELECT count(*) FROM annotations_annotation a WHERE a.annotation_type_id = t.id AND NOT a.deleted) \
+         (SELECT count(*) FROM annotations_annotation a WHERE a.annotation_type_id = t.id AND NOT a.deleted), \
+         (SELECT g.group_name FROM exact_rust_type_group g WHERE g.annotation_type_id = t.id) \
          FROM annotations_annotationtype t WHERE t.product_id = $1 ORDER BY t.sort_order, t.name, t.id",
     )
     .bind(id)
@@ -1104,7 +1166,7 @@ async fn product_types_h(
                    "sort_order": r.get::<i32, _>(6), "enable_blurred": r.get::<bool, _>(7), "enable_concealed": r.get::<bool, _>(8),
                    "multi_frame": r.get::<bool, _>(9), "default_width": r.get::<f64, _>(10), "default_height": r.get::<f64, _>(11),
                    "size_unit": r.get::<String, _>(12), "closed": r.get::<bool, _>(13), "area_hit_test": r.get::<bool, _>(14),
-                   "annotation_count": r.get::<i64, _>(15)})
+                   "annotation_count": r.get::<i64, _>(15), "seg_group": r.get::<Option<String>, _>(16)})
         })
         .collect();
     Ok(Json(json!({"items": items})).into_response())
