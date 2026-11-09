@@ -1,4 +1,5 @@
 import OpenSeadragon from "openseadragon";
+import { darker } from "./shade";
 
 /**
  * The mask of a segmentation annotation on one plane image of a volume: the PNG of `slice/{plane}/{frame}` (the colour of the
@@ -6,7 +7,8 @@ import OpenSeadragon from "openseadragon";
  * swapped in when it is ready, so the mask does not blink while the slices are stepped.
  */
 export class MaskOverlay {
-  private img: HTMLImageElement;
+  private img: HTMLElement;
+  private stripes: boolean;
   private wanted = "";
   private loading: HTMLImageElement | null = null;
   /** the mask that has loaded but waits for the image of its frame to be on display */
@@ -18,9 +20,23 @@ export class MaskOverlay {
     width: number,
     height: number,
     private onShown: () => void = () => undefined,
+    /** a colour (#rrggbb): the mask is drawn in stripes of this colour and a darker one, not solid (the masks that are shown but not painted) */
+    stripeColor?: string,
   ) {
-    this.img = document.createElement("img");
-    this.img.alt = "";
+    this.stripes = !!stripeColor;
+    if (stripeColor) {
+      const div = document.createElement("div");
+      // the PNG gives the shape (its alpha), the gradient the colours; the stripes keep their size on screen
+      Object.assign(div.style, { background: `repeating-linear-gradient(135deg, ${stripeColor} 0, ${stripeColor} 4px, ${darker(stripeColor)} 4px, ${darker(stripeColor)} 8px)`, maskSize: "100% 100%", maskRepeat: "no-repeat" });
+      div.style.setProperty("-webkit-mask-size", "100% 100%");
+      div.style.setProperty("-webkit-mask-repeat", "no-repeat");
+      div.setAttribute("data-striped", "1");
+      this.img = div;
+    } else {
+      this.img = document.createElement("img");
+      (this.img as HTMLImageElement).alt = "";
+      this.img.setAttribute("data-striped", "0");
+    }
     this.img.setAttribute("data-testid", "mask-overlay");
     Object.assign(this.img.style, { pointerEvents: "none", imageRendering: "pixelated", width: "100%", height: "100%", display: "block" });
     viewer.addOverlay(this.img, new OpenSeadragon.Rect(0, 0, 1, height / width));
@@ -28,14 +44,6 @@ export class MaskOverlay {
 
   setOpacity(o: number): void {
     this.img.style.opacity = String(o);
-  }
-
-  /** Stripes instead of a solid fill: the mask of a type that is shown but not the one being painted. The stripes keep their size on screen. */
-  setStriped(on: boolean): void {
-    const stripes = on ? "repeating-linear-gradient(135deg, #000 0, #000 2px, transparent 2px, transparent 6px)" : "";
-    this.img.style.maskImage = stripes;
-    this.img.style.setProperty("-webkit-mask-image", stripes);
-    this.img.setAttribute("data-striped", on ? "1" : "0");
   }
 
   /**
@@ -70,7 +78,10 @@ export class MaskOverlay {
     const r = this.ready;
     if (!r || (this.displayed != null && r.frame !== this.displayed)) return;
     this.ready = null;
-    this.img.src = r.url;
+    if (this.stripes) {
+      this.img.style.maskImage = `url("${r.url}")`;
+      this.img.style.setProperty("-webkit-mask-image", `url("${r.url}")`);
+    } else (this.img as HTMLImageElement).src = r.url;
     this.img.setAttribute("data-url", r.url);
     this.onShown();
   }
@@ -80,3 +91,4 @@ export class MaskOverlay {
     this.viewer.removeOverlay(this.img);
   }
 }
+

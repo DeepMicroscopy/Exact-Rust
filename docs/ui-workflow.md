@@ -77,7 +77,7 @@ Closing the panel keeps the detections on the image; changing the image clears t
 
 ### Volumes
 
-NIfTI and DICOM volumes open in the **three-plane view**, with a crosshair, a 3D render and the **Segment** tools: brush, lasso and wand, interpolate between slices, grow and shrink, undo and redo, and an optional **automatic segmentation** by a worker. Several masks can be shown at once with the **eye** in the *Segmentation* list (the one being painted solid, the others striped), and types in a **group** exclude each other: painting one takes the voxels from the others of its group. Segmentations made elsewhere (3D Slicer `.seg.nrrd`) can be linked to a volume and shown over its planes. Details in the [user guide](user-guide#3d-segmentation).
+NIfTI and DICOM volumes open in the **three-plane view**, with a crosshair, a 3D render and the **Segment** tools: brush, lasso and wand, interpolate between slices, grow and shrink, undo and redo, and an optional **automatic segmentation** by a worker. Several masks can be shown at once with the **eye** in the *Segmentation* list (the one being painted solid, the others in stripes of two tones; the 3D render shows all visible masks), and types in a **group** exclude each other: painting one takes the voxels from the others of its group. Segmentations made elsewhere (3D Slicer `.seg.nrrd`) can be linked to a volume and shown over its planes. Details in the [user guide](user-guide#3d-segmentation).
 
 ## Devices
 

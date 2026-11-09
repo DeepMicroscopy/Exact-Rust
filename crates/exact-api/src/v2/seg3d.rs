@@ -183,7 +183,10 @@ pub(crate) type Open = Arc<tokio::sync::Mutex<Entry>>;
 fn cache() -> &'static moka::sync::Cache<i64, Open> {
     static C: OnceLock<moka::sync::Cache<i64, Open>> = OnceLock::new();
     C.get_or_init(|| {
+        // LRU, not the default TinyLFU: a mask that is just opened must stay in (its undo history lives in it), also when the cache
+        // is full of masks that were used more often before
         moka::sync::Cache::builder()
+            .eviction_policy(moka::policy::EvictionPolicy::lru())
             .max_capacity(6)
             .time_to_idle(std::time::Duration::from_secs(900))
             .build()

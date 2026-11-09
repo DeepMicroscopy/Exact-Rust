@@ -155,6 +155,8 @@ export function MprPage() {
     const a = t.id !== segTypeId && shownTypes.has(t.id) ? maskOf(t.id) : null;
     return a ? [{ annotationId: a.id, color: t.color_code, version: maskVersions[a.id] ?? 0 }] : [];
   });
+  // the 3D render shows every mask that is visible (the one being painted and the ones with an eye), all solid
+  const renderMasks = [...(segAnnotation && segType ? [{ annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version }] : []), ...others];
   const mates = segType ? segTypes.filter((t) => t.id !== segType.id && groupOf.get(t.id) && groupOf.get(t.id) === groupOf.get(segType.id)).map((t) => t.name) : [];
   const [autoOpen, setAutoOpen] = useState(false);
   // ---- segmentation files linked to the volume (read-only overlay, see v2/linked.rs) ----
@@ -319,6 +321,16 @@ export function MprPage() {
           return;
         }
       }
+      // slices: the arrows step the axial plane (the maximized plane, when there is one), Shift the coronal and Alt the sagittal plane;
+      // Page Up / Down step the plane used last
+      const up = e.key === "ArrowUp" || e.key === "PageUp";
+      if (!mod && (up || e.key === "ArrowDown" || e.key === "PageDown")) {
+        const plane: Plane = e.key.startsWith("Page") ? active : e.altKey ? 2 : e.shiftKey ? 1 : maxed ?? 0;
+        setActive(plane);
+        step(plane, up ? 1 : -1);
+        e.preventDefault();
+        return;
+      }
       if (segTypeId != null) {
         const k = e.key.toLowerCase();
         const mod = e.ctrlKey || e.metaKey;
@@ -327,21 +339,14 @@ export function MprPage() {
         else if (mod && k === "y") void segLive.current.redo();
         else if (!mod && !e.altKey && editableRef.current && (k === "b" || k === "l" || k === "w")) setTool((t) => ({ ...t, tool: k === "b" ? "brush" : k === "l" ? "lasso" : "wand" }));
         else if (!mod && !e.altKey && !e.shiftKey && editableRef.current && (e.code === "Comma" || e.code === "Period")) setTool((t) => ({ ...t, size: resized(t.size, e.code === "Period" ? 1 : -1, t.unit) }));
-        else if (!(e.key === "PageUp" || e.key === "ArrowUp" || e.key === "PageDown" || e.key === "ArrowDown")) return;
-        else {
-          step(active, e.key === "PageUp" || e.key === "ArrowUp" ? 1 : -1);
-        }
+        else return;
         e.preventDefault();
         return;
       }
-      if (e.key === "PageUp" || e.key === "ArrowUp") step(active, 1);
-      else if (e.key === "PageDown" || e.key === "ArrowDown") step(active, -1);
-      else return;
-      e.preventDefault();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [active, step, segTypeId]);
+  }, [active, maxed, step, segTypeId]);
   const [dockEl, setDockEl] = useState<HTMLElement | null>(null);
   const editableRef = useRef(editable);
   editableRef.current = editable;
@@ -444,7 +449,7 @@ export function MprPage() {
         <div className={`mpr-info glass ${render3d ? "has-render" : ""}`} hidden={maxed != null} data-testid="mpr-info">
           {classes.length > 0 && <SegClassList classes={classes} activeId={segTypeId} shown={shownTypes} onToggle={toggleShown} onActivate={(t) => setSegTypeId(t)} />}
           {render3d ? (
-            <Render3D imageId={id} mask={segAnnotation && segType ? { annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version } : null} linked={renderLinked} onHide={() => setRender3d(false)} />
+            <Render3D imageId={id} masks={renderMasks} linked={renderLinked} onHide={() => setRender3d(false)} />
           ) : voxel && shape ? (
             <Info voxel={voxel} shape={shape} planes={planes ?? []} segmenting={segTypeId != null && editable} onRender3D={() => setRender3d(true)} />
           ) : (
@@ -558,6 +563,9 @@ interface LinkedPane {
   id: number;
   hide: number[];
 }
+
+/** The modifier of the arrow keys that steps a plane (the axial plane needs none, and so has the arrow keys when another is not maximized). */
+const SLICE_KEYS = ["", "Shift +", "Alt +"] as const;
 
 function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxed, hidden, onMaximize, onActivate, onPick, onStep, seg, others, maskOpacity, linked, linkedOpacity }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; maxed: boolean; hidden: boolean; onMaximize(): void; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null; others: OtherMask[]; maskOpacity: number; linked: LinkedPane[]; linkedOpacity: number }) {
   const host = useRef<HTMLDivElement>(null);
@@ -830,14 +838,14 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
     linkedOverlays.current.forEach((o) => o.setOpacity(linkedOpacity));
   }, [linkedOpacity, linkedKey, imageId, info.frames, info.width, info.height, plane]);
   // the masks of the other types that are shown (the eyes): striped, drawn below the one being painted
-  const othersKey = others.map((o) => o.annotationId).join(",");
+  const othersKey = others.map((o) => `${o.annotationId}:${o.color.replace("#", "")}`).join(",");
   useEffect(() => {
     const v = viewerRef.current;
     if (!v) return;
     const made = new Map<number, MaskOverlay>();
-    for (const aid of othersKey ? othersKey.split(",").map(Number) : []) {
-      const o = new MaskOverlay(v, info.width, info.height);
-      o.setStriped(true);
+    for (const item of othersKey ? othersKey.split(",") : []) {
+      const [aid, color] = [Number(item.split(":")[0]), `#${item.split(":")[1]}`];
+      const o = new MaskOverlay(v, info.width, info.height, undefined, color);
       if (shownFrame.current != null) o.setDisplayed(shownFrame.current);
       made.set(aid, o);
     }
@@ -916,9 +924,9 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
       </button>
       {busy && <span className="spinner mpr-busy" role="status" aria-label="Loading the slice" />}
       <div className="mpr-steps">
-        <button type="button" className="mpr-step" disabled={frame <= 0} onClick={() => onStep(-1)} aria-label={`${PLANE_NAMES[plane]}: previous slice`}>−</button>
+        <button type="button" className="mpr-step" disabled={frame <= 0} onClick={() => onStep(-1)} aria-label={`${PLANE_NAMES[plane]}: previous slice`} title={`Previous slice (${SLICE_KEYS[plane]} ↓, Page Down)`}>−</button>
         <input className="mpr-slider" type="range" min={0} max={info.frames - 1} value={frame} onChange={(e) => onStep(Number(e.target.value) - frame)} aria-label={`${PLANE_NAMES[plane]} slice`} />
-        <button type="button" className="mpr-step" disabled={frame >= info.frames - 1} onClick={() => onStep(1)} aria-label={`${PLANE_NAMES[plane]}: next slice`}>+</button>
+        <button type="button" className="mpr-step" disabled={frame >= info.frames - 1} onClick={() => onStep(1)} aria-label={`${PLANE_NAMES[plane]}: next slice`} title={`Next slice (${SLICE_KEYS[plane]} ↑, Page Up)`}>+</button>
       </div>
     </div>
   );

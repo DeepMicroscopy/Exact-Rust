@@ -138,12 +138,12 @@ that hold some of it.
   **Clear mask** (click twice) empties it.
 * **Undo** and **Redo** (`Ctrl/Cmd+Z`, `Shift+Ctrl/Cmd+Z`) go back and forth through these steps; the steps are kept while the mask is open in the server.
 * A click or stroke also moves the crosshair to that point, so the other two planes show it. `Ctrl` (`Cmd`) + click moves the crosshair without painting;
-  Shift + mouse wheel (or the wheel, in "Wheel: slices" mode) and Page Up / Down still step through the slices. Accounts that are read-only see the mask and have no tools.
+  Shift + mouse wheel (or the wheel, in "Wheel: slices" mode) step through the slices, and so do the keys: `↑` / `↓` for the axial plane (the maximized plane, if there is one), `Shift` + `↑` / `↓` for the coronal and `Alt` + `↑` / `↓` for the sagittal plane, Page Up / Down for the plane used last (the − / + buttons under each plane say so in their tooltip). Accounts that are read-only see the mask and have no tools.
 
 ### Several masks at once, and groups
 The **Segmentation** list in the info cell (bottom right of the planes) names every segmentation type of the image set.
 
-* The **eye** shows or hides the mask of a type on the planes. The type being painted is always shown, **solid**; every other mask you switch on is drawn **striped**, so
+* The **eye** shows or hides the mask of a type on the planes. The type being painted is always shown, **solid**; every other mask you switch on is drawn **striped** (alternating stripes of the type's colour and a darker tone), so
   you can tell at a glance which one the tools change. Without a type chosen, all shown masks are striped (you are only looking). Click a **name** to paint that type.
 * A **group** is a set of segmentation types that exclude each other, for example the organs of one study: *no voxel can be in two masks of a group*.
   Painting a voxel for one type takes it from the others of its group (their striped masks follow at once), and **undo** gives the voxels back to them. Erasing never changes another mask.
@@ -241,7 +241,7 @@ Press **?** on any page (or the **?** button in the top bar) for the keys, shown
 
 - **Everywhere:** `?` the list · `G` then `P` preferences · `/` or `Ctrl/Cmd + F` the search field of the page (`Esc` inside it clears it).
 - **Viewer:** `E` / `Q` next / previous image · `Shift + E` / `Shift + Q` or Page Up / Down frames · `1`–`9` annotation type · `C` select / draw · `A` one-click mode · `Enter` or `V` finish · `Esc` cancel · `Delete`, `Backspace` or `X` delete · `D` polygon knife · `,` and `.` smaller / larger brush · `Y` annotations on / off · `O` overlay image on / off · `H` overview on / off · `Ctrl/Cmd + Z` / `Y` undo / redo.
-- **Three planes:** Page Up / Down or arrows step slices · `E` / `Q` next / previous image · `O` linked segmentation files on / off · `B` / `L` / `W` brush, lasso, wand · **Space** switches between adding and subtracting (hold Space and drag to move a plane) · `,` and `.` brush size · hold `Shift` or `Alt` for the opposite · `Esc` closes the mask tools.
+- **Three planes:** `↑` / `↓` (axial or maximized plane), `Shift` + `↑` / `↓` (coronal), `Alt` + `↑` / `↓` (sagittal) or Page Up / Down (last used plane) step slices · `E` / `Q` next / previous image · `O` linked segmentation files on / off · `B` / `L` / `W` brush, lasso, wand · **Space** switches between adding and subtracting (hold Space and drag to move a plane) · `,` and `.` brush size · hold `Shift` or `Alt` for the opposite · `Esc` closes the mask tools.
 
 `,` and `.` were chosen for the brush size because they are in the same place on English and German keyboards. The start page now loads more image sets as you scroll to the end of the list (no "Show more" button).
 

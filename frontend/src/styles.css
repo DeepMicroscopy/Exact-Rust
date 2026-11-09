@@ -869,7 +869,7 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .seg-eye:disabled { cursor: default; opacity: 0.7; }
 .seg-eye:hover:not(:disabled) { background: rgba(127, 127, 127, 0.18); }
 .seg-swatch { flex: none; width: 16px; height: 16px; border-radius: 3px; border: 1.5px solid var(--c); background: var(--c); }
-.seg-swatch.striped { background: repeating-linear-gradient(135deg, var(--c) 0 2px, transparent 2px 6px); }
+.seg-swatch.striped { background: repeating-linear-gradient(135deg, var(--c) 0 3px, color-mix(in srgb, var(--c) 50%, black) 3px 6px); }
 .seg-name { flex: 1; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; padding: 4px 2px; cursor: pointer; border-radius: 4px; }
 .seg-name:hover { text-decoration: underline; }
 .seg-class.active .seg-name { font-weight: 600; }

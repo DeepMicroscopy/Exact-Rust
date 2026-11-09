@@ -102,6 +102,25 @@ try {
   await waitFor(async () => (await count(tA)) === nA, "undo of B gives the voxels back to A");
   await page.locator('[data-testid="seg3d-redo"]').click();
   await waitFor(async () => (await count(tA)) === nA2 && (await count(tB)) === nB, `redo takes them again (A ${await count(tA)} want ${nA2}, B ${await count(tB)} want ${nB})`);
+  // slice keys: arrows step the axial plane, Shift the coronal and Alt the sagittal plane
+  const pos = async (n) => Number((await page.locator(`[data-testid="mpr-${n}"]`).innerText()).match(/(\d+) \/ \d+/)[1]);
+  const [a0, c0, s0] = [await pos("axial"), await pos("coronal"), await pos("sagittal")];
+  await page.keyboard.press("ArrowUp");
+  await waitFor(async () => (await pos("axial")) === a0 + 1, "ArrowUp steps the axial plane");
+  await page.keyboard.press("Shift+ArrowUp");
+  await waitFor(async () => (await pos("coronal")) === c0 + 1, "Shift + ArrowUp steps the coronal plane");
+  await page.keyboard.press("Alt+ArrowDown");
+  await waitFor(async () => (await pos("sagittal")) === s0 - 1, "Alt + ArrowDown steps the sagittal plane back");
+  check((await pos("axial")) === a0 + 1, "...and the axial plane stayed");
+  check(((await page.locator(".mpr-step").first().getAttribute("title")) ?? "").includes("Page"), "the slice buttons say which keys step them");
+  await page.locator('[data-testid="mpr-max-coronal"]').dispatchEvent("click");
+  await page.keyboard.press("ArrowUp");
+  await waitFor(async () => (await pos("coronal")) === c0 + 2, "in a maximized plane the arrows step that plane");
+  await page.locator('[data-testid="mpr-max-coronal"]').dispatchEvent("click");
+  // the 3D render shows the visible masks
+  await page.locator('[data-testid="show-render3d"]').click();
+  await page.waitForSelector('[data-testid="render3d-mask"]');
+  await waitFor(async () => (await page.locator('[data-testid="render3d-mask"]').isEnabled()) && /Masks/.test(await page.locator(".render3d-checks").innerText()), "the 3D render offers both visible masks", 40000);
   // an ungrouped neighbour would not lose anything: covered in the conformance tests
 } finally {
   for (const t of made.types) {
