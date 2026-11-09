@@ -105,9 +105,12 @@ fn open_with(path: &str, light: bool) -> Result<Arc<dyn Slide>> {
         .unwrap_or("")
         .to_ascii_lowercase();
     let tiff = is_tiff_magic(head);
+    let mut nifti_error: Option<WsiError> = None;
     if (head[..2] == [0x1f, 0x8b] && (ext == "gz" || ext == "nii")) || ext == "nii" {
-        if let Ok(n) = crate::nifti::Nifti::open(path) {
-            return Ok(Arc::new(n));
+        match crate::nifti::Nifti::open(path) {
+            Ok(n) => return Ok(Arc::new(n)),
+            // kept: if nothing else reads the file, this is the reason to report, not "no reader"
+            Err(e) => nifti_error = Some(e),
         }
     }
     #[cfg(feature = "video")]
@@ -158,6 +161,9 @@ fn open_with(path: &str, light: bool) -> Result<Arc<dyn Slide>> {
         if let Ok(s) = pool(path) {
             return Ok(s);
         }
+    }
+    if let Some(e) = nifti_error {
+        return err(format!("{path}: NIfTI: {e}"));
     }
     err(format!("no reader for {path}"))
 }

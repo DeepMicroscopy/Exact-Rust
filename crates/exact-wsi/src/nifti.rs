@@ -240,24 +240,27 @@ pub fn write_labels(dims: [usize; 3], affine: &M4, labels: &[u16]) -> Vec<u8> {
     h
 }
 
-/// Where the inflated copy of a `.nii.gz` lives: `$EXACT_NIFTI_CACHE` or the system temp directory, keyed by the path,
-/// size and modification time of the source.
-fn sidecar(path: &str) -> Result<PathBuf> {
+/// The folder of the inflated copies: `$EXACT_NIFTI_CACHE` or the system temp directory.
+fn cache_dir() -> PathBuf {
+    std::env::var_os("EXACT_NIFTI_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("exact-nifti"))
+}
+
+/// Where the inflated copy of a `.nii.gz` lives: in `dir`, keyed by the path, size and modification time of the source.
+fn sidecar_in(dir: &std::path::Path, path: &str) -> Result<PathBuf> {
     let meta = std::fs::metadata(path).map_err(|e| WsiError(format!("{path}: {e}")))?;
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (path, meta.len(), meta.modified().ok()).hash(&mut h);
-    let dir = std::env::var_os("EXACT_NIFTI_CACHE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("exact-nifti"));
-    std::fs::create_dir_all(&dir).map_err(|e| WsiError(e.to_string()))?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| WsiError(format!("cache folder {}: {e}", dir.display())))?;
     Ok(dir.join(format!("{:016x}.nii", h.finish())))
 }
 
 /// Inflates `src` into `dst` without holding it in memory; written under a private name and renamed, so a concurrent
 /// open never maps a half-written file.
-fn inflate_to(src: &str, dst: &std::path::Path) -> Result<()> {
+fn inflate_to(src: &str, dst: &std::path::Path) -> std::io::Result<()> {
     let tmp = dst.with_extension(format!("tmp{}", std::process::id()));
-    let io = |e: std::io::Error| WsiError(e.to_string());
     let run = || -> std::io::Result<()> {
         let mut dec =
             flate2::read::MultiGzDecoder::new(std::io::BufReader::new(std::fs::File::open(src)?));
@@ -267,9 +270,66 @@ fn inflate_to(src: &str, dst: &std::path::Path) -> Result<()> {
     };
     if let Err(e) = run() {
         std::fs::remove_file(&tmp).ok();
-        return Err(io(e));
+        return Err(e);
     }
-    std::fs::rename(&tmp, dst).map_err(io)
+    std::fs::rename(&tmp, dst)
+}
+
+fn disk_full(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::StorageFull || e.raw_os_error() == Some(28)
+}
+
+/// The inflated copies are only a cache: when the disk is full, the one used least recently goes, then the next, until the
+/// volume fits (a copy that is mapped by a running request stays valid until that request is done with it).
+fn evict_oldest(dir: &std::path::Path, keep: &std::path::Path) -> bool {
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p != keep && p.extension().is_some_and(|x| x == "nii"))
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+        .collect();
+    files.sort();
+    match files.first() {
+        Some((_, p)) => std::fs::remove_file(p).is_ok(),
+        None => false,
+    }
+}
+
+/// Makes the inflated copy of `src` and returns its path. Tries the cache folder; if that cannot be written to (permissions, read-only
+/// file system) the system temp directory; if the disk is full, old copies are removed first.
+fn inflated(src: &str) -> Result<PathBuf> {
+    let configured = cache_dir();
+    let mut dirs = vec![configured.clone()];
+    let fallback = std::env::temp_dir().join("exact-nifti");
+    if fallback != configured {
+        dirs.push(fallback);
+    }
+    let mut last = WsiError("no cache folder".into());
+    for dir in dirs {
+        let dst = match sidecar_in(&dir, src) {
+            Ok(d) => d,
+            Err(e) => {
+                last = e;
+                continue;
+            }
+        };
+        if dst.exists() {
+            return Ok(dst);
+        }
+        loop {
+            match inflate_to(src, &dst) {
+                Ok(()) => return Ok(dst),
+                Err(e) if disk_full(&e) && evict_oldest(&dir, &dst) => continue,
+                Err(e) => {
+                    last = WsiError(format!("cannot inflate {src} into {}: {e}", dir.display()));
+                    break;
+                }
+            }
+        }
+    }
+    Err(last)
 }
 
 impl Nifti {
@@ -279,10 +339,7 @@ impl Nifti {
         let mut head = [0u8; 2];
         let gz = f.read_exact(&mut head).is_ok() && head == [0x1f, 0x8b];
         let raw = if gz {
-            let side = sidecar(path)?;
-            if !side.exists() {
-                inflate_to(path, &side)?;
-            }
+            let side = inflated(path)?;
             Raw(map(&std::fs::File::open(&side).map_err(e)?).map_err(e)?)
         } else {
             Raw(map(&f).map_err(e)?)
@@ -753,8 +810,42 @@ mod tests {
             assert_eq!(a.render(p, 1).as_raw(), b.render(p, 1).as_raw());
         }
         // the second open of the gz finds the inflated sidecar
-        assert!(sidecar(gz.to_str().unwrap()).unwrap().exists());
+        assert!(sidecar_in(&cache_dir(), gz.to_str().unwrap()).unwrap().exists());
         assert!(Nifti::open(gz.to_str().unwrap()).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_oldest_inflated_copy_goes_first_and_the_one_in_use_stays() {
+        let dir = std::env::temp_dir().join(format!("exact-nifti-evict-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (old, newer, keep) = (dir.join("a.nii"), dir.join("b.nii"), dir.join("c.nii"));
+        std::fs::write(&old, b"x").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&newer, b"x").unwrap();
+        std::fs::write(&keep, b"x").unwrap();
+        std::fs::write(dir.join("notes.txt"), b"x").unwrap();
+        assert!(evict_oldest(&dir, &keep));
+        assert!(!old.exists() && newer.exists() && keep.exists() && dir.join("notes.txt").exists());
+        assert!(evict_oldest(&dir, &keep));
+        assert!(!newer.exists() && keep.exists());
+        assert!(!evict_oldest(&dir, &keep)); // nothing left to remove
+        assert!(disk_full(&std::io::Error::from_raw_os_error(28)));
+        assert!(!disk_full(&std::io::Error::from_raw_os_error(13)));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_damaged_gz_reports_the_reason_not_just_no_reader() {
+        let dir = std::env::temp_dir().join(format!("exact-nifti-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("broken.nii.gz");
+        std::fs::write(&f, [0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3, 1, 2, 3]).unwrap();
+        let e = match crate::formats::open(f.to_str().unwrap()) {
+            Ok(_) => panic!("a broken file cannot open"),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains("NIfTI"), "{e}");
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -41,6 +41,9 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Open one image file the way the server does and say what it is (reader, size, levels, frames) or why it cannot be read.
+    /// For "The slide cannot be read": the viewer only shows that sentence, this shows the cause. Reads the file only.
+    Inspect { file: PathBuf },
     /// Repair one damaged TIFF in place: pyramid rebuilt from level 0, original kept as `<name>.orig.<ext>`.
     RepairImage { file: PathBuf },
     /// Read every stored passkey (`passkeys_userpasskey`) the way the server does and report those it cannot use (reads only).
@@ -118,6 +121,39 @@ async fn main() -> anyhow::Result<()> {
             );
             if damaged > 0 {
                 println!("repair one with: exact-cli repair-image <file>   (or from the viewer)");
+            }
+        }
+        Cmd::Inspect { file } => {
+            let path = file.to_string_lossy().to_string();
+            match exact_wsi::formats::SlideCache::new(1).get(&path) {
+                Ok(slide) => {
+                    println!("opened: {path}");
+                    println!("level 0: {:?}   levels: {}", slide.level_dimensions().first(), slide.level_dimensions().len());
+                    println!("frames: {} ({})", slide.frame_count(), slide.frame_kind().as_str());
+                    for plane in 0..3 {
+                        if let Some(d) = slide.plane_dimensions(plane) {
+                            println!("plane {plane}: {d:?}, {} slices", slide.plane_frames(plane));
+                        }
+                    }
+                    let mut props: Vec<_> = slide.properties().into_iter().collect();
+                    props.sort();
+                    for (k, v) in props.iter().take(40) {
+                        println!("  {k} = {v}");
+                    }
+                    let (w, h) = slide.level_dimensions().first().copied().unwrap_or((0, 0));
+                    let (rw, rh) = (w.min(256) as u32, h.min(256) as u32);
+                    match slide.read_region(0, 0, 0, rw, rh, slide.frame_count() / 2) {
+                        Ok(_) => println!("reading a {rw}x{rh} region: ok"),
+                        Err(e) => {
+                            println!("reading a region FAILED: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("CANNOT BE READ: {e}");
+                    std::process::exit(1);
+                }
             }
         }
         Cmd::RepairImage { file } => {
