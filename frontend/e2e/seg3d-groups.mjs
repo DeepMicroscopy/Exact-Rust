@@ -59,12 +59,24 @@ try {
   await page.goto(`${base}/images/${IMAGE}/planes`);
   for (const n of ["axial", "coronal", "sagittal"]) await page.waitForSelector(`[data-testid="mpr-${n}"] canvas`);
 
-  await page.waitForSelector('[data-testid="seg-classes"]');
-  const row = (t) => page.locator(`[data-testid="seg-class"][data-type="${t}"]`);
-  check((await page.locator('[data-testid="seg-group"]').count()) === 1, "the list shows the group once");
-  for (const t of made.types) check((await page.locator(`[data-testid="seg-group"] [data-testid="seg-class"][data-type="${t}"]`).count()) === 1, `...with type ${t} in it`);
+  await page.waitForSelector('.dropdown[data-name="segment"] .trigger');
+  const trigger = page.locator('.dropdown[data-name="segment"] .trigger');
+  const openList = async () => {
+    if ((await page.locator(".dd-pop").count()) === 0) await trigger.click();
+    await page.waitForSelector(".dd-pop");
+  };
+  const row = (t) => page.locator(`.dd-row[data-id="${t}"]`);
+  const pickType = async (t) => {
+    await openList();
+    await row(t).locator(".dd-item").click();
+  };
+  await openList();
+  check((await page.locator('[data-testid="dd-group"]').count()) >= 1, "the Segment list shows the group as a heading");
+  for (const t of made.types) check((await row(t).evaluate((el) => el.classList.contains("in-group"))) === true, `...with type ${t} in it`);
+  check((await page.locator('[data-testid="seg-classes"]').count()) === 0, "there is no separate list any more");
+  await trigger.click(); // closes it again
 
-  await row(tA).locator('[data-testid="seg-name"]').click();
+  await pickType(tA);
   await page.waitForSelector(".seg3d-panel");
   check((await page.locator('[data-testid="seg3d-exclusive"]').innerText()).includes("spleen"), "the tool window says which masks are exclusive with the one painted");
   await waitFor(async () => (await page.locator('[data-testid="mask-overlay"]').count()) === 3, "the mask of A is on all three planes");
@@ -83,11 +95,13 @@ try {
   const nA = await count(tA);
 
   // B: switch to it, the eye of A shows A's mask striped next to it
-  await row(tA).locator('[data-testid="seg-eye"]').click().catch(() => null);
-  await row(tB).locator('[data-testid="seg-name"]').click();
+  await pickType(tB);
   await waitFor(async () => (await maskId(tB)) != null, "the mask of B is made");
   check((await page.locator('[data-testid="mask-overlay"][data-striped="1"]').count()) === 0, "no striped mask while no eye is switched on");
-  await row(tA).locator('[data-testid="seg-eye"]').click();
+  await openList();
+  await row(tA).locator('[data-testid="dd-eye"]').click();
+  check((await page.locator(".dd-pop").count()) === 1, "a click on an eye keeps the list open");
+  await trigger.click();
   await waitFor(async () => (await page.locator('[data-testid="mask-overlay"][data-striped="1"]').count()) === 3, "the eye shows A striped on all three planes");
   check((await page.locator('[data-testid="mask-overlay"][data-striped="0"]').count()) === 3 || (await page.locator('[data-testid="mask-overlay"]:not([data-striped="1"])').count()) === 3, "the mask being painted stays solid");
 

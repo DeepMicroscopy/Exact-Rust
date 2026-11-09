@@ -12,7 +12,6 @@ import { Render3D } from "../components/Render3D";
 import { useSegment3D, type Op } from "../hooks/useSegment3D";
 import { BrushLayer } from "../viewer-core/brushLayer";
 import { MaskOverlay } from "../viewer-core/maskOverlay";
-import { SegClassList, type SegClass } from "../components/SegClassList";
 import { FINDER_FOCUS, ImageFinder, readFinder, saveFinder } from "../components/ImageFinder";
 import { LinkedPanel, type LinkedView } from "../components/LinkedPanel";
 import { ImportSegmentsDialog } from "../components/ImportSegmentsDialog";
@@ -150,7 +149,6 @@ export function MprPage() {
   useEffect(() => setShownTypes(new Set()), [id]);
   const toggleShown = useCallback((t: number) => setShownTypes((cur) => { const n = new Set(cur); if (!n.delete(t)) n.add(t); return n; }), []);
   const maskOf = (typeId: number) => (annotations.data ?? []).find((a) => a.annotation_type === typeId && !a.deleted && a.id > 0) ?? null;
-  const classes: SegClass[] = segTypes.map((t) => ({ id: t.id, name: t.name, color: t.color_code, group: groupOf.get(t.id) ?? null, hasMask: !!maskOf(t.id) }));
   const others: OtherMask[] = segTypes.flatMap((t) => {
     const a = t.id !== segTypeId && shownTypes.has(t.id) ? maskOf(t.id) : null;
     return a ? [{ annotationId: a.id, color: t.color_code, version: maskVersions[a.id] ?? 0 }] : [];
@@ -225,7 +223,30 @@ export function MprPage() {
           onSize: (steps) => setTool((t) => ({ ...t, size: resized(t.size, steps, t.unit) })),
         }
       : null;
-  const segItems: DropdownItem[] = [...segTypes.map((t) => ({ id: t.id, label: `▨ ${t.name}`, color: t.color_code, checked: t.id === segTypeId })), ...(segTypeId != null ? [{ id: "off", label: "Leave segmentation" }] : [])];
+  // the Segment list: every type with an eye (show its mask, striped, next to the one being painted); types of a group are listed together
+  const segItems: DropdownItem[] = [
+    ...[...segTypes]
+      .map((t) => ({ t, group: groupOf.get(t.id) ?? null }))
+      .sort((x, y) => (x.group ?? "").localeCompare(y.group ?? "") || 0)
+      .sort((x, y) => Number(x.group != null) - Number(y.group != null))
+      .map(({ t, group }) => {
+        const active = t.id === segTypeId;
+        const has = !!maskOf(t.id);
+        return {
+          id: t.id,
+          label: `▨ ${t.name}`,
+          color: t.color_code,
+          checked: active,
+          group,
+          eye: active || (shownTypes.has(t.id) && has),
+          eyeDisabled: active || !has,
+          eyeTitle: active ? "The mask being painted is always shown" : has ? "Show or hide this mask (striped) next to the one being painted" : "This volume has no mask of this type yet",
+          onEye: () => toggleShown(t.id),
+          striped: !active && shownTypes.has(t.id) && has,
+        };
+      }),
+    ...(segTypeId != null ? [{ id: "off", label: "Leave segmentation" }] : []),
+  ];
 
   // the crosshair starts where a link says, else in the middle of the volume
   useEffect(() => {
@@ -447,7 +468,6 @@ export function MprPage() {
             ))
           : null}
         <div className={`mpr-info glass ${render3d ? "has-render" : ""}`} hidden={maxed != null} data-testid="mpr-info">
-          {classes.length > 0 && <SegClassList classes={classes} activeId={segTypeId} shown={shownTypes} onToggle={toggleShown} onActivate={(t) => setSegTypeId(t)} />}
           {render3d ? (
             <Render3D imageId={id} masks={renderMasks} linked={renderLinked} onHide={() => setRender3d(false)} />
           ) : voxel && shape ? (
@@ -531,7 +551,7 @@ function Info({ voxel, shape, planes, segmenting, onRender3D }: { voxel: Voxel; 
           Show 3D render
         </button>
       </p>
-      <p className="muted small">Click in a plane to set the crosshair. Page Up / Down steps the slices of the plane you used last, and so does the mouse wheel when the top bar says "Wheel: slices" (Shift + wheel in the other mode). Drag moves the image, a pinch zooms.</p>
+      <p className="muted small">Click in a plane to set the crosshair. The arrow keys step the slices (↑ / ↓ axial or the maximized plane, Shift coronal, Alt sagittal), Page Up / Down those of the plane you used last, and so does the mouse wheel when the top bar says "Wheel: slices" (Shift + wheel in the other mode). Drag moves the image, a pinch zooms.</p>
     </>
   );
 }

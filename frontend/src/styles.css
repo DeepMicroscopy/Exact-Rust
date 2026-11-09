@@ -858,24 +858,16 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .analysis-card progress { display: block; width: 100%; margin-top: 4px; }
 
-/* ---- segmentation types of a volume: eyes, swatches and groups ---- */
-.seg-classes { margin-bottom: 10px; }
-.seg-classes h3 { margin: 0 0 4px; }
-.seg-classes > ul { max-height: 34vh; overflow-y: auto; }
-.seg-classes ul { list-style: none; margin: 0; padding: 0; }
-.seg-class { display: flex; align-items: center; gap: 6px; min-height: 30px; }
-.seg-eye { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--muted, #888); cursor: pointer; }
-.seg-eye.on { color: var(--fg, currentColor); }
-.seg-eye:disabled { cursor: default; opacity: 0.7; }
-.seg-eye:hover:not(:disabled) { background: rgba(127, 127, 127, 0.18); }
-.seg-swatch { flex: none; width: 16px; height: 16px; border-radius: 3px; border: 1.5px solid var(--c); background: var(--c); }
-.seg-swatch.striped { background: repeating-linear-gradient(135deg, var(--c) 0 3px, color-mix(in srgb, var(--c) 50%, black) 3px 6px); }
-.seg-name { flex: 1; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; padding: 4px 2px; cursor: pointer; border-radius: 4px; }
-.seg-name:hover { text-decoration: underline; }
-.seg-class.active .seg-name { font-weight: 600; }
-.seg-group { margin-top: 4px; padding-left: 4px; border-left: 3px solid rgba(127, 127, 127, 0.4); }
-.seg-group-name { font-size: 0.85em; margin: 2px 0; }
-.group-tag { color: inherit; }
+/* ---- segmentation types of a volume: eyes, striped swatches and groups in the Segment list ---- */
+.dd-line { display: flex; align-items: center; }
+.dd-line .dd-item { flex: 1; }
+.dd-eye { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--muted, #888); cursor: pointer; }
+.dd-eye.on { color: var(--fg, currentColor); }
+.dd-eye:disabled { cursor: default; opacity: 0.7; }
+.dd-eye:hover:not(:disabled) { background: rgba(127, 127, 127, 0.18); }
+.dd-group { font-size: 0.85em; margin: 6px 4px 2px; }
+.dd-row.in-group .dd-line { margin-left: 8px; border-left: 3px solid rgba(127, 127, 127, 0.4); }
+.swatch.striped { background: repeating-linear-gradient(135deg, var(--c) 0 3px, color-mix(in srgb, var(--c) 50%, black) 3px 6px); }
 
 /* ---- products: teams with their products as a tree ---- */
 .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
