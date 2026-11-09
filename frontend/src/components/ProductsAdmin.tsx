@@ -68,17 +68,62 @@ export function ProductsTab({ perms }: { perms: ProductPerms }) {
   const teamName = (id: number | null) => teams.data?.find((t) => t.id === id)?.name ?? "";
   const list = useMemo(() => [...(products.data ?? [])].sort((a, b) => teamName(a.team).localeCompare(teamName(b.team)) || a.name.localeCompare(b.name)), [products.data, teams.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const current = picked != null ? (list.find((p) => p.id === picked) ?? null) : (list[0] ?? null); // a product just created is not in the list until it is fetched
+  // the tree: teams (alphabetically), their products below; a team can be folded, the choice is remembered
+  const tree = useMemo(() => {
+    const groups = new Map<string, { key: string; name: string; products: Product[] }>();
+    for (const p of list) {
+      const key = String(p.team ?? "none");
+      if (!groups.has(key)) groups.set(key, { key, name: p.team == null ? "No team" : teamName(p.team) || `Team ${p.team}`, products: [] });
+      groups.get(key)!.products.push(p);
+    }
+    return [...groups.values()];
+  }, [list, teams.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [closed, setClosed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("exact.productTree.closed") ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const toggle = (key: string) =>
+    setClosed((cur) => {
+      const n = new Set(cur);
+      if (!n.delete(key)) n.add(key);
+      try {
+        localStorage.setItem("exact.productTree.closed", JSON.stringify([...n]));
+      } catch {
+        /* private mode */
+      }
+      return n;
+    });
   const refresh = () => void qc.invalidateQueries({ queryKey: ["admin-products"] });
   return (
     <div className="two-col">
       <aside className="sidebar">
         <div className="sidebar-title">Products</div>
-        {list.map((p) => (
-          <button key={p.id} className={`side-item ${current?.id === p.id ? "active" : ""}`} onClick={() => setPicked(p.id)} title={teamName(p.team)}>
-            {p.name}
-            <span className="muted small"> {teamName(p.team)}</span>
-          </button>
-        ))}
+        <ul className="tree" role="tree" data-testid="product-tree">
+          {tree.map((g) => {
+            const open = !closed.has(g.key);
+            return (
+              <li key={g.key} role="treeitem" aria-expanded={open} data-testid="tree-team">
+                <button className="tree-node" onClick={() => toggle(g.key)} aria-label={`${open ? "Collapse" : "Expand"} ${g.name}`}>
+                  <span className="tree-caret" aria-hidden>{open ? "▾" : "▸"}</span> {g.name} <span className="muted small">{g.products.length}</span>
+                </button>
+                {open && (
+                  <ul role="group">
+                    {g.products.map((p) => (
+                      <li key={p.id} role="treeitem">
+                        <button className={`side-item tree-leaf ${current?.id === p.id ? "active" : ""}`} onClick={() => setPicked(p.id)} title={g.name} aria-selected={current?.id === p.id}>
+                          {p.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
         {perms.add_product && (
           <button className="btn small" onClick={() => setCreating(true)} style={{ marginTop: 8 }}>
             New product…

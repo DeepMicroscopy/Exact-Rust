@@ -12,7 +12,7 @@ Create, rename and delete teams, add existing users, tick *team admin*, and remo
 link for a new user; open invitations are listed and can be revoked.
 
 ## Products
-Products group annotation types. Each type has a name (unique per product), colour, vector type (box, fixed-size box, point,
+The list on the left is a tree: the teams, each with its products below it (click a team to fold it; the choice is remembered in the browser). Products group annotation types. Each type has a name (unique per product), colour, vector type (box, fixed-size box, point,
 line, polygon, global …), a default size for fixed-size boxes in pixels, µm or mm, and a key `1`–`9`. An image set uses the types
 of its products.
 
