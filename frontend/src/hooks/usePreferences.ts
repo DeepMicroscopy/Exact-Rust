@@ -18,7 +18,7 @@ export interface Preferences {
   allow_outside: boolean;
 }
 
-const DEFAULTS: Preferences = { legacy_navigation: false, auto_overlay: false, overlay_opacity: 50, zoom_slider: false, zoom_step: "low", allow_outside: false };
+const DEFAULTS: Preferences = { legacy_navigation: false, auto_overlay: false, overlay_opacity: 50, zoom_slider: false, zoom_step: "low", allow_outside: true };
 const KEY = ["preferences"];
 
 export function usePreferences(): { prefs: Preferences; set(p: Partial<Preferences>): Promise<void> } {

@@ -54,7 +54,7 @@ The **pulse icon** in the top bar (site admins) shows system health; the **?** o
 
 While you draw, the area (µm² or mm² when the image has a resolution) or the length is shown on the shape. Moving the slide while drawing: `Shift` + drag, `Space` + drag, the middle mouse button, or a finger.
 
-**Annotations outside the image.** Points are held at the edge of the image by default, which makes drawing along the border easy. If you need coordinates below 0 or beyond the size of the image (for example to mark a structure that is cut off by the scan), switch on *Allow annotations outside the image* in *Preferences → Viewer*: boxes, lines, polygons and points can then be drawn, dragged and pasted past the edge and keep their negative or too large coordinates. The API never restricted them: `POST /api/v2/annotations` and `/api/v1/annotations/annotations/` store whatever integers they get.
+**Annotations outside the image.** Boxes, lines, polygons and points can be drawn, dragged and pasted past the edge of the image and keep their negative or too large coordinates (for example to mark a structure that is cut off by the scan). If you would rather have them held at the edge, which makes drawing along the border easy, switch off *Allow annotations outside the image* in *Preferences → Viewer*. The API never restricted them: `POST /api/v2/annotations` and `/api/v1/annotations/annotations/` store whatever integers they get.
 
 ### Tools for looking
 
