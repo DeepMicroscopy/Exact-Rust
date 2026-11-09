@@ -103,3 +103,12 @@ def test_leaving_the_group_ends_the_exclusion(trio):
     n_a = count(c, a)
     disc(c, b, 90.5, 120.5)
     assert count(c, a) == n_a
+
+
+def test_a_type_in_use_can_be_saved_with_the_same_shape_but_not_with_another(trio):
+    """The administration screen sends the whole type: the unchanged shape of a type that annotations use is no error."""
+    c, masks, (ta, _tb, _tc) = trio
+    r = c.patch(f"/api/v2/annotation-types/{ta}", json={"vector_type": 8, "seg_group": "airways"})
+    assert r.status_code == 200, r.text
+    assert c.patch(f"/api/v2/annotation-types/{ta}", json={"vector_type": 1}).status_code == 400
+    c.patch(f"/api/v2/annotation-types/{ta}", json={"seg_group": "organs"})

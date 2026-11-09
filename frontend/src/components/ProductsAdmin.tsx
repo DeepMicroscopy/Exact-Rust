@@ -44,7 +44,18 @@ interface AType {
   annotation_count: number;
 }
 
-const msg = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e));
+/** The message of an error; a validation error names its fields ("name: A name is required."). */
+const msg = (e: unknown) => {
+  if (e instanceof ApiError) {
+    const errors = e.body?.errors;
+    if (errors && typeof errors === "object") {
+      const parts = Object.entries(errors as Record<string, unknown>).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(" ") : String(v)}`);
+      if (parts.length) return parts.join(" · ");
+    }
+    return e.message;
+  }
+  return e instanceof Error ? e.message : String(e);
+};
 
 export const SHAPES: { id: number; label: string }[] = [
   { id: 1, label: "Bounding box" },

@@ -897,7 +897,14 @@ pub async fn type_patch_h(
     }
     set_group(&s, id, &f.seg_group).await?;
     // the vector type of a type in use cannot change: annotations hold vectors of that shape
-    if f.vector_type.is_some() && type_usage(&s, id).await? == 0 {
+    let current_shape: Option<i32> = sqlx::query_scalar("SELECT vector_type FROM annotations_annotationtype WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?;
+    if f.vector_type.is_some() && f.vector_type == current_shape {
+        // the same shape again (the administration screen sends the whole type): nothing to change, also when annotations use it
+    } else if f.vector_type.is_some() && type_usage(&s, id).await? == 0 {
         sqlx::query("UPDATE annotations_annotationtype SET vector_type = $2 WHERE id = $1")
             .bind(id)
             .bind(f.vector_type)
