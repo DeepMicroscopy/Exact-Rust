@@ -130,6 +130,31 @@ try {
   const freed = await drawBox();
   console.log("   vector with the preference on:", JSON.stringify(freed));
   check(freed.x1 < -200 && freed.x1 > -300, "on: the box keeps its negative coordinates");
+  // moving an existing box out of the image
+  await page.keyboard.press("Escape");
+  const [i0, i1] = [await screenOf(page, 600, 1500), await screenOf(page, 900, 1700)];
+  await page.keyboard.press("1");
+  await page.mouse.move(i0.x, i0.y);
+  await page.mouse.down();
+  await page.mouse.move(i1.x, i1.y, { steps: 8 });
+  await page.mouse.up();
+  await waitFor(async () => (await annotations(page)).length === 2, "a second box was saved");
+  const inside = (await annotations(page)).find((a) => a.vector.x1 >= 590);
+  check(!!inside, "the second box lies inside the image: " + JSON.stringify(inside?.vector));
+  await page.keyboard.press("c"); // select mode
+  const mid = await screenOf(page, 750, 1600);
+  await page.mouse.click(mid.x, mid.y);
+  await page.waitForTimeout(300);
+  const dest = await screenOf(page, 750 - 1200, 1600 - 100);
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down();
+  await page.mouse.move((mid.x + dest.x) / 2, (mid.y + dest.y) / 2, { steps: 8 });
+  await page.mouse.move(dest.x, dest.y, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(1200);
+  const moved = (await annotations(page)).find((a) => a.id === inside.id);
+  console.log("   vector of the moved box:", JSON.stringify(moved.vector), "screen to", Math.round(dest.x), Math.round(dest.y));
+  check(moved.vector.x1 < -300, "on: a box can be moved out of the image (x1 " + moved.vector.x1 + ")");
   check(!errors.length, "no page errors: " + errors.join(" / "));
   await setPref(false);
   await page.evaluate(async (set) => { const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token; await fetch(`/api/v2/image-sets/${set}`, { method: "DELETE", headers: { "x-csrf-token": csrf } }); }, SET);
