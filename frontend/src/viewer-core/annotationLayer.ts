@@ -38,9 +38,8 @@ export class AnnotationLayer {
   private shapes: Shape[] = [];
   private styles = new Map<number, TypeStyle>();
   private hidden = new Set<number>();
-  /** types that cannot be clicked for now: drawn dashed and hatched */
+  /** types that cannot be clicked for now: drawn with dashed outlines */
   private locked = new Set<number>();
-  private patterns = new Map<string, CanvasPattern>();
   private overlay: Overlay = EMPTY_OVERLAY;
   /** a region of the image to point out (a crop's place in its original), dashed white */
   private mark: Box | null = null;
@@ -77,27 +76,6 @@ export class AnnotationLayer {
   setLockedTypes(locked: Set<number>): void {
     this.locked = locked;
     this.schedule();
-  }
-
-  /** the hatching of a locked type: stripes of its colour and a darker one, as the masks that are shown but not painted */
-  private hatch(ctx: CanvasRenderingContext2D, color: string): CanvasPattern | null {
-    const hit = this.patterns.get(color);
-    if (hit) return hit;
-    const c = document.createElement("canvas");
-    c.width = c.height = 8;
-    const g = c.getContext("2d");
-    if (!g) return null;
-    g.fillStyle = color + "55";
-    g.fillRect(0, 0, 8, 8);
-    g.strokeStyle = "rgba(0,0,0,0.45)";
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(-2, 10);
-    g.lineTo(10, -2);
-    g.stroke();
-    const p = ctx.createPattern(c, "repeat");
-    if (p) this.patterns.set(color, p);
-    return p;
   }
 
   /** The pixel masks of segmentation annotations, drawn below the shapes. */
@@ -197,7 +175,7 @@ export class AnnotationLayer {
       ctx.lineWidth = selected ? 3 : 2;
       ctx.strokeStyle = color;
       const locked = this.locked.has(s.typeId);
-      ctx.fillStyle = locked ? (this.hatch(ctx, color) ?? color + "26") : color + (selected ? "44" : "26");
+      ctx.fillStyle = color + (selected ? "44" : "26");
       ctx.setLineDash(locked ? [7, 4] : []);
       if (s.closed || s.vectorType === VectorType.Point) ctx.fill();
       if (selected) {
