@@ -24,11 +24,13 @@ export const POINTER_MODES: { id: PointerMode; title: string }[] = [
 export const POINTER_GESTURES_TEXT: Record<PointerKind, Record<PointerMode, Gesture[]>> = {
   mouse: {
     select: [
-      { part: "left", how: "Click on the background", text: "Zoom in about the pointer (Shift: zoom out)" },
-      { part: "left", how: "Click on an annotation", text: "Select it (Shift, Ctrl or ⌘: add it to or take it from the selection)" },
-      { part: "drag", how: "Drag on the background", text: "Move the slide" },
-      { part: "drag", how: "Drag a selected annotation", text: "Move it; drag a handle to reshape it" },
-      { part: "drag", how: "Ctrl or ⌘ + drag", text: "Frame annotations to select them" },
+      { part: "left", how: "Click (not in annotate mode)", text: "Zoom in about the pointer, also over an annotation (Shift: zoom out); annotations cannot be selected or edited" },
+      { part: "drag", how: "Drag (not in annotate mode)", text: "Move the slide" },
+      { part: "left", how: "Annotate button (or a type key such as 1)", text: "Go into annotate mode; the same button leaves it" },
+      { part: "left", how: "Annotate mode: click on an annotation", text: "Select it (Shift, Ctrl or ⌘: add it to or take it from the selection)" },
+      { part: "left", how: "Annotate mode: click on the background", text: "Zoom in about the pointer (Shift: zoom out)" },
+      { part: "drag", how: "Annotate mode: drag a selected annotation", text: "Move it; drag a handle to reshape it" },
+      { part: "drag", how: "Annotate mode: Ctrl or ⌘ + drag", text: "Frame annotations to select them" },
       { part: "wheel", how: "Wheel", text: "Zoom" },
       { part: "middle", how: "Middle button + drag, or Space + drag", text: "Move the slide" },
     ],

@@ -244,7 +244,7 @@ function Navigation() {
       legacy: true,
       title: "Mouse-optimized",
       sub: "traditional, as in the old EXACT",
-      lines: ["Click on the slide: zoom in (Shift + click: zoom out)", "Drag: move the slide", "Mouse wheel: zoom", "Ctrl / Cmd + drag: frame annotations"],
+      lines: ["Click on the slide: zoom in (Shift + click: zoom out)", "Drag: move the slide", "Mouse wheel: zoom", "Annotations can only be selected, moved and drawn in annotate mode (the Annotate button, or a type key); outside it they are only looked at", "In annotate mode: Ctrl / Cmd + drag frames annotations"],
     },
     {
       id: "touch",

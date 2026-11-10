@@ -60,7 +60,7 @@ While you draw, the area (µm² or mm² when the image has a resolution) or the 
 
 ### Tools for looking
 
-* **Navigation** is a preference: *Trackpad / tablet-optimized* (pinch to zoom, two fingers pan) or *Mouse-optimized* (click zooms in, `Shift` + click out), as in the old EXACT.
+* **Navigation** is a preference: *Trackpad / tablet-optimized* (pinch to zoom, two fingers pan) or *Mouse-optimized* (click zooms in, `Shift` + click out), as in the old EXACT. Mouse-optimized also has the old **annotate mode**: annotations can only be selected, moved, deleted or drawn after you press the **Annotate** button (bottom left; a type key such as `1` does it too, `Esc` does not leave it, the button does). Outside the mode the toolbox is hidden and a click, also on an annotation, zooms; with the trackpad / tablet setting there is no such mode and a click on an annotation selects it.
 * **Zoom:** scroll or pinch; `+` and `-` zoom in steps you choose (low, medium, high); an optional **zoom slider** shows the zoom in percent with a `100 %` button; the **scale bar** follows when the image has a resolution.
 * **Image adjustments** (round icon): brightness, contrast, gamma, saturation, hue, grayscale, invert. Only the display changes, never the file or the annotations.
 * **Overlay** of a registered image with an opacity slider (`O` toggles it): see [registration](howto-registration).

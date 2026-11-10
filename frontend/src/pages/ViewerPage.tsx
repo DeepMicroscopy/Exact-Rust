@@ -316,6 +316,18 @@ export function ViewerPage() {
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
   const { prefs } = usePreferences();
+  // Mouse-optimized navigation works as the old EXACT did: annotations are only selected, moved and drawn in "annotate" mode, which the
+  // pencil button (the toolbox) switches on; outside it a click on the slide zooms. Trackpad / tablet navigation has no such mode.
+  const annotate = !prefs.legacy_navigation || toolsOpen;
+  const annotateRef = useRef(annotate);
+  annotateRef.current = annotate;
+  const wasLegacy = useRef<boolean | null>(null);
+  useEffect(() => {
+    // the first time the preference is known (and when it changes), mouse-optimized starts outside annotate mode
+    if (wasLegacy.current === prefs.legacy_navigation) return;
+    if (wasLegacy.current !== null || prefs.legacy_navigation) setToolsOpen(prefs.legacy_navigation ? false : window.innerWidth >= 760);
+    wasLegacy.current = prefs.legacy_navigation;
+  }, [prefs.legacy_navigation]);
   const legacyRef = useRef(prefs.legacy_navigation);
   legacyRef.current = prefs.legacy_navigation;
   const zoomStepRef = useRef(prefs.zoom_step);
@@ -470,6 +482,7 @@ export function ViewerPage() {
     resultLayerRef.current = resultLayer;
     const editor = new AnnotationEditor(viewer, layer, hostProxy(editorHostRef));
     editorRef.current = editor;
+    editor.viewOnly = !annotateRef.current;
     const removeGestures = installGestures(viewer, (e) => e.altKey || editor.brushActive());
     const removePointerDebug = installPointerDebug(viewer);
     const masks = new MaskSet(() => layer.invalidate());
@@ -735,6 +748,7 @@ export function ViewerPage() {
     }
     exitMulti();
     setSegTypeId(null);
+    if (legacyRef.current) setToolsOpen(true); // choosing a type to draw is going into annotate mode
     setCurrentTypeId(typeId);
     setDrawing(true);
     const e = info(typeId);
@@ -887,6 +901,8 @@ export function ViewerPage() {
       const a = matchShortcut(ev);
       if (!a) return;
       if (readOnly && EDIT_ACTIONS.has(a.type)) return;
+      // mouse-optimized: outside annotate mode nothing is edited (choosing a type to draw switches the mode on)
+      if (!annotateRef.current && ["selectAll", "paste", "delete", "undo", "redo", "polyOp"].includes(a.type)) return;
       const ed = editorRef.current;
       const viewer = viewerRef.current;
       switch (a.type) {
@@ -1008,6 +1024,20 @@ export function ViewerPage() {
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
   useEffect(() => layerRef.current?.setLockedTypes(locked), [locked]);
+  // leaving annotate mode (mouse-optimized): what is selected or half drawn is let go of
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    ed.viewOnly = !annotate;
+    if (!annotate) {
+      ed.cancel();
+      ed.select(null);
+      setDrawing(false);
+      setPolyOp(null);
+      setMenu(null);
+      setGroupMenu(null);
+    }
+  }, [annotate]);
   useEffect(() => editorRef.current?.sync(), [shapes, hiddenAll, locked]);
 
   // the editor's tool follows the toolbox state
@@ -1278,8 +1308,15 @@ export function ViewerPage() {
           />
         )}
         {!readOnly && (
-          <button className="tools-toggle btn glass" onClick={() => setToolsOpen((o) => !o)} aria-expanded={toolsOpen} title="Annotation tools">
-            {toolsOpen ? "✕" : "✎"}
+          <button
+            className={`tools-toggle btn glass ${prefs.legacy_navigation ? "annotate-toggle" : ""} ${prefs.legacy_navigation && annotate ? "on" : ""}`}
+            onClick={() => setToolsOpen((o) => !o)}
+            aria-expanded={toolsOpen}
+            aria-pressed={prefs.legacy_navigation ? annotate : undefined}
+            title={prefs.legacy_navigation ? (annotate ? "Leave annotate mode (annotations cannot be selected or edited)" : "Annotate mode: select, draw and edit annotations") : "Annotation tools"}
+            data-testid="annotate-toggle"
+          >
+            {prefs.legacy_navigation ? (annotate ? "✕ Annotate" : "✎ Annotate") : toolsOpen ? "✕" : "✎"}
           </button>
         )}
         {readOnly && (

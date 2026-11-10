@@ -884,3 +884,7 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .type-lock-icon { font-size: 0.75rem; opacity: 0.7; }
 [data-testid="delete-type-places"] { margin: 8px 0 12px; border-collapse: collapse; }
 [data-testid="delete-type-places"] th, [data-testid="delete-type-places"] td { text-align: left; padding: 3px 14px 3px 0; }
+
+/* mouse-optimized navigation: the button that switches annotate mode on and off is there on every screen size */
+.tools-toggle.annotate-toggle { display: block; font-size: 0.95rem; }
+.tools-toggle.annotate-toggle.on { background: var(--purple, #7a4bd6); color: #fff; }
