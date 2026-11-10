@@ -875,3 +875,13 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .tree-node { display: flex; align-items: center; gap: 4px; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; padding: 5px 4px; cursor: pointer; border-radius: 6px; }
 .tree-node:hover { background: rgba(127, 127, 127, 0.15); }
 .tree-caret { display: inline-block; width: 1em; color: var(--muted, #888); }
+
+/* annotation types in the viewer's list: the menu, and the types that cannot be clicked for now */
+.type-colors { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 4px 8px 6px; }
+.type-color { height: 24px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.type-color.on { border-color: var(--text); }
+.type-custom { display: flex; gap: 8px; align-items: center; padding: 2px 8px 6px; }
+.type-custom input[type="color"] { width: 40px; height: 28px; padding: 0; border: 0; background: transparent; }
+.type-row.locked .type-name, .type-row.locked .muted { color: var(--muted, #8a8a98); opacity: 0.6; }
+.type-row.locked .swatch { background: repeating-linear-gradient(135deg, var(--c) 0 3px, color-mix(in srgb, var(--c) 50%, black) 3px 6px) !important; outline: 1px dashed var(--c); outline-offset: 1px; }
+.type-lock-icon { font-size: 0.75rem; opacity: 0.7; }

@@ -44,6 +44,7 @@ import { ConfirmResize } from "../components/ConfirmResize";
 import { boxVector, centeredBox, isBoxType } from "../viewer-core/geometry";
 import { visibleOnFrame } from "../viewer-core/frames";
 import { prefersThreePlanes, rememberThreePlanes } from "./MprPage";
+import { TypeMenu, type TypeMenuModel } from "../components/TypeMenu";
 import { ContextMenu } from "../components/ContextMenu";
 import { usePreferences } from "../hooks/usePreferences";
 import { CropDialog } from "../components/CropDialog";
@@ -155,6 +156,9 @@ export function ViewerPage() {
   const openingRef = useRef(true);
   const viewFor = useRef<number | null>(null);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
+  // types that cannot be clicked for now (the annotations are drawn, but do not take part in selecting, so one can annotate on top of them)
+  const [locked, setLocked] = useState<Set<number>>(new Set());
+  const [typeMenu, setTypeMenu] = useState<TypeMenuModel | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const image = useQuery({
@@ -317,11 +321,11 @@ export function ViewerPage() {
   zoomStepRef.current = prefs.zoom_step;
   const allowOutsideRef = useRef(prefs.allow_outside);
   allowOutsideRef.current = prefs.allow_outside;
-  const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
-  hostState.current = { shapes, info, hiddenAll, image: image.data, actions };
+  const hostState = useRef({ shapes, info, hiddenAll, locked, image: image.data, actions });
+  hostState.current = { shapes, info, hiddenAll, locked, image: image.data, actions };
   const editorHost: EditorHost = useMemo(
     () => ({
-      shapes: () => hostState.current.shapes.filter((s) => s.id > 0 && !hostState.current.hiddenAll.has(s.typeId)),
+      shapes: () => hostState.current.shapes.filter((s) => s.id > 0 && !hostState.current.hiddenAll.has(s.typeId) && !hostState.current.locked.has(s.typeId)),
       type: (tid) => hostState.current.info(tid),
       image: () => ({ width: hostState.current.image?.width ?? 1, height: hostState.current.image?.height ?? 1, mpp: hostState.current.image?.mpp ?? 0, free: allowOutsideRef.current }),
       onCreate: (tid, v) => void hostState.current.actions.create(tid, v),
@@ -1002,7 +1006,8 @@ export function ViewerPage() {
 
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
-  useEffect(() => editorRef.current?.sync(), [shapes, hiddenAll]);
+  useEffect(() => layerRef.current?.setLockedTypes(locked), [locked]);
+  useEffect(() => editorRef.current?.sync(), [shapes, hiddenAll, locked]);
 
   // the editor's tool follows the toolbox state
   useEffect(() => {
@@ -1204,7 +1209,18 @@ export function ViewerPage() {
           {types.data
             ?.filter((t) => counts.has(t.id))
             .map((t) => (
-              <label key={t.id} className="type-row">
+              <label
+                key={t.id}
+                className={`type-row ${locked.has(t.id) ? "locked" : ""}`}
+                style={{ "--c": t.color_code } as React.CSSProperties}
+                title={locked.has(t.id) ? "Currently not clickable: these annotations are shown, but cannot be selected or moved (right-click the type to change that)" : "Right-click: make not clickable, change colour"}
+                data-locked={locked.has(t.id) ? "1" : "0"}
+                data-testid="type-row"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setTypeMenu({ x: e.clientX, y: e.clientY, id: t.id, name: t.name, color: t.color_code, locked: locked.has(t.id) });
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={!hidden.has(t.id)}
@@ -1219,12 +1235,36 @@ export function ViewerPage() {
                 />
                 <span className="swatch" style={{ background: t.color_code }} />
                 <span className="type-name">{t.name}</span>
+                {locked.has(t.id) && <span className="type-lock-icon" aria-hidden>⊘</span>}
                 <span className="muted small">{counts.get(t.id)}</span>
               </label>
             ))}
           {annotations.data && shapes.length === 0 && <p className="muted small">No annotations.</p>}
           </>}
         </aside>
+        {typeMenu && (
+          <TypeMenu
+            model={typeMenu}
+            canColor={!readOnly}
+            onClose={() => setTypeMenu(null)}
+            onLock={(l) => {
+              setLocked((o) => {
+                const n = new Set(o);
+                if (l) n.add(typeMenu.id);
+                else n.delete(typeMenu.id);
+                return n;
+              });
+              setTypeMenu(null);
+            }}
+            onColor={(c) => {
+              const tid = typeMenu.id;
+              setTypeMenu(null);
+              api(`/api/v2/annotation-types/${tid}`, { method: "PATCH", json: { color_code: c } })
+                .then(() => qc.invalidateQueries({ queryKey: ["annotation-types"] }))
+                .catch((e) => notify(e instanceof Error && e.message ? `The colour was not changed: ${e.message}` : "The colour was not changed (changing annotation types needs permission)."));
+            }}
+          />
+        )}
         {!readOnly && (
           <button className="tools-toggle btn glass" onClick={() => setToolsOpen((o) => !o)} aria-expanded={toolsOpen} title="Annotation tools">
             {toolsOpen ? "✕" : "✎"}
