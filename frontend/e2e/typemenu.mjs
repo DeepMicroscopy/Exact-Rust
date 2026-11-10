@@ -111,6 +111,9 @@ try {
     return t.id;
   }, IMAGE);
   await openImage(page);
+  // an account with mouse-optimized navigation clicks only in annotate mode
+  const annotate = page.locator('[data-testid="annotate-toggle"][aria-pressed="false"]');
+  if (await annotate.count()) await annotate.click();
   const row = page.locator('[data-testid="type-row"]').first();
   await row.waitFor();
   check((await row.getAttribute("data-locked")) === "0", "the type is clickable at first");
