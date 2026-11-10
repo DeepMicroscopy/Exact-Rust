@@ -117,11 +117,19 @@ try {
     await toggle.waitFor();
     check(/Annotate/.test(await toggle.innerText()) && (await toggle.getAttribute("aria-pressed")) === "false", "mouse-optimized: an Annotate button, off at first");
     check((await page.locator(".toolbox, [data-testid=toolbox]").count()) === 0, "the toolbox is not there outside annotate mode");
-    const c = await screenOf(page, 2000, 1500);
-    await page.mouse.move(c.x, c.y);
+    const c0 = await screenOf(page, 2000, 1500);
+    await page.mouse.move(c0.x, c0.y);
     await page.waitForTimeout(200);
     check((await page.evaluate(() => window.__viewer.canvas.style.cursor)) === "", "no pointer cursor over an annotation");
     const z0 = await page.evaluate(() => window.__viewer.viewport.getZoom());
+    // a drag moves the slide and does not zoom
+    await page.mouse.move(c0.x, c0.y);
+    await page.mouse.down();
+    await page.mouse.move(c0.x + 60, c0.y + 40, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(900);
+    check(Math.abs((await page.evaluate(() => window.__viewer.viewport.getZoom())) - z0) < z0 * 0.02, "a drag in view mode moves the slide without zooming");
+    const c = await screenOf(page, 2000, 1500);
     await page.mouse.click(c.x, c.y);
     await waitFor(async () => (await page.evaluate(() => window.__viewer.viewport.getZoom())) > z0 * 1.3, "a click on the annotation zooms in instead of selecting it");
     await page.waitForTimeout(800);

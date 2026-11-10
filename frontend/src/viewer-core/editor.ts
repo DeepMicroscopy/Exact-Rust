@@ -850,7 +850,7 @@ export class AnnotationEditor {
       // not annotating: no selecting, also not of what is under the pointer; the click zooms (Shift + click out), as in the old EXACT
       const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
       if (this.consumedPress) this.consumedPress = false;
-      else if (this.kind(e) === "mouse" && this.host.legacyNavigation()) this.zoomAt(e, !!oe?.shiftKey);
+      else if (e.quick !== false && this.kind(e) === "mouse" && this.host.legacyNavigation()) this.zoomAt(e, !!oe?.shiftKey);
       e.preventDefaultAction = true;
       return;
     }
