@@ -158,7 +158,11 @@ try {
   const before = await page.evaluate(async (t) => (await (await fetch(`/api/v2/annotation-types/${t}`)).json()).color_code, typeId);
   await row.click({ button: "right" });
   const want = before.toLowerCase() === "#e6194b" ? "#4363d8" : "#e6194b";
-  await page.locator(`[data-testid="type-color"][aria-label="Colour ${want}"]`).click();
+  await page.locator('[data-testid="type-color-input"]').evaluate((el, v) => {
+    el.value = v;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }, want);
   await waitFor(async () => (await page.evaluate(async (t) => (await (await fetch(`/api/v2/annotation-types/${t}`)).json()).color_code, typeId)).toLowerCase() === want, "the colour was saved on the type");
   await waitFor(async () => (await row.locator(".swatch").evaluate((e) => getComputedStyle(e).backgroundColor)) !== "", "the swatch follows");
   // put it back

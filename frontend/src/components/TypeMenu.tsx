@@ -9,8 +9,6 @@ export interface TypeMenuModel {
   locked: boolean;
 }
 
-const PRESETS = ["#e6194b", "#f58231", "#ffe119", "#bfef45", "#3cb44b", "#42d4f4", "#4363d8", "#911eb4", "#f032e6", "#a9a9a9", "#ffffff", "#9a6324"];
-
 /** The right-click menu of an annotation type in the viewer's side list: make it unclickable for now, and change its colour for good. */
 export function TypeMenu({ model, canColor, onClose, onLock, onColor }: { model: TypeMenuModel; canColor: boolean; onClose(): void; onLock(locked: boolean): void; onColor(color: string): void }) {
   const root = useRef<HTMLDivElement>(null);
@@ -37,7 +35,16 @@ export function TypeMenu({ model, canColor, onClose, onLock, onColor }: { model:
       window.removeEventListener("keydown", key, true);
     };
   }, [onClose]);
-  const valid = /^#[0-9a-f]{6}$/i.test(custom);
+  // the picker reports every step while it is dragged; the colour is saved when it is let go ("change")
+  const pick = useRef<HTMLInputElement>(null);
+  const done = useRef(onColor);
+  done.current = onColor;
+  useEffect(() => {
+    const el = pick.current;
+    const f = () => done.current(el!.value);
+    el?.addEventListener("change", f);
+    return () => el?.removeEventListener("change", f);
+  }, [canColor]);
   return (
     <div className="ctx glass" ref={root} style={pos} role="menu" data-testid="type-menu" onContextMenu={(e) => e.preventDefault()}>
       <div className="ctx-title muted small">{model.name}</div>
@@ -49,15 +56,10 @@ export function TypeMenu({ model, canColor, onClose, onLock, onColor }: { model:
         <>
           <hr />
           <div className="ctx-title muted small">Colour (kept for everybody)</div>
-          <div className="type-colors">
-            {PRESETS.map((c) => (
-              <button key={c} className={`type-color ${c.toLowerCase() === model.color.toLowerCase() ? "on" : ""}`} style={{ background: c }} aria-label={`Colour ${c}`} data-testid="type-color" onClick={() => onColor(c)} />
-            ))}
-          </div>
-          <div className="type-custom">
-            <input type="color" value={valid ? custom : "#cc4444"} onChange={(e) => setCustom(e.target.value)} aria-label="Other colour" data-testid="type-color-input" />
-            <button className="btn" disabled={!valid || custom.toLowerCase() === model.color.toLowerCase()} onClick={() => onColor(custom)} data-testid="type-color-apply">Apply</button>
-          </div>
+          <label className="type-custom">
+            <input ref={pick} type="color" value={/^#[0-9a-f]{6}$/i.test(custom) ? custom : "#cc4444"} onChange={(e) => setCustom(e.target.value)} aria-label="Type colour" data-testid="type-color-input" />
+            <span className="muted small">{custom}</span>
+          </label>
         </>
       )}
     </div>
