@@ -112,3 +112,16 @@ def test_a_type_in_use_can_be_saved_with_the_same_shape_but_not_with_another(tri
     assert r.status_code == 200, r.text
     assert c.patch(f"/api/v2/annotation-types/{ta}", json={"vector_type": 1}).status_code == 400
     c.patch(f"/api/v2/annotation-types/{ta}", json={"seg_group": "organs"})
+
+
+def test_deleting_a_type_that_is_still_referenced_says_what_references_it():
+    """A soft-deleted annotation does not count in the list of the type, but blocks its deletion: the answer names it and its image."""
+    c = client("aubreville")
+    c.put(f"/api/v2/image-sets/{SET}/products/{SEG_PRODUCT}")
+    t = make_type(c, "del-detail", None)
+    a = make_mask(c, t)
+    assert c.delete(f"/api/v2/annotations/{a}").status_code in (200, 204)
+    r = c.delete(f"/api/v2/annotation-types/{t}")
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert "deleted annotations" in detail and f"image {NIFTI}" in detail, detail

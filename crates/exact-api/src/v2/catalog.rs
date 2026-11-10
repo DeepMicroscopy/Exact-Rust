@@ -710,6 +710,40 @@ async fn type_usage(s: &AppState, id: i64) -> ApiResult<i64> {
     .map_err(db_err)
 }
 
+/// What keeps a type from being deleted, in words: the kinds of rows (annotations, soft-deleted ones separately, versions of an image set,
+/// plugin results) with their numbers and the first images they are in, so that one can find and remove them.
+async fn usage_report(s: &AppState, id: i64) -> ApiResult<String> {
+    let mut parts = Vec::new();
+    // (what, SQL giving image id, set id, name per row, with `$1` the type)
+    let kinds: [(&str, &str); 4] = [
+        ("annotations", "SELECT i.id, i.name, i.image_set_id FROM annotations_annotation a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1 AND NOT a.deleted"),
+        ("deleted annotations (restore or remove them in the image)", "SELECT i.id, i.name, i.image_set_id FROM annotations_annotation a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1 AND a.deleted"),
+        ("annotation versions of image-set versions", "SELECT i.id, i.name, i.image_set_id FROM annotations_annotationversion a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1"),
+        ("plugin results", "SELECT i.id, i.name, i.image_set_id FROM processing_pluginresultannotation a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1"),
+    ];
+    for (what, sql) in kinds {
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(sql).bind(id).fetch_all(&s.pool).await.map_err(db_err)?;
+        if rows.is_empty() {
+            continue;
+        }
+        let mut per: Vec<((i64, String, i64), usize)> = Vec::new();
+        for r in rows.iter() {
+            match per.iter_mut().find(|(k, _)| k.0 == r.0) {
+                Some((_, n)) => *n += 1,
+                None => per.push((r.clone(), 1)),
+            }
+        }
+        let shown: Vec<String> = per
+            .iter()
+            .take(8)
+            .map(|((iid, name, set), n)| format!("{name} (image {iid}, image set {set}): {n}"))
+            .collect();
+        let more = if per.len() > 8 { format!(", and {} more images", per.len() - 8) } else { String::new() };
+        parts.push(format!("{} {what} in {}{more}", rows.len(), shown.join("; ")));
+    }
+    Ok(parts.join(". "))
+}
+
 async fn delete_type(s: &AppState, id: i64) -> ApiResult<()> {
     let mut tx = s.pool.begin().await.map_err(db_err)?;
     cascade::delete_rows(&mut tx, "annotations_annotationtype", &[id]).await?;
@@ -937,7 +971,7 @@ pub async fn type_delete_h(
     if used > 0 {
         return Err(ApiError::detail(
             StatusCode::CONFLICT,
-            format!("The annotation type is used by {used} annotations, versions or results."),
+            format!("The annotation type is used by {used} annotations, versions or results. {}.", usage_report(&s, id).await?),
         ));
     }
     let exists: bool = sqlx::query_scalar(
