@@ -4,9 +4,14 @@ import { createPortal } from "react-dom";
 /** A dialog over the page: Escape and a click on the backdrop close it, the first button or field gets the focus. */
 export function Modal({ title, onClose, children, wide = false, className = "" }: { title: string; onClose(): void; children: ReactNode; wide?: boolean; className?: string }) {
   const box = useRef<HTMLDivElement>(null);
+  // once, when the dialog opens (not again whenever the page behind it renders and hands in a new onClose): a field of the body first
+  // (the search field of a finder), else a primary button, else the first button
   useEffect(() => {
-    const first = box.current?.querySelector<HTMLElement>("input, select, textarea, button.primary, button.btn");
+    const b = box.current;
+    const first = b?.querySelector<HTMLElement>(".modal-body input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]), .modal-body textarea") ?? b?.querySelector<HTMLElement>("button.primary, button.btn");
     first?.focus();
+  }, []);
+  useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
