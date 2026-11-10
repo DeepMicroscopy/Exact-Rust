@@ -88,6 +88,7 @@ pub fn routes() -> Router<AppState> {
                 .patch(catalog::type_patch_h)
                 .delete(catalog::type_delete_h),
         )
+        .route("/api/v2/annotation-types/{id}/usage", get(catalog::type_usage_h))
         .route(
             "/api/v2/products",
             get(products_list).post(catalog::product_create_h),

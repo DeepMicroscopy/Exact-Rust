@@ -115,13 +115,24 @@ def test_a_type_in_use_can_be_saved_with_the_same_shape_but_not_with_another(tri
 
 
 def test_deleting_a_type_that_is_still_referenced_says_what_references_it():
-    """A soft-deleted annotation does not count in the list of the type, but blocks its deletion: the answer names it and its image."""
+    """A soft-deleted annotation does not count in the list of the type, but blocks its deletion: the answer names it and its image;
+    the usage lists the places; deleting with purge_deleted removes the deleted annotations with the type, live ones still block."""
     c = client("aubreville")
     c.put(f"/api/v2/image-sets/{SET}/products/{SEG_PRODUCT}")
     t = make_type(c, "del-detail", None)
-    a = make_mask(c, t)
-    assert c.delete(f"/api/v2/annotations/{a}").status_code in (200, 204)
+    live = make_mask(c, t)
+    gone = make_mask(c, t)
+    assert c.delete(f"/api/v2/annotations/{gone}").status_code in (200, 204)
+    r = c.delete(f"/api/v2/annotation-types/{t}?purge_deleted=true")
+    assert r.status_code == 409 and "image" in r.json()["detail"], r.text  # a live annotation blocks, purge or not
+    u = c.get(f"/api/v2/annotation-types/{t}/usage").json()
+    assert u["annotations"] >= 1 and u["deleted"] >= 1 and any(p["image"] == NIFTI and p["image_set_name"] for p in u["places"]), u
+    assert c.delete(f"/api/v2/annotations/{live}").status_code in (200, 204)
     r = c.delete(f"/api/v2/annotation-types/{t}")
     assert r.status_code == 409, r.text
     detail = r.json()["detail"]
-    assert "deleted annotations" in detail and f"image {NIFTI}" in detail, detail
+    assert "deleted annotations" in detail and f"image {NIFTI}" in detail and "for good" in detail, detail
+    r = c.delete(f"/api/v2/annotation-types/{t}?purge_deleted=true")
+    assert r.status_code == 204, r.text
+    assert c.get(f"/api/v2/annotation-types/{t}/usage").status_code == 404
+    assert c.get(f"/api/v2/annotations/{gone}").status_code == 404

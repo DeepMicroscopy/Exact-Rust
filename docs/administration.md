@@ -16,6 +16,8 @@ The list on the left is a tree: the teams, each with its products below it (clic
 line, polygon, global …), a default size for fixed-size boxes in pixels, µm or mm, and a key `1`–`9`. An image set uses the types
 of its products.
 
+**Deleting a type** opens a dialog that lists what is still tied to it, image by image (image set, a link to the image, and how many live annotations, deleted annotations, entries in versions of image sets and plugin results). Live annotations and plugin results have to be removed or changed to another type where they are listed first. Annotations that were *deleted* (and could still be restored) can be removed for good together with the type: the dialog warns what that means (they are gone from exports and the API, including their entries in versions of image sets) and asks for a confirmation. Through the API: `GET /api/v2/annotation-types/{id}/usage` gives the same list, `DELETE /api/v2/annotation-types/{id}?purge_deleted=true` does the deletion.
+
 A **segmentation** type can be given a **Group** (a free name). Segmentation types of one product that share a group name *exclude each other* on a volume:
 no voxel is in two of their masks, painting one takes the voxels from the others (see the [user guide](user-guide#3d-segmentation)). An empty group means none.
 The group is stored in the Rust-only table `exact_rust_type_group`, so the Django schema is untouched; Django does not know groups.

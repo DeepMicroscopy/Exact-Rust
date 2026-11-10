@@ -18,7 +18,7 @@ use crate::{
 };
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, post, put},
@@ -744,6 +744,62 @@ async fn usage_report(s: &AppState, id: i64) -> ApiResult<String> {
     Ok(parts.join(". "))
 }
 
+/// `GET /api/v2/annotation-types/{id}/usage`: what references the type, per image: live annotations, soft-deleted ones, versions of image sets,
+/// plugin results. The administration screen shows it before a type is deleted (with the soft-deleted annotations if one agrees).
+pub async fn type_usage_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    require_model_perm(
+        &s,
+        authenticate(&s, &headers, &Method::GET).await?,
+        &Method::DELETE,
+        "annotations",
+        "annotationtype",
+    )
+    .await?;
+    let name: Option<String> = sqlx::query_scalar("SELECT name FROM annotations_annotationtype WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?;
+    let Some(name) = name else {
+        return Err(ApiError::not_found("Not found."));
+    };
+    let rows = sqlx::query(
+        "SELECT i.id, i.name, i.image_set_id, st.name, u.live, u.gone, u.versions, u.results FROM ( \
+           SELECT image_id, count(*) FILTER (WHERE NOT deleted) AS live, count(*) FILTER (WHERE deleted) AS gone, 0::bigint AS versions, 0::bigint AS results \
+             FROM annotations_annotation WHERE annotation_type_id = $1 GROUP BY image_id \
+           UNION ALL SELECT image_id, 0, 0, count(*), 0 FROM annotations_annotationversion WHERE annotation_type_id = $1 GROUP BY image_id \
+           UNION ALL SELECT image_id, 0, 0, 0, count(*) FROM processing_pluginresultannotation WHERE annotation_type_id = $1 GROUP BY image_id \
+         ) u JOIN images_image i ON i.id = u.image_id JOIN images_imageset st ON st.id = i.image_set_id ORDER BY st.name, i.name, i.id",
+    )
+    .bind(id)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let mut places: Vec<Value> = Vec::new();
+    let (mut live, mut gone, mut versions, mut results) = (0i64, 0i64, 0i64, 0i64);
+    for r in &rows {
+        let (l, g, v, x): (i64, i64, i64, i64) = (r.get(4), r.get(5), r.get(6), r.get(7));
+        live += l;
+        gone += g;
+        versions += v;
+        results += x;
+        let image: i64 = r.get(0);
+        if let Some(last) = places.last_mut().filter(|p| p["image"] == json!(image)) {
+            for (k, n) in [("annotations", l), ("deleted", g), ("versions", v), ("results", x)] {
+                last[k] = json!(last[k].as_i64().unwrap_or(0) + n);
+            }
+            continue;
+        }
+        places.push(json!({"image": image, "name": r.get::<String, _>(1), "image_set": r.get::<i64, _>(2), "image_set_name": r.get::<String, _>(3),
+                           "annotations": l, "deleted": g, "versions": v, "results": x}));
+    }
+    Ok(Json(json!({"id": id, "name": name, "annotations": live, "deleted": gone, "versions": versions, "results": results, "places": places})).into_response())
+}
+
 async fn delete_type(s: &AppState, id: i64) -> ApiResult<()> {
     let mut tx = s.pool.begin().await.map_err(db_err)?;
     cascade::delete_rows(&mut tx, "annotations_annotationtype", &[id]).await?;
@@ -958,6 +1014,7 @@ pub async fn type_delete_h(
     State(s): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<i64>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<Response> {
     require_model_perm(
         &s,
@@ -967,13 +1024,6 @@ pub async fn type_delete_h(
         "annotationtype",
     )
     .await?;
-    let used = type_usage(&s, id).await?;
-    if used > 0 {
-        return Err(ApiError::detail(
-            StatusCode::CONFLICT,
-            format!("The annotation type is used by {used} annotations, versions or results. {}.", usage_report(&s, id).await?),
-        ));
-    }
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM annotations_annotationtype WHERE id = $1)",
     )
@@ -983,6 +1033,42 @@ pub async fn type_delete_h(
     .map_err(db_err)?;
     if !exists {
         return Err(ApiError::not_found("Not found."));
+    }
+    // `?purge_deleted=true`: the annotations that were deleted (and can still be restored) go for good with the type, and with them what
+    // hangs on them (versions of image sets). Live annotations and plugin results still stop the deletion.
+    let purge = q.get("purge_deleted").is_some_and(|v| v == "true" || v == "1");
+    let used = type_usage(&s, id).await?;
+    if used > 0 {
+        let blockers: i64 = sqlx::query_scalar(
+            "SELECT (SELECT count(*) FROM annotations_annotation WHERE annotation_type_id = $1 AND NOT deleted) \
+                  + (SELECT count(*) FROM processing_pluginresultannotation WHERE annotation_type_id = $1) \
+                  + (SELECT count(*) FROM annotations_annotationversion v WHERE v.annotation_type_id = $1 \
+                       AND NOT EXISTS (SELECT 1 FROM annotations_annotation a WHERE a.id = v.annotation_id AND a.deleted AND a.annotation_type_id = $1))",
+        )
+        .bind(id)
+        .fetch_one(&s.pool)
+        .await
+        .map_err(db_err)?;
+        if !purge || blockers > 0 {
+            return Err(ApiError::detail(
+                StatusCode::CONFLICT,
+                format!(
+                    "The annotation type is used by {used} annotations, versions or results. {}.{}",
+                    usage_report(&s, id).await?,
+                    if blockers == 0 { " Delete with the deleted annotations to remove them for good." } else { "" }
+                ),
+            ));
+        }
+        let mut tx = s.pool.begin().await.map_err(db_err)?;
+        let gone: Vec<i64> = sqlx::query_scalar("SELECT id FROM annotations_annotation WHERE annotation_type_id = $1 AND deleted")
+            .bind(id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        cascade::delete_rows(&mut tx, "annotations_annotation", &gone).await?;
+        cascade::delete_rows(&mut tx, "annotations_annotationtype", &[id]).await?;
+        tx.commit().await.map_err(db_err)?;
+        return Ok(StatusCode::NO_CONTENT.into_response());
     }
     delete_type(&s, id).await?;
     Ok(StatusCode::NO_CONTENT.into_response())

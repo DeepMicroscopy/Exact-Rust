@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import { Modal } from "./Modal";
+import { DeleteTypeDialog } from "./DeleteTypeDialog";
 
 export interface ProductPerms {
   add_product?: boolean;
@@ -156,6 +157,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
   const [editing, setEditing] = useState<AType | "new" | null>(null);
   const [editProduct, setEditProduct] = useState(false);
   const reload = () => void qc.invalidateQueries({ queryKey: ["admin-types", product.id] });
+  const [deleting, setDeleting] = useState<{ id: number; name: string } | null>(null);
   const run = (fn: () => Promise<unknown>, after: () => void) =>
     void fn().then(
       () => {
@@ -168,6 +170,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
   const canEdit = !!perms.change_annotationtype;
   return (
     <div data-testid="product-panel">
+      {deleting && <DeleteTypeDialog type={deleting} onClose={() => setDeleting(null)} onDone={() => { setDeleting(null); setError(null); reload(); }} />}
       <div className="toolbar">
         <h3>{product.name}</h3>
         <span className="muted small">{teams.find((t) => t.id === product.team)?.name}</span>
@@ -225,7 +228,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
                   </button>
                 )}
                 {perms.delete_annotationtype && (
-                  <button className="btn ghost small danger" onClick={() => window.confirm(`Delete the annotation type ${t.name}? (Deactivate it instead to keep existing annotations.)`) && run(() => api(`/api/v2/annotation-types/${t.id}`, { method: "DELETE" }), reload)}>
+                  <button className="btn ghost small danger" onClick={() => setDeleting({ id: t.id, name: t.name })} data-testid="type-delete">
                     Delete
                   </button>
                 )}
