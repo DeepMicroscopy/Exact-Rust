@@ -109,12 +109,14 @@ input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
 .viewer-title { font-weight: 600; line-height: 1.2; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .viewer-body { position: relative; flex: 1; min-height: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: #000; }
 .osd { width: 100%; height: 100%; } /* OpenSeadragon forces position: relative on its element */
-.viewer-side { position: absolute; top: 12px; left: 12px; width: 230px; max-height: calc(100% - 24px); overflow: auto; padding: 12px; z-index: 3; background: rgba(15, 15, 20, 0.75); }
+.viewer-side { position: absolute; top: 12px; left: 12px; width: 270px; max-height: calc(100% - 24px); overflow: auto; padding: 12px; z-index: 3; background: rgba(15, 15, 20, 0.75); }
 .viewer-error { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 16px 22px; color: var(--danger); z-index: 4; background: rgba(15, 15, 20, 0.9); }
 .viewer-foot { display: flex; align-items: center; gap: 14px; padding: 8px 14px; }
 .viewer-foot input[type="range"] { flex: 1; accent-color: var(--purple); }
 .type-row { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer; font-size: 0.85rem; }
-.type-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.type-name { flex: 1; min-width: 0; overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; } /* a long name takes a second line before it is cut */
+.type-row { align-items: flex-start; }
+.type-row .swatch { margin-top: 2px; }
 .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { background: transparent; border: 0; color: var(--text); padding: 6px 12px; cursor: pointer; font: inherit; }
