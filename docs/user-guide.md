@@ -168,7 +168,7 @@ A segmentation made elsewhere, for example in 3D Slicer or TotalSegmentator (a `
    change the opacity, and read which segment is under the crosshair. The segments are drawn in their own colours on all three planes.
    The volume's **Related images** (right-click the volume in the overview) lists its segmentation files too.
    When several segmentation files are linked to one volume, **only the one you opened is drawn** (the card or the entry in *Related images* opens its own file; the volume opened
-   by itself shows the newest). The others are listed in the Segmentation window, unticked: tick one to show it as well.
+   by itself shows none, and its Segmentation window stays closed until you press the **Segmentation** button). Files that are not drawn are listed in the window, unticked: tick one to show it.
 
 In the **3D render** (**Show 3D render**) the file has its own **Segmentation** checkbox: every segment is drawn in its colour, and switching segments
 off in the Segmentation window changes the render too. The segments usually lie inside the head or body, so switch **Image** off or lower

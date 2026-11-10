@@ -182,8 +182,11 @@ try {
     check((await page.getByRole("checkbox", { name: `Show ${open.name}` }).isChecked()) && !(await page.getByRole("checkbox", { name: `Show ${other.name}` }).isChecked()), "the window has the other file, unticked");
   }
   await page.goto(`${base}/images/${IMAGE}/planes`);
-  await waitFor(async () => (await drawn()).length === 3, "the volume's own page draws a file");
-  check((await drawn()).every((id) => id === String(fileB.id)), "the volume opened by itself shows the newest file only");
+  await page.waitForSelector('[data-testid="linked-toggle"]');
+  await page.waitForTimeout(800);
+  check((await drawn()).length === 0 && (await page.locator('[data-testid="linked-file"]').count()) === 0, "the volume opened by itself shows no linked file and keeps the window closed");
+  await page.locator('[data-testid="linked-toggle"]').click();
+  check((await page.locator('[data-testid="linked-file"]').count()) > 0, "the button opens the window");
   await api("DELETE", `/api/v2/linked-volumes/${fileB.id}`);
 
   // an NRRD that was uploaded as an image (before segmentation files existed): a click offers to convert it; the viewer page does too

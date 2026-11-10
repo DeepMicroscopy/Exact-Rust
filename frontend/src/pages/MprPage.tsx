@@ -161,25 +161,25 @@ export function MprPage() {
   const linkedFiles = useQuery({ queryKey: ["linked-image", id], queryFn: () => api<LinkedFile[]>(`/api/v2/images/${id}/linked-volumes`) });
   const [linkedView, setLinkedView] = useState<Record<number, LinkedView>>({});
   const [linkedOpacity, setLinkedOpacity] = useState(0.6);
-  const [linkedPanel, setLinkedPanel] = useState(true);
+  const [linkedPanel, setLinkedPanel] = useState(() => !!new URLSearchParams(window.location.search).get("seg"));
   const [importing, setImporting] = useState<LinkedFile | null>(null);
   const allProducts = useQuery({ queryKey: ["products"], queryFn: () => listAll<Product>("/api/v2/products", { fields: "id,name,team" }) });
   const linkedAll = linkedFiles.data ?? [];
   const linked: LinkedPane[] = linkedAll.filter((f) => !linkedView[f.id]?.off).map((f) => ({ id: f.id, hide: linkedView[f.id]?.hidden ?? [] }));
-  // Which files are drawn: the one that was opened (`?seg=`), else the newest. Several at once overlap and are not what one wants to look at;
-  // the others are in the window, unticked.
+  // Which files are drawn: only the one that was opened (`?seg=`); a volume opened on its own shows none and keeps the window closed
+  // (the button in the top bar opens it, a tick draws a file). Several at once overlap and are not what one wants to look at.
   const shownFor = useRef<number | null>(null);
   useEffect(() => {
     setLinkedView({});
     shownFor.current = null;
+    setLinkedPanel(!!new URLSearchParams(window.location.search).get("seg"));
   }, [id]);
   useEffect(() => {
     const files = linkedFiles.data;
     if (!files || files.length === 0 || shownFor.current === id) return;
     shownFor.current = id;
     const wanted = Number(search.get("seg"));
-    const chosen = files.find((f) => f.id === wanted) ?? [...files].sort((a, b) => b.time.localeCompare(a.time))[0];
-    setLinkedView(Object.fromEntries(files.map((f) => [f.id, { hidden: [], off: f.id !== chosen.id }])));
+    setLinkedView(Object.fromEntries(files.map((f) => [f.id, { hidden: [], off: f.id !== wanted }])));
   }, [linkedFiles.data, id, search]);
   // the 3D render shows the first linked file that is switched on
   const firstLinked = linkedAll.find((f) => !linkedView[f.id]?.off);
