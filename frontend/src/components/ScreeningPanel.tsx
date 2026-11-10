@@ -114,7 +114,13 @@ export function ScreeningPanel({ viewerRef, imageId, width, height, onClose }: P
       const t = m?.screening_tiles[String(i)];
       const item = v?.world.getItemCount() ? v.world.getItemAt(0) : null;
       if (!v || !t || !item) return;
-      v.viewport.fitBounds(item.imageToViewportRectangle(t.x_min, t.y_min, t.x_max - t.x_min, t.y_max - t.y_min));
+      const r = item.imageToViewportRectangle(t.x_min, t.y_min, t.x_max - t.x_min, t.y_max - t.y_min);
+      // the toolbox lies over the lower part of the slide: the window is fitted into what is above it, so that nothing of it is hidden
+      const view = (v.container as HTMLElement).getBoundingClientRect();
+      const tool = document.querySelector<HTMLElement>(".toolbox")?.getBoundingClientRect();
+      const covered = tool && tool.height > 0 && tool.top < view.bottom && tool.bottom > view.top ? Math.min(view.height * 0.45, Math.max(0, view.bottom - tool.top + 8)) : 0;
+      if (covered > 0 && view.height > covered) r.height = (r.height * view.height) / (view.height - covered);
+      v.viewport.fitBounds(r);
     },
     [viewerRef],
   );
