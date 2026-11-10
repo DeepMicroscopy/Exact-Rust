@@ -158,6 +158,7 @@ export function ViewerPage() {
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   // types that cannot be clicked for now (the annotations are drawn, but do not take part in selecting, so one can annotate on top of them)
   const [locked, setLocked] = useState<Set<number>>(new Set());
+  const menuAt = useRef(0);
   const [typeMenu, setTypeMenu] = useState<TypeMenuModel | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -1216,8 +1217,19 @@ export function ViewerPage() {
                 title={locked.has(t.id) ? "Currently not clickable: these annotations are shown, but cannot be selected or moved (right-click the type to change that)" : "Right-click: make not clickable, change colour"}
                 data-locked={locked.has(t.id) ? "1" : "0"}
                 data-testid="type-row"
+                // a right click (a Ctrl + click on a Mac, a long press) opens the menu and must not tick the box of the row as well
+                onClickCapture={(e) => {
+                  if (e.button !== 0 || e.ctrlKey || Date.now() - menuAt.current < 600) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
+                onMouseDownCapture={(e) => {
+                  if (e.button !== 0 || e.ctrlKey) e.preventDefault();
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
+                  menuAt.current = Date.now();
                   setTypeMenu({ x: e.clientX, y: e.clientY, id: t.id, name: t.name, color: t.color_code, locked: locked.has(t.id) });
                 }}
               >

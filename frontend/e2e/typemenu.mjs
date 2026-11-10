@@ -120,9 +120,19 @@ try {
     await page.waitForTimeout(300);
     return page.locator(".anno-info, [data-testid=annotation-info], .info-panel").count();
   };
+  await row.locator(".type-name").click();
+  check(!(await row.locator('input[type="checkbox"]').isChecked()), "a plain click still switches the type off");
+  await row.locator(".type-name").click();
+  check(await row.locator('input[type="checkbox"]').isChecked(), "and on again");
   // right click on the row: the menu
   await row.click({ button: "right" });
   await page.waitForSelector('[data-testid="type-menu"]');
+  check(await row.locator('input[type="checkbox"]').isChecked(), "a right click does not switch the type off");
+  await page.keyboard.press("Escape");
+  await row.click({ modifiers: ["Control"] });
+  check(await row.locator('input[type="checkbox"]').isChecked(), "a Ctrl + click does not switch the type off either");
+  await page.keyboard.press("Escape");
+  await row.click({ button: "right" });
   await page.locator('[data-testid="type-lock"]').click();
   check((await row.getAttribute("data-locked")) === "1", "the row is marked locked");
   check(/not clickable/i.test((await row.getAttribute("title")) ?? ""), "the tooltip says that the type is currently not clickable");
