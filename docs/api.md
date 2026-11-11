@@ -215,6 +215,37 @@ HTTP/1.1 202 Accepted
 ```
 Optional body fields: `plugin` (a registration plugin id, see `GET /api/v2/registration-plugins`), the plugin's parameters by name (`mode`, `thumbnail_size`, ...), and `create_inverse_registration`. A job that is already open for the pair is reused.
 
+### Queue a registration with DeeperHistReg and wait for it
+Find the plugin first (the default one comes first; DeeperHistReg appears once a worker with the package has announced itself), then queue the job with the plugin's parameters by name:
+```bash
+curl "${H[@]}" /api/v2/registration-plugins            # [{"id":7,"name":"DeeperHistReg",...,"parameters":[...]}, ...]
+curl "${H[@]}" -X POST /api/v2/images/15/register -d '{
+  "target_image": 16, "plugin": 7,
+  "mode": "deformable", "transform_type": "rigid",
+  "thumbnail_size": 4096, "registration_size": 2048,
+  "device": "auto", "sift": true, "superglue": true, "angle_step": 60,
+  "create_inverse_registration": true}'
+```
+```
+HTTP/1.1 202 Accepted
+{"id":230,"source_image":15,"target_image":16,"plugin":7,"status":"queued","registration":null,"error":null,
+ "params":{"mode":"deformable","transform_type":"rigid","thumbnail_size":4096,"registration_size":2048,...}}
+```
+All parameters are optional (defaults: `affine`, `rigid`, 4096, 2048, `auto`, SIFT and SuperGlue on, 60°); at least one of `sift` and `superglue` must be on. A worker running `helpers/queue_worker.py` (with `pip install deeperhistreg`) claims the job. Poll it until it leaves `queued` / `running`; a finished job names its registration, which you can then use as in the examples below:
+```bash
+until [ "$(curl -s "${H[@]}" /api/v2/registration-jobs/230 | jq -r .status)" != "queued" ] ; do sleep 5; done   # then "running" -> "done" / "failed"
+curl "${H[@]}" /api/v2/registration-jobs/230           # {"status":"done","registration":87,...}  or  "error":"CUDA out of memory..."
+curl "${H[@]}" "/api/v2/registrations/87/convert?vector=%7B%22x1%22%3A1500%2C%22y1%22%3A1500%7D"
+```
+With *deformable* the server converts points through the stored deformation field, not just the matrix. In Python with `requests`:
+```python
+s = requests.Session(); s.auth = ("alice", password)           # or headers={"Authorization": f"Bearer {token}"}
+job = s.post(f"{host}/api/v2/images/15/register", json={"target_image": 16, "plugin": 7, "mode": "affine"}).json()
+while (job := s.get(f"{host}/api/v2/registration-jobs/{job['id']}").json())["status"] in ("queued", "running"):
+    time.sleep(5)
+assert job["status"] == "done", job["error"]
+```
+
 ### Register by points
 ```bash
 curl "${H[@]}" -X POST /api/v2/registrations/manual -d '{"source_image":15,"target_image":16,

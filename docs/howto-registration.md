@@ -84,7 +84,7 @@ curl -b jar.txt "$HOST/api/v2/registrations/86/convert?vector=%7B%22x1%22%3A1500
 ```
 A box needs two points (`x1,y1,x2,y2`), a polygon as many as it has. With exact-sync the same is `convert_coodinates` (note Django's spelling) on the registration. See the [API examples](api#examples-registration).
 
-**Script it.** `POST /api/v2/images/{id}/register {"target_image": id}` queues an automatic registration; `POST /api/v2/registrations/manual` registers by points. exact-sync's `register_images` works as before (it waits for the worker).
+**Script it.** `POST /api/v2/images/{id}/register {"target_image": id}` queues an automatic registration; `POST /api/v2/registrations/manual` registers by points. A complete example with DeeperHistReg, its parameters and waiting for the result: [API examples](api#queue-a-registration-with-deeperhistreg-and-wait-for-it). exact-sync's `register_images` works as before (it waits for the worker).
 
 ## When something goes wrong
 
