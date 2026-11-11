@@ -17,6 +17,7 @@ pub mod jobs;
 pub mod linked;
 pub mod move_image;
 pub mod passkeys;
+pub mod access_tokens;
 pub mod plugins;
 pub mod preferences;
 pub mod processing;
@@ -55,6 +56,7 @@ use serde_json::{json, Value};
 pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(passkeys::routes())
+        .merge(access_tokens::routes())
         .merge(welcome::routes())
         .merge(preferences::routes())
         .merge(account::routes())

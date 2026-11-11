@@ -696,6 +696,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .passkey-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
 .passkey-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
 .passkey-list .grow { flex: 1 1 200px; }
+.passkey-list li.inactive { opacity: .6; }
 .nav-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 10px; }
 .nav-card { text-align: left; padding: 12px; border: 2px solid var(--border); border-radius: var(--radius); background: rgba(255, 255, 255, 0.03); color: inherit; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }
 .nav-card[aria-checked="true"] { border-color: var(--purple); background: rgba(150, 110, 255, 0.1); }

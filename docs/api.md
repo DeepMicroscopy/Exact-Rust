@@ -24,7 +24,7 @@ export EXACT_PASSWORD=...   # in your shell, never in a file that is committed
 # HTTP Basic (every request): fine for scripts
 curl -u "alice:$EXACT_PASSWORD" https://exact.example.org/api/v2/auth/me
 
-# A personal access token (made in Django's UI today)
+# A personal access token (made in Preferences -> Access tokens, or see "Access tokens" below)
 curl -H "Authorization: Bearer <token>" https://exact.example.org/api/v2/auth/me
 
 # A session, as the web interface does it
@@ -82,7 +82,7 @@ Pass `next_cursor` as `cursor` to get the next page; the last page has no `next_
 | Area | Endpoints |
 |---|---|
 | Authentication | `POST /auth/login`, `/auth/logout`, `GET /auth/me`, passkeys under `/auth/passkey*`, `/auth/passkeys` |
-| Account | `/me/account`, `/me/email`, `/me/password`, `/me/preferences`, `/me/statistics` |
+| Account | `/me/account`, `/me/email`, `/me/password`, `/me/preferences`, `/me/statistics`, `/me/tokens` (access tokens) |
 | Catalogue | `GET /image-sets`, `/images`, `/annotation-types`, `/products`, `/teams`, `/annotations`, `/verifications`, `/action-logs`, and the generic `/{resource}` lists |
 | Teams | `POST /teams`, `PATCH`/`DELETE /teams/{id}`, `PUT`/`DELETE /teams/{id}/members/{user}`, `GET /teams/{id}/statistics`, `/invitations` |
 | Image sets | `POST /image-sets`, `PATCH`/`DELETE /image-sets/{id}`, `/image-sets/{id}/images` (upload), `/tags`, `/products/{pid}`, `/settings`, `/exports`, `/export-formats`, `/auxiliary-files`, `/annotation-counts` |
@@ -148,6 +148,20 @@ curl -b jar.txt -H "x-csrf-token: $CSRF" -F "files=@slide1.svs" -F "files=@slide
 {"items":[{"id":190,"name":"docs-demo.png","size":1880,"type":"image"}]}
 ```
 Any number of files per request. A ZIP is unpacked (an archive with a `.mrxs`, `.vms` or `.vsi` makes only those files images); documents (`pdf`, `docx`, `xlsx`, `csv`, ...) become *auxiliary files*; `.nrrd` becomes a segmentation file. See [file formats](file-formats).
+
+### Access tokens
+
+A token lets a script or exact-sync use the API as you without your password. Make one in **Preferences → Access tokens**, or through the API with your password or a signed-in session (a token itself cannot make tokens, and neither can an administrator who is impersonating you):
+```bash
+curl -u "alice:$EXACT_PASSWORD" -X POST https://exact.example.org/api/v2/me/tokens -H 'content-type: application/json' \
+     -d '{"name":"analysis script","expires_in_days":90,"read_only":true,"teams":[3]}'
+```
+```json
+{"id":17,"name":"analysis script","prefix":"Qm3xT0pLw9aB","token":"pat_Qm3xT0pLw9aB.<43 characters>","read_only":true,"teams":[3],
+ "created_at":"2026-11-11T08:02:11+00:00","expires_at":"2027-02-09T08:02:11+00:00","last_used_at":null,"revoked_at":null,"active":true}
+```
+**The `token` is in this answer only.** The server keeps just a hash of it, so a lost token is replaced, not recovered. `expires_in_days` (1 to 3650; leave it out for no expiry), `read_only` (the token may only look: every write is refused with 403) and `teams` (ids of teams you belong to; the token then sees only their data; empty means all your teams) are optional.
+`GET /api/v2/me/tokens` lists your tokens with `last_used_at`, `expires_at`, `revoked_at` and `active`. `DELETE /api/v2/me/tokens/{id}` **revokes** an active token at once; deleting a revoked or expired one removes it from the list. Site administrators can list the tokens of any account with `GET /api/v2/admin/tokens?user={id}` and revoke them with `DELETE /api/v2/admin/tokens/{id}`; they never see a secret. Tokens made by the old EXACT (Django) are the same thing and appear in the list.
 
 ## Examples: annotations
 

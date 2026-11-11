@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { passkeysSupported, registerPasskey } from "../auth/webauthn";
+import { AccessTokens } from "../components/AccessTokens";
 import { NavigationDemo } from "../components/NavigationDemo";
 import { usePreferences } from "../hooks/usePreferences";
 
@@ -293,6 +294,10 @@ export function PreferencesPage() {
       <section className="glass">
         <h2>Passkeys</h2>
         <Passkeys />
+      </section>
+      <section className="glass">
+        <h2>Access tokens</h2>
+        <AccessTokens />
       </section>
       <section className="glass">
         <h2>Viewer</h2>

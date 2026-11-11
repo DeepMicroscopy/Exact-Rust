@@ -34,6 +34,7 @@ The Users tab (for administrators) lists everybody. **New user…** creates an a
 * for superusers also a **worker** (a service account, see below) with its permissions.
 
 Edit a user's name and e-mail, give them a **reset link** or a **random password** (shown once), deactivate, make read only or delete them.
+**Tokens** (site administrators) lists the personal access tokens of an account (name, scope, last use, expiry) and revokes them, for example when somebody leaves or a token has leaked; the secrets are never shown. Tokens cannot be made for somebody else.
 The server can also let a superuser impersonate a user (`/api/v2/admin/users/{id}/impersonate`); there is no button for it yet.
 
 **Read only** accounts (reviewers, guests, a test account) see everything their teams give them and can change nothing: the server refuses every create, change

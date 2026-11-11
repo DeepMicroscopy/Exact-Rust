@@ -27,7 +27,7 @@ The interface is a single-page application (React, TypeScript, OpenSeadragon). I
 | **Three planes** | `/images/{id}/planes` | NIfTI and DICOM volumes: axial, coronal and sagittal planes with a crosshair, a 3D render, and 3D segmentation tools. |
 | **Jobs** | `/jobs` | Registrations, analyses and segmentations with their status (queued, running with progress, done, failed with the error). Restart failed jobs, cancel queued or running ones. Shows whether a worker has asked for work lately. |
 | **Administration** | `/admin` | Teams, Products (annotation types), Plugins, Log, Users (for administrators). See [Administration](administration). |
-| **Preferences** | `/preferences` | Email, password, **passkeys**, slide navigation, overlays, an optional **zoom slider**, zoom step of the `+`/`-` keys, **allow annotations outside the image**. |
+| **Preferences** | `/preferences` | Email, password, **passkeys**, **access tokens**, slide navigation, overlays, an optional **zoom slider**, zoom step of the `+`/`-` keys, **allow annotations outside the image**. |
 
 The **pulse icon** in the top bar (site admins) shows system health; the **?** opens help with the keyboard, the mouse and trackpad gestures; **What's new** repeats the welcome tour.
 
