@@ -14,6 +14,7 @@ export interface AccessToken {
   revoked_at: string | null;
   read_only: boolean;
   teams: number[];
+  scopes: string[] | null;
   active: boolean;
   username?: string;
 }
@@ -23,6 +24,18 @@ const why = (e: unknown) => {
   if (e instanceof ApiError) return e.detail;
   return e instanceof Error ? e.message : String(e);
 };
+
+const ABILITIES: { id: string; label: string; hint: string }[] = [
+  { id: "jobs", label: "queue jobs", hint: "start, restart and cancel analyses, registrations and segmentations" },
+  { id: "annotate", label: "annotate", hint: "create, change, verify and delete annotations" },
+  { id: "images", label: "manage images", hint: "upload, rename, move and delete images, change image sets" },
+];
+/** What a token may do, in words. */
+function mayDo(t: AccessToken): string {
+  if (t.read_only) return "only looks";
+  if (!t.scopes) return "full access";
+  return "looks, " + t.scopes.map((s) => ABILITIES.find((a) => a.id === s)?.label ?? s).join(", ");
+}
 
 /** The status of a token in words: active, expired or revoked. */
 function status(t: AccessToken): string {
@@ -41,7 +54,7 @@ function Rows({ tokens, teamNames, onRevoke, testid }: { tokens: AccessToken[]; 
             <b>{t.name}</b>
             {t.username && <span className="muted small"> · {t.username}</span>}{" "}
             <span className="muted small">
-              (<span className="mono">pat_{t.prefix}…</span>) · {t.read_only ? "read only" : "read and write"} ·{" "}
+              (<span className="mono">pat_{t.prefix}…</span>) · {mayDo(t)} ·{" "}
               {t.teams.length ? `teams: ${t.teams.map((id) => teamNames.get(id) ?? `#${id}`).join(", ")}` : "all teams"} · created {day(t.created_at)} · last used {day(t.last_used_at)} · {status(t)}
             </span>
           </span>
@@ -67,13 +80,14 @@ export function AccessTokens() {
   const teamNames = new Map((teams.data ?? []).map((t) => [t.id, t.name]));
   const [name, setName] = useState("");
   const [days, setDays] = useState("90");
-  const [readOnly, setReadOnly] = useState(false);
+  const [access, setAccess] = useState<"full" | "look" | "some">("full");
+  const [abilities, setAbilities] = useState<Set<string>>(new Set(["jobs"]));
   const [only, setOnly] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [made, setMade] = useState<string | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ["tokens"] });
   const create = useMutation({
-    mutationFn: () => api<AccessToken & { token: string }>("/api/v2/me/tokens", { method: "POST", json: { name: name.trim(), expires_in_days: days === "never" ? null : Number(days), read_only: readOnly, teams: [...only] } }),
+    mutationFn: () => api<AccessToken & { token: string }>("/api/v2/me/tokens", { method: "POST", json: { name: name.trim(), expires_in_days: days === "never" ? null : Number(days), read_only: access === "look", ...(access === "some" ? { scopes: [...abilities] } : {}), teams: [...only] } }),
     onSuccess: (t) => {
       setMade(t.token);
       setName("");
@@ -88,7 +102,7 @@ export function AccessTokens() {
     <div>
       <p className="muted small">
         A token lets a script or a program such as exact-sync use the API as you, without your password (<span className="mono">Authorization: Bearer pat_…</span>). Give each use its own token, so that you can revoke one without breaking the others.
-        A token cannot make tokens. A read-only token can only look; a token restricted to teams sees only their data.
+        A token cannot make tokens. A token can be limited to looking, or to looking and queueing jobs, annotating or managing images (so that a script that only starts analyses cannot touch your annotations); a token restricted to teams sees only their data.
       </p>
       <Rows tokens={tokens.data ?? []} teamNames={teamNames} onRevoke={(t) => revoke.mutate(t)} testid="token-list" />
       <div className="row">
@@ -99,10 +113,27 @@ export function AccessTokens() {
           <option value="365">expires in a year</option>
           <option value="never">never expires</option>
         </select>
-        <label className="check" style={{ whiteSpace: "nowrap", width: "auto" }}>
-          <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} data-testid="token-readonly" /> read only
-        </label>
+        <select value={access} onChange={(e) => setAccess(e.target.value as "full" | "look" | "some")} aria-label="What the token may do" data-testid="token-access">
+          <option value="full">may do everything I may</option>
+          <option value="look">may only look (read only)</option>
+          <option value="some">may look and…</option>
+        </select>
       </div>
+      {access === "some" && (
+        <div className="row" data-testid="token-abilities">
+          {ABILITIES.map((a) => (
+            <label className="check" key={a.id} title={a.hint} style={{ whiteSpace: "nowrap", width: "auto" }}>
+              <input
+                type="checkbox"
+                checked={abilities.has(a.id)}
+                data-testid={`token-ability-${a.id}`}
+                onChange={(e) => setAbilities((o) => (e.target.checked ? new Set(o).add(a.id) : new Set([...o].filter((x) => x !== a.id))))}
+              />{" "}
+              {a.label}
+            </label>
+          ))}
+        </div>
+      )}
       {(teams.data?.length ?? 0) > 1 && (
         <div className="row" data-testid="token-teams">
           <span className="muted small">Only these teams (none ticked: all):</span>
@@ -119,7 +150,7 @@ export function AccessTokens() {
         </div>
       )}
       <div className="row">
-        <button className="btn" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()} data-testid="token-create">
+        <button className="btn" disabled={!name.trim() || create.isPending || (access === "some" && abilities.size === 0)} onClick={() => create.mutate()} data-testid="token-create">
           Create token
         </button>
       </div>

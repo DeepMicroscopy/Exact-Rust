@@ -154,14 +154,24 @@ Any number of files per request. A ZIP is unpacked (an archive with a `.mrxs`, `
 A token lets a script or exact-sync use the API as you without your password. Make one in **Preferences → Access tokens**, or through the API with your password or a signed-in session (a token itself cannot make tokens, and neither can an administrator who is impersonating you):
 ```bash
 curl -u "alice:$EXACT_PASSWORD" -X POST https://exact.example.org/api/v2/me/tokens -H 'content-type: application/json' \
-     -d '{"name":"analysis script","expires_in_days":90,"read_only":true,"teams":[3]}'
+     -d '{"name":"nightly registration","expires_in_days":90,"scopes":["jobs"],"teams":[3]}'
 ```
 ```json
-{"id":17,"name":"analysis script","prefix":"Qm3xT0pLw9aB","token":"pat_Qm3xT0pLw9aB.<43 characters>","read_only":true,"teams":[3],
+{"id":17,"name":"nightly registration","prefix":"Qm3xT0pLw9aB","token":"pat_Qm3xT0pLw9aB.<43 characters>","read_only":false,"scopes":["jobs"],"teams":[3],
  "created_at":"2026-11-11T08:02:11+00:00","expires_at":"2027-02-09T08:02:11+00:00","last_used_at":null,"revoked_at":null,"active":true}
 ```
-**The `token` is in this answer only.** The server keeps just a hash of it, so a lost token is replaced, not recovered. `expires_in_days` (1 to 3650; leave it out for no expiry), `read_only` (the token may only look: every write is refused with 403) and `teams` (ids of teams you belong to; the token then sees only their data; empty means all your teams) are optional.
-`GET /api/v2/me/tokens` lists your tokens with `last_used_at`, `expires_at`, `revoked_at` and `active`. `DELETE /api/v2/me/tokens/{id}` **revokes** an active token at once; deleting a revoked or expired one removes it from the list. Site administrators can list the tokens of any account with `GET /api/v2/admin/tokens?user={id}` and revoke them with `DELETE /api/v2/admin/tokens/{id}`; they never see a secret. Tokens made by the old EXACT (Django) are the same thing and appear in the list.
+**The `token` is in this answer only.** The server keeps just a hash of it, so a lost token is replaced, not recovered. `expires_in_days` (1 to 3650; leave it out for no expiry), `read_only` (the token may only look: every write is refused with 403), `scopes` and `teams` (ids of teams you belong to; the token then sees only their data; empty means all your teams) are optional.
+
+**Scopes** limit what a token may do beyond looking (every `GET` always works). Without `scopes` a token is not limited:
+
+| Scope | Allows |
+|---|---|
+| `jobs` | queue, restart and cancel analyses, registrations and segmentations (`POST /images/{id}/analyze`, `/register`, `/auto-segment`, `/registrations/manual`, `/jobs/{kind}/{id}/restart`, `DELETE /jobs/{kind}/{id}`) |
+| `annotate` | create, change, verify and delete annotations and their files, edit segmentations (`/annotations`, `/segmentation/…`, `/api/v1/annotations/annotations/`, `/annotations/api/…`) |
+| `images` | upload, rename, move, crop and delete images, create and change image sets, their tags, products, settings and documents |
+
+A token with a scope list is refused every other write with `403 {"detail":"This token is limited and may not do this."}`, in particular everything that manages accounts, teams, annotation types, products, plugins and workers (a worker that claims jobs uses its own account, not a limited token). `scopes` cannot be combined with `read_only` (which is the narrowest). The answers show `"scopes": null` for a token that is not limited. A token that only queues jobs, for example, is what a nightly script or a pipeline should hold: if it leaks, nobody can read or change anything beyond what the script needed, and it can be revoked without touching anything else. A token that has no business reading your data either should belong to an account of its own, in a team that holds only what it needs.
+`GET /api/v2/me/tokens` lists your tokens with `last_used_at`, `expires_at`, `revoked_at` and `active`. `DELETE /api/v2/me/tokens/{id}` **revokes** an active token at once; deleting a revoked or expired one removes it from the list. Site administrators can list the tokens of any account with `GET /api/v2/admin/tokens?user={id}` and revoke them with `DELETE /api/v2/admin/tokens/{id}`; they never see a secret. Tokens made by the old EXACT (Django) are the same thing and appear in the list. **Scopes are kept in a table of this server's own, so EXACT (Django) does not know them:** while a database is also used by the old EXACT, a token's scopes only limit it on this server, and a token that has scopes is not limited when it is presented to Django.
 
 ## Examples: annotations
 

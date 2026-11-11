@@ -3,8 +3,9 @@
 //! authenticating with them is in `auth.rs`. This is their management:
 //!
 //! - `GET /api/v2/me/tokens`: the caller's tokens, newest first: `id, name, prefix, created_at, last_used_at, expires_at, revoked_at,
-//!   read_only, teams` (team ids; empty = all teams of the account), `active`.
-//! - `POST /api/v2/me/tokens` `{name, expires_in_days?, read_only?, teams?}` -> 201 with the same fields and `token`, the only time the
+//!   read_only, teams` (team ids; empty = all teams of the account), `scopes` (null = not limited, else what the token may do besides
+//!   looking: `jobs`, `annotate`, `images`, see `scope.rs`), `active`.
+//! - `POST /api/v2/me/tokens` `{name, expires_in_days?, read_only?, teams?, scopes?}` -> 201 with the same fields and `token`, the only time the
 //!   secret is ever returned. `teams` must be teams the account belongs to.
 //! - `DELETE /api/v2/me/tokens/{id}`: revokes an active token (204: it stops working at once); deleting one that is already revoked or has
 //!   expired removes the row.
@@ -28,6 +29,7 @@ use axum::{
 };
 use chrono::{DateTime, Duration, Utc};
 use exact_auth::tokens::{generate_pat, hash_token};
+use crate::scope::SCOPES;
 use exact_db::users;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -88,6 +90,14 @@ async fn json_of(s: &AppState, rows: Vec<Row>, with_user: bool) -> ApiResult<Vec
     } else {
         HashMap::new()
     };
+    let scopes: HashMap<i64, Vec<String>> =
+        sqlx::query_as::<_, (i64, Vec<String>)>("SELECT token_id, scopes FROM exact_rust_token_scope WHERE token_id = ANY($1)")
+            .bind(&ids)
+            .fetch_all(&s.pool)
+            .await
+            .map_err(db_err)?
+            .into_iter()
+            .collect();
     let now = Utc::now();
     Ok(rows
         .into_iter()
@@ -97,7 +107,7 @@ async fn json_of(s: &AppState, rows: Vec<Row>, with_user: bool) -> ApiResult<Vec
                 "id": r.id, "name": r.name, "prefix": r.prefix, "created_at": r.created_at.to_rfc3339(),
                 "last_used_at": r.last_used_at.map(|d| d.to_rfc3339()), "expires_at": r.expires_at.map(|d| d.to_rfc3339()),
                 "revoked_at": r.revoked_at.map(|d| d.to_rfc3339()), "read_only": r.read_only,
-                "teams": teams.remove(&r.id).unwrap_or_default(), "active": active,
+                "teams": teams.remove(&r.id).unwrap_or_default(), "scopes": scopes.get(&r.id), "active": active,
             });
             if with_user {
                 v["user"] = json!(r.user_id);
@@ -149,6 +159,8 @@ struct NewToken {
     /// Team ids to restrict it to; none or empty = all teams of the account.
     #[serde(default)]
     teams: Vec<i64>,
+    /// What the token may do besides looking (`jobs`, `annotate`, `images`); none: not limited. Not together with `read_only`.
+    scopes: Option<Vec<String>>,
 }
 
 async fn create(
@@ -165,6 +177,20 @@ async fn create(
         None => None,
         Some(d) if (1..=3650).contains(&d) => Some(Utc::now() + Duration::days(d)),
         Some(_) => return Err(bad("expires_in_days is a whole number from 1 to 3650.")),
+    };
+    let scopes = match b.scopes {
+        None => None,
+        Some(_) if b.read_only => {
+            return Err(bad("A read-only token cannot have scopes: it may only look."))
+        }
+        Some(mut v) => {
+            v.sort();
+            v.dedup();
+            if v.is_empty() || v.iter().any(|x| !SCOPES.contains(&x.as_str())) {
+                return Err(bad("scopes are some of jobs, annotate, images (for a token that only looks, use read_only)."));
+            }
+            Some(v)
+        }
     };
     let mut teams = b.teams;
     teams.sort_unstable();
@@ -201,6 +227,14 @@ async fn create(
         sqlx::query("INSERT INTO users_personalaccesstoken_teams (personalaccesstoken_id, team_id) VALUES ($1, $2)")
             .bind(row.id)
             .bind(t)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+    }
+    if let Some(sc) = &scopes {
+        sqlx::query("INSERT INTO exact_rust_token_scope (token_id, scopes) VALUES ($1, $2)")
+            .bind(row.id)
+            .bind(sc)
             .execute(&mut *tx)
             .await
             .map_err(db_err)?;

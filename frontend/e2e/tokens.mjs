@@ -56,6 +56,29 @@ try {
   await page.waitForFunction((n) => ![...document.querySelectorAll('[data-testid="token-row"]')].some((r) => r.textContent.includes(n)), name);
   check(true, "removing an inactive token takes it off the list");
 
+  // a token limited to jobs: the interface says so and the server holds it to it
+  const ln = `${name}-jobs`;
+  await page.fill('[data-testid="token-name"]', ln);
+  await page.selectOption('[data-testid="token-access"]', "some");
+  check((await page.locator('[data-testid="token-create"]').isDisabled()) === false, "a limited token starts with queue jobs ticked");
+  await page.uncheck('[data-testid="token-ability-jobs"]');
+  check(await page.locator('[data-testid="token-create"]').isDisabled(), "a token that may do nothing but look must be made as read only: no abilities, no Create");
+  await page.check('[data-testid="token-ability-jobs"]');
+  await page.click('[data-testid="token-create"]');
+  const jsecret = await page.locator('[data-testid="secret"]').inputValue();
+  await page.click(".modal-actions .btn.primary");
+  const jrow = page.locator('[data-testid="token-row"]', { hasText: ln });
+  await jrow.waitFor();
+  check(/looks, queue jobs/.test(await jrow.innerText()), "the list says what the token may do: " + (await jrow.innerText()).split("·")[1]);
+  const post = (t, path, body) => page.evaluate(async ([t, path, body]) => (await fetch(path, { method: "POST", credentials: "omit", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify(body) })).status, [t, path, body]);
+  check((await post(jsecret, "/api/v2/annotations", { image: 2, annotation_type: 1, vector: { x1: 1, y1: 1, x2: 5, y2: 5 } })) === 403, "the jobs token cannot annotate");
+  check((await post(jsecret, "/api/v2/me/tokens", { name: "child" })) === 403, "nor make tokens");
+  if (shots) await page.screenshot({ path: `${shots}/token-scoped.png`, fullPage: true });
+  page.once("dialog", (d) => void d.accept());
+  await jrow.locator('[data-testid="token-revoke"]').click();
+  await page.locator('[data-testid="token-row"][data-active="false"]', { hasText: ln }).waitFor();
+  await page.locator('[data-testid="token-row"]', { hasText: ln }).locator('[data-testid="token-revoke"]').click();
+
   // administrator: sees and revokes the tokens of another account
   const mk = await page.evaluate(async (n) => {
     const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
