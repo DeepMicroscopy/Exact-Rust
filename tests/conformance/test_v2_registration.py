@@ -267,3 +267,36 @@ def test_manual_registration_from_point_pairs():
         assert c.delete(f"/api/v2/registrations/{reg}").status_code == 204
     # no right to edit the source image's set
     assert client("rt_outsider").post("/api/v2/registrations/manual", json={"source_image": JSRC, "target_image": JTGT, "points": [{"source": [1, 1], "target": [4, 5]}]}).status_code in (403, 404)
+
+
+@pytest.mark.skipif(not os.environ.get("REG_E2E"), reason="REG_E2E=1 runs the real registration worker")
+def test_real_worker_registers_with_the_multistage_plugin():
+    """The plugin that refines a feature based alignment on the slides: announced by the worker, queued through the API with its own
+    parameters, run, and the matrix stored. REG_SRC / REG_TGT name the pair (default: the same as the DeeperHistReg test)."""
+    c = client()
+    py = os.environ.get("REGISTRATION_PYTHON", "/opt/miniconda3/envs/env311/bin/python")
+    src, tgt = int(os.environ.get("REG_SRC", 43)), int(os.environ.get("REG_TGT", 2))
+    import importlib.util
+    import sys
+
+    sys.path.insert(0, str(ROOT / "helpers"))
+    spec = importlib.util.spec_from_file_location("multistage_plugin", ROOT / "helpers/plugins/multistage_registration.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # what the worker announces on start: the server keeps only the parameters that the announced schema names
+    plugin = c.post("/api/v2/plugins/register", json=mod.PLUGINS[0].describe()).json()
+    j = c.post(f"/api/v2/images/{src}/register", json={"target_image": tgt, "plugin": plugin["id"], "initial": "sift", "thumbnail_size": 1024,
+                                                       "refine_size": 1024, "tile_size": 128, "rounds": 2}).json()
+    assert j["params"]["initial"] == "sift", j
+    env = {**os.environ, "EXACT_URL": BASE, "EXACT_USER": "aubreville", "EXACT_PASSWORD": PW,
+           "EXACT_DIR": os.environ.get("REGISTRATION_EXACT_DIR", str(pathlib.Path.home() / "code/Exact/exact"))}
+    out = subprocess.run([py, str(ROOT / "helpers/queue_worker.py"), "--only", "Multi-stage", "--once", "--name", "e2e-multistage"], env=env, capture_output=True, text=True, timeout=1800)
+    job = c.get(f"/api/v2/registration-jobs/{j['id']}").json()
+    assert job["status"] == "done", out.stdout + out.stderr
+    reg = c.get(f"/api/v2/registrations/{job['registration']}").json()
+    assert reg["transformation_matrix"] and reg["registration_error"] >= 0
+    conv = c.get(f"/api/v2/registrations/{reg['id']}/convert", params={"vector": '{"x1": 1000, "y1": 1000}'})
+    assert conv.status_code == 200, conv.text
+    # the schema the worker announced is what the dialog shows: a choice and the numbers with their limits
+    schema = {p["name"]: p for p in next(x for x in c.get("/api/v2/registration-plugins").json()["items"] if x["id"] == plugin["id"])["parameters_schema"]}
+    assert schema["initial"]["type"] == "choice" and schema["refine_size"]["max"] == 8192 and schema["refine"]["default"] is True
