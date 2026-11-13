@@ -66,7 +66,8 @@ class MultiStageRegistration(RegistrationPlugin):
         if previous is not None:
             method = "the existing DeeperHistReg registration"
             m0, coarse_error = previous, float("nan")
-            ctx.log("starting from the DeeperHistReg registration of this pair; no rough alignment needed")
+            ctx.log("starting from the DeeperHistReg registration of this pair" + (" (inverted, made for the other direction)" if ctx.existing.get("inverted") else "")
+                    + "; no rough alignment needed")
         elif method == "auto":
             method = "deeperhistreg" if coarse_align.dhr_available() else "sift"
         if previous is None:

@@ -237,7 +237,7 @@ HTTP/1.1 202 Accepted
 {"id":221,"source_image":15,"target_image":16,"plugin":3,"status":"queued","registration":null,
  "created_at":"2026-11-07T20:35:07.788722Z","created_by":1,"worker":null,"error":null,"params":{}}
 ```
-Optional body fields: `plugin` (a registration plugin id, see `GET /api/v2/registration-plugins`), the plugin's parameters by name (`mode`, `thumbnail_size`, ...), and `create_inverse_registration`. A job that is already open for the pair is reused.
+Optional body fields: `plugin` (a registration plugin id, see `GET /api/v2/registration-plugins`), the plugin's parameters by name (`mode`, `thumbnail_size`, ...), and `create_inverse_registration` (when the job is done, the registration of the other direction is made, or replaced by the inverse of the new one if it exists). A job that is already open for the pair is reused.
 
 ### Queue a registration with DeeperHistReg and wait for it
 Find the plugin first (the default one comes first; DeeperHistReg appears once a worker with the package has announced itself), then queue the job with the plugin's parameters by name:

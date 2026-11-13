@@ -558,8 +558,36 @@ pub(crate) async fn claim_one(
             .map_err(db_err)?;
         return Ok(None);
     };
-    // a registration of this pair that DeeperHistReg made last (its file is the pickled transform): a refining plugin starts from it
-    let existing: Option<Value> = sqlx::query(
+    // a registration of this pair that DeeperHistReg made last (its file is the pickled transform): a refining plugin starts from it,
+    // also when it was made for the other direction (then its matrix is inverted)
+    let existing = match dhr_registration(s, source, target, id).await? {
+        Some(v) => Some(v),
+        None => match dhr_registration(s, target, source, id).await? {
+            Some(mut v) => match v.get("matrix").and_then(|t| inverse_matrix(t).ok()) {
+                Some(inv) => {
+                    v["matrix"] = inv;
+                    v["inverted"] = json!(true);
+                    Some(v)
+                }
+                None => None,
+            },
+            None => None,
+        },
+    };
+    Ok(Some(
+        json!({"id": id, "source_image": source, "target_image": target, "source_path": sp, "target_path": tp, "params": params, "plugin": plugin, "existing": existing}),
+    ))
+}
+
+/// `{"plugin": "DeeperHistReg", "matrix", "error"}` when the registration of `source` onto `target` was last made by DeeperHistReg
+/// (a job of a plugin of that name finished last, and the registration still has the pickled transform it stored).
+async fn dhr_registration(
+    s: &AppState,
+    source: i64,
+    target: i64,
+    job: i64,
+) -> ApiResult<Option<Value>> {
+    let row = sqlx::query(
         "SELECT r.transformation_matrix, r.registration_error FROM images_imageregistration r \
          WHERE r.source_image_id = $1 AND r.target_image_id = $2 AND COALESCE(r.file, '') <> '' AND r.transformation_matrix IS NOT NULL \
            AND (SELECT pl.name FROM processing_pluginjob q JOIN processing_plugin pl ON pl.id = q.plugin_id AND pl.plugin_type = 2 \
@@ -569,14 +597,11 @@ pub(crate) async fn claim_one(
     )
     .bind(source)
     .bind(target)
-    .bind(id)
+    .bind(job)
     .fetch_optional(&s.pool)
     .await
-    .map_err(db_err)?
-    .map(|r| json!({"plugin": "DeeperHistReg", "matrix": r.get::<Value, _>(0), "error": r.get::<Option<f64>, _>(1)}));
-    Ok(Some(
-        json!({"id": id, "source_image": source, "target_image": target, "source_path": sp, "target_path": tp, "params": params, "plugin": plugin, "existing": existing}),
-    ))
+    .map_err(db_err)?;
+    Ok(row.map(|r| json!({"plugin": "DeeperHistReg", "matrix": r.get::<Value, _>(0), "error": r.get::<Option<f64>, _>(1)})))
 }
 
 async fn owned_running(s: &AppState, id: i64, worker: &str) -> ApiResult<(i64, i64, Value)> {
@@ -708,6 +733,7 @@ async fn complete(
         .map_err(db_err)?,
     };
     let mut stored = None;
+    let mut stale_files: Vec<String> = vec![];
     if !payload.files.iter().any(|f| f.field == "file") {
         // a result without a file converts by its matrix: an older plugin's file must not shadow it
         if let Some((_, Some(old))) = &existing {
@@ -737,7 +763,10 @@ async fn complete(
         .get("create_inverse_registration")
         .is_some_and(|v| v.as_bool() == Some(true))
     {
-        let _ = insert_inverse(&mut tx, reg).await;
+        // a finished job replaces the inverse that an earlier result left, so that the two directions agree
+        if let Ok(Some(old_file)) = refresh_inverse(&mut tx, reg).await {
+            stale_files.push(old_file);
+        }
     }
     sqlx::query("UPDATE processing_pluginjob SET processing_complete = 100, updated_time = now() WHERE id::bigint = $1")
         .bind(id)
@@ -748,6 +777,9 @@ async fn complete(
             db_err(e)
         })?;
     tx.commit().await.map_err(db_err)?;
+    for f in stale_files {
+        media::remove(&s, &f).await;
+    }
     Ok(Json(registration_json(&s, &p, &headers, reg, true).await?).into_response())
 }
 
@@ -774,6 +806,44 @@ fn inverse_matrix(t: &Value) -> ApiResult<Value> {
         "t_10": ic, "t_11": id, "t_12": -(ic * tx + id * ty),
         "t_20": m(t, "t_20")?, "t_21": m(t, "t_21")?, "t_22": m(t, "t_22")?,
     }))
+}
+
+/// The inverse of registration `id`, made or brought up to date: an inverse that exists is given the new matrix (and loses its own
+/// file, which would shadow it); returns that file's path, which the caller removes once the transaction is committed.
+async fn refresh_inverse(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: i64,
+) -> ApiResult<Option<String>> {
+    let r = sqlx::query("SELECT source_image_id, target_image_id, transformation_matrix, registration_error, runtime FROM images_imageregistration WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db_err)?
+        .ok_or_else(|| ApiError::not_found("Not found."))?;
+    let (source, target): (i64, i64) = (r.get(0), r.get(1));
+    let matrix: Option<Value> = r.get(2);
+    let inv = inverse_matrix(
+        &matrix.ok_or_else(|| bad("The registration has no transformation matrix yet."))?,
+    )?;
+    let old: Option<(i64, Option<String>)> = sqlx::query_as("SELECT id, file FROM images_imageregistration WHERE source_image_id = $1 AND target_image_id = $2")
+        .bind(target)
+        .bind(source)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db_err)?;
+    let Some((old_id, old_file)) = old else {
+        insert_inverse(tx, id).await?;
+        return Ok(None);
+    };
+    sqlx::query("UPDATE images_imageregistration SET transformation_matrix = $2, registration_error = $3, runtime = $4, registration_points = NULL, file = NULL WHERE id = $1")
+        .bind(old_id)
+        .bind(inv)
+        .bind(r.get::<f64, _>(3))
+        .bind(r.get::<i32, _>(4))
+        .execute(&mut **tx)
+        .await
+        .map_err(db_err)?;
+    Ok(old_file.filter(|f| !f.is_empty()))
 }
 
 /// Creates the registration of target onto source from this one. `Err` if it exists already.

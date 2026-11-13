@@ -327,3 +327,45 @@ def test_claim_offers_the_deeperhistreg_registration_of_the_pair_and_a_result_wi
             pass
         subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc",
                         "delete from processing_plugin where package = 'tests-dhr'"], capture_output=True)
+
+
+def test_a_finished_job_refreshes_the_inverse_and_the_reverse_deeperhistreg_registration_is_offered_inverted():
+    c = client()
+    dhr = c.post("/api/v2/plugins/register", json={"name": "DeeperHistReg", "author": "tests", "package": "tests-dhr", "plugin_type": 2}).json()["id"]
+    try:
+        # DeeperHistReg registers JTGT onto JSRC (with its file) and the inverse is made with it
+        assert c.post(f"/api/v2/images/{JTGT}/register", json={"target_image": JSRC, "plugin": dhr, "create_inverse_registration": True}).status_code == 202
+        assert fake_worker(c, "w1")["plugin"]["id"] == dhr
+        inv = c.get("/api/v2/registrations", params={"source_image": JSRC, "target_image": JTGT}).json()["items"][0]
+        assert inv["transformation_matrix"]["t_00"] == pytest.approx(0.5)
+        # the other direction: the claim offers the DeeperHistReg matrix, inverted
+        assert c.post(f"/api/v2/images/{JSRC}/register", json={"target_image": JTGT, "create_inverse_registration": True}).status_code == 202
+        job = c.post("/api/v2/registration-jobs/claim", json={"worker": "w2"}).json()
+        assert job["existing"]["plugin"] == "DeeperHistReg" and job["existing"]["inverted"] is True, job
+        assert job["existing"]["matrix"]["t_00"] == pytest.approx(0.5)
+        # the refined result replaces the inverse that exists, so that both directions agree
+        done = c.post(f"/api/v2/registration-jobs/{job['id']}/complete", json={"worker": "w2", "transformation_matrix": matrix(4.0), "registration_error": 0.1, "runtime": 1})
+        assert done.status_code == 200, done.text
+        back = c.get("/api/v2/registrations", params={"source_image": JTGT, "target_image": JSRC}).json()["items"][0]
+        assert back["transformation_matrix"]["t_00"] == pytest.approx(0.25) and back["registration_error"] == pytest.approx(0.1)
+        assert back["file"] is None
+        out = c.get(f"/api/v2/registrations/{back['id']}/convert", params={"vector": '{"x1": 40, "y1": 0}'}).json()
+        assert out["x1"] == pytest.approx(10.0)  # the inverse of x -> 4 x
+        # without the flag an inverse is left alone
+        assert c.post(f"/api/v2/images/{JSRC}/register", json={"target_image": JTGT}).status_code == 202
+        job = c.post("/api/v2/registration-jobs/claim", json={"worker": "w3"}).json()
+        c.post(f"/api/v2/registration-jobs/{job['id']}/complete", json={"worker": "w3", "transformation_matrix": matrix(8.0), "registration_error": 0.1, "runtime": 1})
+        again = c.get("/api/v2/registrations", params={"source_image": JTGT, "target_image": JSRC}).json()["items"][0]
+        assert again["transformation_matrix"]["t_00"] == pytest.approx(0.25)
+        # the manual inverse still refuses to overwrite
+        reg = c.get("/api/v2/registrations", params={"source_image": JSRC, "target_image": JTGT}).json()["items"][0]["id"]
+        assert c.post(f"/api/v2/registrations/{reg}/inverse").status_code == 409
+    finally:
+        drain = client()
+        while fake_worker(drain, "drain", fail=True):
+            pass
+        for a, b in ((JTGT, JSRC),):
+            for r in drain.get("/api/v2/registrations", params={"source_image": a, "target_image": b}).json()["items"]:
+                drain.delete(f"/api/v2/registrations/{r['id']}")
+        subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc",
+                        "delete from processing_plugin where package = 'tests-dhr'"], capture_output=True)
