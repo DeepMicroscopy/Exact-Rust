@@ -153,6 +153,37 @@ def test_the_plugin_registers_two_stains_to_within_a_few_pixels(pair, monkeypatc
     assert error(m0, m_true, w, h).mean() > error(m, m_true, w, h).mean()
 
 
+def test_an_existing_deeperhistreg_registration_replaces_the_rough_alignment(pair, monkeypatch):
+    import importlib.util
+
+    import coarse_align
+
+    src_img, tgt_img, m_true, (w, h) = pair[0].img, pair[1].img, pair[2], pair[3]
+    spec = importlib.util.spec_from_file_location("multistage_plugin", pathlib.Path(ra.__file__).parent / "plugins" / "multistage_registration.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    slides = {"src": FakeSlide(src_img), "tgt": FakeSlide(tgt_img)}
+    monkeypatch.setattr(mod, "open_slide", lambda path, exact_dir: slides[path])
+    monkeypatch.setattr(coarse_align, "sift_affine", lambda *a, **k: (_ for _ in ()).throw(AssertionError("the rough alignment must be skipped")))
+    plugin = mod.PLUGINS[0]
+    off = m_true.copy()
+    off[0, 2] += 12.0  # what a feature based registration is typically off by
+    off[1, 2] -= 9.0
+    existing = {"plugin": "DeeperHistReg", "matrix": {f"t_{i}{j}": float(off[i][j]) for i in range(3) for j in range(3)}, "error": 3.0}
+    logs = []
+    ctx = type("Ctx", (), {"exact_dir": None, "log": staticmethod(logs.append), "existing": existing})()
+    res = plugin.register("src", "tgt", {**plugin.defaults(), "refine_size": 2048, "tile_size": 160, "rounds": 2}, ctx)
+    m = np.array([[res.matrix[f"t_{i}{j}"] for j in range(3)] for i in range(3)])
+    assert any("no rough alignment needed" in line for line in logs)
+    assert error(m, m_true, w, h).max() < 4.0 < error(off, m_true, w, h).max()
+    # a matrix that cannot be right is not used
+    bad = {**existing, "matrix": {**existing["matrix"], "t_00": 0.0, "t_11": 0.0, "t_01": 0.0, "t_10": 0.0}}
+    assert mod.reusable(bad, (0, 0, w, h), (0, 0, w, h)) is None
+    assert mod.reusable(None, (0, 0, w, h), (0, 0, w, h)) is None
+    far = {**existing, "matrix": {**existing["matrix"], "t_02": 50.0 * w}}
+    assert mod.reusable(far, (0, 0, w, h), (0, 0, w, h)) is None
+
+
 def test_the_rotation_search_finds_a_half_turn(pair):
     """A source that is turned by 180 degrees has no SIFT matches that agree; the rotation search finds the turn."""
     import coarse_align

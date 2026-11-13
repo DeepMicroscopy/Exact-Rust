@@ -558,8 +558,24 @@ pub(crate) async fn claim_one(
             .map_err(db_err)?;
         return Ok(None);
     };
+    // a registration of this pair that DeeperHistReg made last (its file is the pickled transform): a refining plugin starts from it
+    let existing: Option<Value> = sqlx::query(
+        "SELECT r.transformation_matrix, r.registration_error FROM images_imageregistration r \
+         WHERE r.source_image_id = $1 AND r.target_image_id = $2 AND COALESCE(r.file, '') <> '' AND r.transformation_matrix IS NOT NULL \
+           AND (SELECT pl.name FROM processing_pluginjob q JOIN processing_plugin pl ON pl.id = q.plugin_id AND pl.plugin_type = 2 \
+                  JOIN processing_pluginjobimage t ON t.job_id = q.id AND t.position = 1 \
+                WHERE q.image_id = $1 AND t.image_id = $2 AND q.processing_complete = 100 AND q.id::bigint <> $3 \
+                ORDER BY q.updated_time DESC, q.id DESC LIMIT 1) ILIKE '%deeperhistreg%'",
+    )
+    .bind(source)
+    .bind(target)
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(db_err)?
+    .map(|r| json!({"plugin": "DeeperHistReg", "matrix": r.get::<Value, _>(0), "error": r.get::<Option<f64>, _>(1)}));
     Ok(Some(
-        json!({"id": id, "source_image": source, "target_image": target, "source_path": sp, "target_path": tp, "params": params, "plugin": plugin}),
+        json!({"id": id, "source_image": source, "target_image": target, "source_path": sp, "target_path": tp, "params": params, "plugin": plugin, "existing": existing}),
     ))
 }
 
@@ -692,6 +708,17 @@ async fn complete(
         .map_err(db_err)?,
     };
     let mut stored = None;
+    if !payload.files.iter().any(|f| f.field == "file") {
+        // a result without a file converts by its matrix: an older plugin's file must not shadow it
+        if let Some((_, Some(old))) = &existing {
+            media::remove(&s, old).await;
+            sqlx::query("UPDATE images_imageregistration SET file = NULL WHERE id = $1")
+                .bind(reg)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
+        }
+    }
     if let Some(up) = payload.files.iter().find(|f| f.field == "file") {
         let name = format!("{source}_{target}.pickle");
         if let Some((_, Some(old))) = &existing {

@@ -300,3 +300,30 @@ def test_real_worker_registers_with_the_multistage_plugin():
     # the schema the worker announced is what the dialog shows: a choice and the numbers with their limits
     schema = {p["name"]: p for p in next(x for x in c.get("/api/v2/registration-plugins").json()["items"] if x["id"] == plugin["id"])["parameters_schema"]}
     assert schema["initial"]["type"] == "choice" and schema["refine_size"]["max"] == 8192 and schema["refine"]["default"] is True
+
+
+def test_claim_offers_the_deeperhistreg_registration_of_the_pair_and_a_result_without_file_replaces_it():
+    c = client()
+    dhr = c.post("/api/v2/plugins/register", json={"name": "DeeperHistReg", "author": "tests", "package": "tests-dhr", "plugin_type": 2}).json()["id"]
+    try:
+        assert c.post(f"/api/v2/images/{JSRC}/register", json={"target_image": JTGT, "plugin": dhr}).status_code == 202
+        assert fake_worker(c, "w1")["plugin"]["id"] == dhr  # completes with a file, as DeeperHistReg does
+        assert c.post(f"/api/v2/images/{JSRC}/register", json={"target_image": JTGT}).status_code == 202
+        r = c.post("/api/v2/registration-jobs/claim", json={"worker": "w2"})
+        job = r.json()
+        assert job["plugin"]["id"] != dhr and job["existing"]["plugin"] == "DeeperHistReg", job
+        assert job["existing"]["matrix"]["t_00"] == 2.0 and job["existing"]["error"] == 0.5
+        done = c.post(f"/api/v2/registration-jobs/{job['id']}/complete", json={"worker": "w2", "transformation_matrix": matrix(3.0), "registration_error": 0.1, "runtime": 1})
+        assert done.status_code == 200, done.text
+        # the refined matrix converts as itself: the pickle of the first plugin is gone
+        reg = c.get("/api/v2/registrations", params={"source_image": JSRC, "target_image": JTGT}).json()["items"][0]
+        out = c.get(f"/api/v2/registrations/{reg['id']}/convert", params={"vector": '{"x1": 10, "y1": 0}'})
+        assert out.status_code == 200 and out.json()["x1"] == pytest.approx(30.0), out.text
+        assert c.post(f"/api/v2/images/{JSRC}/register", json={"target_image": JTGT}).status_code == 202
+        assert c.post("/api/v2/registration-jobs/claim", json={"worker": "w3"}).json()["existing"] is None
+    finally:
+        drain = client()
+        while fake_worker(drain, "drain", fail=True):
+            pass
+        subprocess.run([f"{os.environ.get('PGBIN', '/Applications/Postgres.app/Contents/Versions/latest/bin')}/psql", "-h", "127.0.0.1", "-d", os.environ.get("RUST_DB", "exact_rust_test"), "-Atc",
+                        "delete from processing_plugin where package = 'tests-dhr'"], capture_output=True)

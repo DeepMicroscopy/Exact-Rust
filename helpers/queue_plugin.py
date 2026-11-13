@@ -10,6 +10,7 @@ To write a registration plugin: derive from `RegistrationPlugin`, set `name` and
 An image analysis plugin (a detector, ...) derives from `ImageAnalysisPlugin` and implements `analyze`: it gets the path of
 the image file on the server and returns detections (see helpers/plugins/midog2025_fcos.py).
 """
+import dataclasses
 from dataclasses import dataclass, field
 
 IMAGE_ANALYSIS, REGISTRATION = 1, 2
@@ -31,6 +32,7 @@ class Context:
     exact_dir: str | None = None  # an EXACT checkout (its `exact` folder): its slide readers handle formats OpenSlide does not
     log: callable = print
     progress: callable = lambda percent: None  # an analysis plugin reports 0..99 while it works
+    existing: dict | None = None  # registration: the pair's current registration when DeeperHistReg made it: {"plugin", "matrix": {t_00..t_22}, "error"}
 
 
 class Plugin:
@@ -77,6 +79,7 @@ class RegistrationPlugin(Plugin):
 
     def run(self, job, ctx):
         params = {**self.defaults(), **(job.get("params") or {})}
+        ctx = dataclasses.replace(ctx, existing=job.get("existing"))
         return self.register(job["source_path"], job["target_path"], params, ctx)
 
 

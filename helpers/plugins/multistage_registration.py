@@ -35,6 +35,7 @@ class MultiStageRegistration(RegistrationPlugin):
     parameters = [
         param("initial", "choice", "auto", "Rough alignment", "DeeperHistReg when it is installed on the worker, else SIFT; pick one to force it.",
               choices=["auto", "deeperhistreg", "sift"]),
+        param("reuse", "bool", True, "Reuse DeeperHistReg", "When the pair already has a DeeperHistReg registration, start the refinement from its matrix and skip the rough alignment."),
         param("transform_type", "choice", "affine", "Rough transform", "DeeperHistReg's initial transform: rigid (rotation, shift) or affine.", choices=["rigid", "affine"]),
         param("thumbnail_size", "int", 4096, "Overview size", "Longer edge in pixels of the overviews of the rough alignment.", min=512, max=16384),
         param("registration_size", "int", 2048, "Registration size", "DeeperHistReg: longer edge in pixels the alignment is computed on (lower it on 'CUDA out of memory').", min=256, max=8192),
@@ -61,13 +62,19 @@ class MultiStageRegistration(RegistrationPlugin):
         box_src, box_tgt = ra.tissue_bounds(ra.SlideReader(src_slide)), ra.tissue_bounds(ra.SlideReader(tgt_slide))
         ctx.log(f"tissue at {[round(v) for v in box_src]} and {[round(v) for v in box_tgt]}")
         method = params["initial"]
-        if method == "auto":
+        previous = reusable(getattr(ctx, "existing", None), box_src, box_tgt) if params.get("reuse", True) and method in ("auto", "deeperhistreg") else None
+        if previous is not None:
+            method = "the existing DeeperHistReg registration"
+            m0, coarse_error = previous, float("nan")
+            ctx.log("starting from the DeeperHistReg registration of this pair; no rough alignment needed")
+        elif method == "auto":
             method = "deeperhistreg" if coarse_align.dhr_available() else "sift"
-        if method == "deeperhistreg" and not coarse_align.dhr_available():
-            raise ValueError("DeeperHistReg is not installed in this Python (pip install deeperhistreg); choose SIFT or auto.")
-        coarse = coarse_align.deeperhistreg_affine if method == "deeperhistreg" else coarse_align.sift_affine
-        m0, coarse_error = coarse(src_slide, tgt_slide, box_src, box_tgt, params, ctx.log)
-        ctx.log(f"rough alignment ({method}) done after {time.time() - started:.0f} s")
+        if previous is None:
+            if method == "deeperhistreg" and not coarse_align.dhr_available():
+                raise ValueError("DeeperHistReg is not installed in this Python (pip install deeperhistreg); choose SIFT or auto.")
+            coarse = coarse_align.deeperhistreg_affine if method == "deeperhistreg" else coarse_align.sift_affine
+            m0, coarse_error = coarse(src_slide, tgt_slide, box_src, box_tgt, params, ctx.log)
+            ctx.log(f"rough alignment ({method}) done after {time.time() - started:.0f} s")
         m, error = m0, coarse_error
         if params["refine"]:
             opt = ra.Options(work_edge=int(params["refine_size"]), tile=int(params["tile_size"]), rounds=int(params["rounds"]))
@@ -81,6 +88,24 @@ class MultiStageRegistration(RegistrationPlugin):
             error = 0.0
         return RegistrationResult(matrix={f"t_{i}{j}": float(m[i][j]) for i in range(3) for j in range(3)}, error=float(error),
                                   runtime=int(time.time() - started), file=None)
+
+
+def reusable(existing, box_src, box_tgt):
+    """The matrix of the pair's existing DeeperHistReg registration (3x3), when it is sound: finite, not mirrored or degenerate, and
+    the source tissue lands near the target tissue. None otherwise (then the rough alignment is made as usual)."""
+    try:
+        e = existing["matrix"]
+        m = np.array([[float(e[f"t_{i}{j}"]) for j in range(3)] for i in range(3)])
+    except (TypeError, KeyError, ValueError):
+        return None
+    if not np.isfinite(m).all() or abs(np.linalg.det(m[:2, :2])) < 1e-6 or not np.allclose(m[2], [0, 0, 1], atol=1e-6):
+        return None
+    x, y, w, h = box_src
+    centre = (m @ np.array([x + w / 2, y + h / 2, 1.0]))[:2]
+    tx, ty, tw, th = box_tgt
+    if abs(centre[0] - (tx + tw / 2)) > tw or abs(centre[1] - (ty + th / 2)) > th:
+        return None
+    return m
 
 
 def corner_shift(m_a, m_b, box):
