@@ -28,6 +28,12 @@ The server **writes** to the image store (uploads, moving and deleting images, p
 and `EXACT_NIFTI_CACHE` (inflated `.nii.gz` volumes, grows) on their own folders.
 
 ## 2. Database
+**A new installation without existing EXACT data** needs no dump and no Django: on an empty database `exact-cli migrate` (and so the
+container's first start) creates EXACT's tables itself (`crates/exact-db/bootstrap/exact_base_schema.sql`: what EXACT's Django migrations
+create, including their migration records, so the original EXACT can still be pointed at the database later), then exact-rust's own.
+Create the first account afterwards: `dc run --rm server exact-cli create-superuser --username admin --team <team> --confirm-db "$SQL_DATABASE"`
+(password from `EXACT_ADMIN_PASSWORD` or standard input). Everything below about dumps applies to running on a copy of an existing EXACT.
+
 **With Docker** (`deploy/docker-compose.yml`): `dc up -d db` creates the empty database in the volume `pgdata` (name, user, password from `exact.env`), then
 ```
 dc exec -T db pg_restore --no-owner --role="$SQL_USER" -U "$SQL_USER" -d "$SQL_DATABASE" < production.dump

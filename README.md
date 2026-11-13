@@ -72,8 +72,11 @@ Not in the picture: loading all 45,000 annotations of one image at once (the cal
 ## Run
 ```
 make ui                       # build the front end (frontend/dist, served by the binary)
-cargo build -p exact-server   # needs libopenslide, ffmpeg (libav*) and libclang to build
-SQL_DATABASE=exact SQL_USER=... SQL_PASSWORD=... IMAGE_PATH=/path/to/images EXACT_LISTEN=127.0.0.1:8002 target/debug/exact-server
+cargo build -p exact-server -p exact-cli   # needs libopenslide, ffmpeg (libav*) and libclang to build
+export SQL_DATABASE=exact SQL_USER=... SQL_PASSWORD=... IMAGE_PATH=/path/to/images EXACT_LISTEN=127.0.0.1:8002
+target/debug/exact-cli migrate --confirm-db exact      # an empty database gets EXACT's tables first: no Django needed for a new instance
+target/debug/exact-cli create-superuser --username admin --team mylab --confirm-db exact   # new instance only; password on stdin
+target/debug/exact-server
 ```
 Configuration uses EXACT's environment variable names (`SQL_*`, `IMAGE_PATH`, `FIDO_SERVER_ID`, ...); `EXACT_CACHE_DIR` holds
 thumbnails, `SLIDEIO_PYTHON` / `SLIDEIO_HELPER` select the slideio helper, `EXACT_STATIC_DIR` the front end.
