@@ -34,7 +34,9 @@ container's first start) creates EXACT's tables itself (`crates/exact-db/bootstr
 create, including their migration records, so the original EXACT can still be pointed at the database later), then exact-rust's own.
 Create the first account afterwards: `dc run --rm server exact-cli create-superuser --username admin --team <team> --confirm-db "$SQL_DATABASE"`
 (password from `EXACT_ADMIN_PASSWORD` or standard input). The image folder is writable by default (`IMAGE_MODE=rw`), so image sets can be
-created right away. Without https (a try-out): browsers keep the secure login cookie (`EXACT_COOKIE_SECURE=1`) on `http://localhost` only,
+created right away. `IMAGE_PATH`, `MEDIA_ROOT` and `EXACT_CACHE_DIR` in `exact.env` are host folders that must exist and be writable for the
+container user (uid 1000; on Windows/macOS any folder of yours, e.g. `C:/exact-data/images`): the server container checks this on start and
+refuses to start with an explanation otherwise. Without https (a try-out): browsers keep the secure login cookie (`EXACT_COOKIE_SECURE=1`) on `http://localhost` only,
 so for plain http under any other host name set `EXACT_COOKIE_SECURE=0`; passkeys need `FIDO_SERVER_ID` to be the host name in the browser
 (`localhost` for a try-out). Everything below about dumps applies to running on a copy of an existing EXACT.
 
