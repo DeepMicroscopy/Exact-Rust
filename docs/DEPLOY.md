@@ -20,8 +20,9 @@ additive tables/columns the beta adds exist only in the copy.
 
 ## 1. Files: a copy, or the real store mounted read-only
 The server **writes** to the image store (uploads, moving and deleting images, pyramid repair, crops) and only then. Two safe ways:
-* **A copy** that costs no extra disk where the file system can: `cp -cR` (macOS/APFS), `cp -a --reflink=auto` (btrfs/XFS), or `rsync -a`. Compose with `IMAGE_MODE=rw`.
-* **The real store, read-only** (when it is too big to copy): compose mounts it `:ro` into the server (the default, `IMAGE_MODE=ro`) and the worker.
+* **A copy** that costs no extra disk where the file system can: `cp -cR` (macOS/APFS), `cp -a --reflink=auto` (btrfs/XFS), or `rsync -a`. Compose mounts
+  it writable (the default, `IMAGE_MODE=rw`, which is also what a new installation needs).
+* **The real store, read-only** (when it is too big to copy): **set `IMAGE_MODE=ro` in `exact.env`**; compose then mounts it `:ro` into the server (the worker always has it read-only).
   Viewing, annotating (annotations are database rows), registration and exports work; uploads, moving, deleting, crops and repair fail with an error and
   leave the files untouched. Deleting an image or set in the beta removes only its row in the beta's database copy.
 `MEDIA_ROOT` (aux files, registration files, exports) is written to: use a copy of it, it is small. Keep `EXACT_CACHE_DIR` (thumbnails, can be deleted)
@@ -32,7 +33,10 @@ and `EXACT_NIFTI_CACHE` (inflated `.nii.gz` volumes, grows) on their own folders
 container's first start) creates EXACT's tables itself (`crates/exact-db/bootstrap/exact_base_schema.sql`: what EXACT's Django migrations
 create, including their migration records, so the original EXACT can still be pointed at the database later), then exact-rust's own.
 Create the first account afterwards: `dc run --rm server exact-cli create-superuser --username admin --team <team> --confirm-db "$SQL_DATABASE"`
-(password from `EXACT_ADMIN_PASSWORD` or standard input). Everything below about dumps applies to running on a copy of an existing EXACT.
+(password from `EXACT_ADMIN_PASSWORD` or standard input). The image folder is writable by default (`IMAGE_MODE=rw`), so image sets can be
+created right away. Without https (a try-out): browsers keep the secure login cookie (`EXACT_COOKIE_SECURE=1`) on `http://localhost` only,
+so for plain http under any other host name set `EXACT_COOKIE_SECURE=0`; passkeys need `FIDO_SERVER_ID` to be the host name in the browser
+(`localhost` for a try-out). Everything below about dumps applies to running on a copy of an existing EXACT.
 
 **With Docker** (`deploy/docker-compose.yml`): `dc up -d db` creates the empty database in the volume `pgdata` (name, user, password from `exact.env`), then
 ```
