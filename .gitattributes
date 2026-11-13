@@ -1,0 +1,3 @@
+# Shell scripts run inside Linux containers (deploy/docker-entrypoint.sh is the image's entrypoint): keep them LF on every checkout,
+# also on Windows with core.autocrlf=true, where a CRLF shebang makes the container fail with "exec ...: no such file or directory".
+*.sh text eol=lf
