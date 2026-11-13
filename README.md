@@ -69,7 +69,11 @@ Not in the picture: loading all 45,000 annotations of one image at once (the cal
 - `frontend/` React + TypeScript + Vite; `helpers/slideio_helper.py` reads CZI/VSI/DICOM through slideio
 - `tests/conformance` replays recorded responses of the reference EXACT against this server; `tests/perf`, `reference/` (reference Django setup)
 
-## Run
+## Install
+- **New to EXACT:** [Start from scratch](docs/quickstart.md): copy one settings file, set two passwords, `docker compose -f deploy/quickstart.yml up -d --build`.
+- **Already running EXACT (Django):** [Moving from EXACT](docs/from-exact.md): try it on a copy, run both on the same data, switch Django off.
+
+## Run from source (development)
 ```
 make ui                       # build the front end (frontend/dist, served by the binary)
 cargo build -p exact-server -p exact-cli   # needs libopenslide, ffmpeg (libav*) and libclang to build

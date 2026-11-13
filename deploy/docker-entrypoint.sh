@@ -5,6 +5,7 @@
 # (`docker compose run server exact-cli ...`) run as they are.
 # Before that, the folders the server writes to are checked: a host folder that does not exist (Docker creates it owned by root) or
 # belongs to another user would otherwise only show up as failing uploads. With IMAGE_MODE=ro the image store is not checked.
+# After the migration, EXACT_ADMIN_USER (if set) becomes the first superuser of a new installation.
 set -e
 
 # writable <folder in the container> <its setting in exact.env>: exits with an explanation when the server cannot write there
@@ -26,6 +27,16 @@ if [ "$1" = "exact-server" ]; then
   writable "${EXACT_CACHE_DIR:-/data/cache}" EXACT_CACHE_DIR
   if [ "${EXACT_AUTO_MIGRATE:-1}" != "0" ]; then
     exact-cli migrate --confirm-db "$SQL_DATABASE"
+  fi
+  # The first account of a new installation (EXACT_ADMIN_USER / EXACT_ADMIN_PASSWORD in the env file); nothing happens once any
+  # superuser exists, so an imported EXACT database and every later start are left alone.
+  if [ -n "${EXACT_ADMIN_USER:-}" ]; then
+    if [ "${EXACT_ADMIN_PASSWORD:-}" = "change-me" ]; then
+      echo "exact-server: EXACT_ADMIN_PASSWORD is still the example value change-me: set a password of your own in the env file." >&2
+      exit 1
+    fi
+    exact-cli create-superuser --if-none --username "$EXACT_ADMIN_USER" --email "${EXACT_ADMIN_EMAIL:-}" \
+      ${EXACT_ADMIN_TEAM:+--team "$EXACT_ADMIN_TEAM"} --confirm-db "$SQL_DATABASE" </dev/null
   fi
 fi
 exec "$@"

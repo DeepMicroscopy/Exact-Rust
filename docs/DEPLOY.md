@@ -1,9 +1,13 @@
 ---
-title: Installation
-nav_order: 12
+title: "Reference: beta and production"
+parent: Installation
+nav_order: 3
 ---
 
 # Beta installation on a copy of the production data
+
+This is the detailed reference. For a first installation follow [Start from scratch](quickstart) (no earlier EXACT) or
+[Moving from EXACT](from-exact) (an existing EXACT); both point here for the details.
 
 Goal: the Rust server on a **copy** of the production database and image files, next to (never instead of) the running
 Django. Nothing here touches production. Rollback is "stop the beta": Django keeps working on its own database, and the
@@ -29,16 +33,13 @@ The server **writes** to the image store (uploads, moving and deleting images, p
 and `EXACT_NIFTI_CACHE` (inflated `.nii.gz` volumes, grows) on their own folders.
 
 ## 2. Database
-**A new installation without existing EXACT data** needs no dump and no Django: on an empty database `exact-cli migrate` (and so the
-container's first start) creates EXACT's tables itself (`crates/exact-db/bootstrap/exact_base_schema.sql`: what EXACT's Django migrations
-create, including their migration records, so the original EXACT can still be pointed at the database later), then exact-rust's own.
-Create the first account afterwards: `dc run --rm server exact-cli create-superuser --username admin --team <team> --confirm-db "$SQL_DATABASE"`
-(password from `EXACT_ADMIN_PASSWORD` or standard input). The image folder is writable by default (`IMAGE_MODE=rw`), so image sets can be
-created right away. `IMAGE_PATH`, `MEDIA_ROOT` and `EXACT_CACHE_DIR` in `exact.env` are host folders that must exist and be writable for the
-container user (uid 1000; on Windows/macOS any folder of yours, e.g. `C:/exact-data/images`): the server container checks this on start and
-refuses to start with an explanation otherwise. Without https (a try-out): browsers keep the secure login cookie (`EXACT_COOKIE_SECURE=1`) on `http://localhost` only,
-so for plain http under any other host name set `EXACT_COOKIE_SECURE=0`; passkeys need `FIDO_SERVER_ID` to be the host name in the browser
-(`localhost` for a try-out). Everything below about dumps applies to running on a copy of an existing EXACT.
+**A new installation without existing EXACT data** needs none of the dump steps below: see [Start from scratch](quickstart)
+(`deploy/quickstart.yml`). On an empty database `exact-cli migrate` (and so the container's first start) creates EXACT's tables itself
+(`crates/exact-db/bootstrap/exact_base_schema.sql`: what EXACT's Django migrations create, including their migration records, so the
+original EXACT can still be pointed at the database later), then exact-rust's own; with `EXACT_ADMIN_USER` / `EXACT_ADMIN_PASSWORD` in
+the env file the first start also creates the first superuser (`exact-cli create-superuser --if-none`: nothing happens once any
+superuser exists, so a restored EXACT database is left alone). The server container checks on start that it can write to
+`IMAGE_PATH`, `MEDIA_ROOT` and `EXACT_CACHE_DIR` (uid 1000) and refuses to start with an explanation otherwise.
 
 **With Docker** (`deploy/docker-compose.yml`): `dc up -d db` creates the empty database in the volume `pgdata` (name, user, password from `exact.env`), then
 ```

@@ -81,6 +81,8 @@ How all of this is tested: [Running next to Django](coexistence).
 
 ## Moving over: a suggestion
 
+The step-by-step guide is [Moving from EXACT](from-exact); in short:
+
 1. Read [Running next to Django](coexistence) and run `scripts/coexistence-preflight.sh` (read-only).
 2. Take a `pg_dump`. Run `exact-cli migrate --confirm-db <name>` once. Give the Rust server its own host name and `FIDO_SERVER_ID`.
 3. Let a few users work on Rust for a week; they keep their accounts, teams and passwords. Everything they do is visible in Django at once.

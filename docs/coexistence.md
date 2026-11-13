@@ -1,6 +1,7 @@
 ---
 title: Running next to Django
-nav_order: 13
+parent: Installation
+nav_order: 4
 ---
 
 # Running the Rust server next to the Django EXACT on the same data

@@ -26,6 +26,14 @@ pub async fn database_is_empty(pool: &PgPool) -> Result<bool> {
         .map_err(internal)
 }
 
+/// Whether any account is a superuser (an imported EXACT database always has one; a new installation until its first start not).
+pub async fn superuser_exists(pool: &PgPool) -> Result<bool> {
+    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users_user WHERE is_superuser)")
+        .fetch_one(pool)
+        .await
+        .map_err(internal)
+}
+
 /// Creates EXACT's tables in one transaction (all or nothing). Only for an empty database: see [`database_is_empty`].
 pub async fn apply_base_schema(pool: &PgPool) -> Result<()> {
     let mut tx = pool.begin().await.map_err(internal)?;

@@ -30,3 +30,6 @@ tests/perf/reports/local/
 deploy/models/
 helpers/models/
 *.ckpt
+
+# settings of a quickstart installation (deploy/quickstart.yml; holds passwords)
+deploy/.env

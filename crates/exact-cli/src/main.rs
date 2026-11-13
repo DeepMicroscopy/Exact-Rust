@@ -72,6 +72,10 @@ enum Cmd {
         /// Also make the user admin of this team (created when it does not exist).
         #[arg(long)]
         team: Option<String>,
+        /// Do nothing (and succeed) when a superuser exists already: the container's first start creates the account from
+        /// EXACT_ADMIN_USER / EXACT_ADMIN_PASSWORD this way, and leaves imported EXACT databases alone.
+        #[arg(long)]
+        if_none: bool,
         /// Must equal the configured database name; guards against running against the wrong database.
         #[arg(long)]
         confirm_db: String,
@@ -262,6 +266,7 @@ async fn main() -> anyhow::Result<()> {
             username,
             email,
             team,
+            if_none,
             confirm_db,
         } => {
             if confirm_db != cfg.db_name {
@@ -269,6 +274,11 @@ async fn main() -> anyhow::Result<()> {
                     "--confirm-db {confirm_db} does not match the configured database {}",
                     cfg.db_name
                 );
+            }
+            let pool = exact_db::connect(&cfg).await?;
+            if if_none && exact_db::bootstrap::superuser_exists(&pool).await? {
+                println!("a superuser exists already: {username} not created");
+                return Ok(());
             }
             let password = match std::env::var("EXACT_ADMIN_PASSWORD") {
                 Ok(p) => p,
@@ -285,7 +295,6 @@ async fn main() -> anyhow::Result<()> {
             if password.is_empty() {
                 bail!("empty password: set EXACT_ADMIN_PASSWORD or pass it on standard input");
             }
-            let pool = exact_db::connect(&cfg).await?;
             let hash = exact_auth::hashers::make_password(&password);
             let id = exact_db::bootstrap::create_superuser(
                 &pool,
