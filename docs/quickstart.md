@@ -15,16 +15,22 @@ administrator, with a first team, ready to [create an image set and upload slide
 * No GPU, no PostgreSQL, no Python: everything runs in the containers.
 
 ## Four steps
-**1. Get the code**
+**1. Get the code:** on GitHub, **Code** → **Download ZIP** and unpack it, or
 ```
 git clone https://github.com/DeepMicroscopy/Exact-Rust.git
 cd Exact-Rust
 ```
+Open a terminal in that folder (the one with `README.md` and `deploy`; Windows 11: right-click the folder → *Open in Terminal*).
 
-**2. Write the settings.** Copy the example and set the two passwords in it (the database's and your admin account's):
-```
-cp deploy/quickstart.env.example deploy/.env           # Windows PowerShell: copy deploy\quickstart.env.example deploy\.env
-```
+**2. Write the settings.** Copy the example and open the copy in a text editor:
+
+| | |
+|---|---|
+| Windows | `copy deploy\quickstart.env.example deploy\.env` and then `notepad deploy\.env` |
+| macOS | `cp deploy/quickstart.env.example deploy/.env` and then `open -e deploy/.env` |
+| Linux | `cp deploy/quickstart.env.example deploy/.env` and then `nano deploy/.env` |
+
+Set the two passwords (the database's and your admin account's), the rest can stay:
 ```
 SQL_PASSWORD=<any long random string>
 EXACT_ADMIN_USER=admin
