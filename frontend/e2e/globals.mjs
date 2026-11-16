@@ -105,6 +105,13 @@ try {
   await chip().click();
   await waitFor(async () => (await labelsOf(FRAMED)).some((a) => !a.deleted), "the label of frame 3 is stored");
   check(JSON.stringify((await labelsOf(FRAMED)).find((a) => !a.deleted).vector) === '{"frame":3}', "it names its frame, and nothing else");
+  // moving through the frames (keys and slider, no reload): the list follows
+  await page.locator(".osd").click({ position: { x: 300, y: 300 } });
+  await page.keyboard.press("Shift+E");
+  await waitFor(async () => /Frame 4/.test(await page.locator(".gl-frame").innerText()), "Shift + E moves to frame 4 and the list says so");
+  check((await chip().getAttribute("data-set")) === "0", "frame 4 does not have the label of frame 3 (moved with the keyboard)");
+  await page.keyboard.press("Shift+Q");
+  await waitFor(async () => /Frame 3/.test(await page.locator(".gl-frame").innerText()) && (await chip().getAttribute("data-set")) === "1", "and back on frame 3 the label is set again");
   await page.goto(`${base}/images/${FRAMED}?frame=5`);
   await page.waitForSelector('[data-testid="global-labels"]');
   check((await chip().getAttribute("data-set")) === "0", "frame 6 does not have the label of frame 3");
