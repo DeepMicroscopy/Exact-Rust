@@ -87,7 +87,9 @@ pub async fn create_h(
                 .ok_or_else(|| field_err("unique_identifier", "Must be a valid UUID."))?,
         ),
     };
-    // a global annotation exists once per image and type (and user in competitive sets): it is switched on again, not duplicated
+    // a global annotation exists once per image and type (and user in competitive sets), and per frame when it names one: it is
+    // switched on again, not duplicated
+    let frame: Option<String> = vec_value.get("frame").and_then(Value::as_i64).map(|f| f.to_string());
     let existing: Option<(i64, bool)> = if atype.vector_type == vector::GLOBAL {
         let competitive = sqlx::query_scalar::<_, i32>(
             "SELECT collaboration_type FROM images_imageset WHERE id = $1",
@@ -97,11 +99,12 @@ pub async fn create_h(
         .await
         .map_err(db_err)?
             != 0;
-        sqlx::query_as("SELECT id, deleted FROM annotations_annotation WHERE image_id = $1 AND annotation_type_id = $2 AND (NOT $3 OR user_id = $4) ORDER BY deleted, id LIMIT 1")
+        sqlx::query_as("SELECT id, deleted FROM annotations_annotation WHERE image_id = $1 AND annotation_type_id = $2 AND (NOT $3 OR user_id = $4) AND (vector->>'frame') IS NOT DISTINCT FROM $5 ORDER BY deleted, id LIMIT 1")
             .bind(image)
             .bind(type_id)
             .bind(competitive)
             .bind(p.user.id)
+            .bind(&frame)
             .fetch_optional(&s.pool)
             .await
             .map_err(db_err)?
