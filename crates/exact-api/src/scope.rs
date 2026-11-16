@@ -2,10 +2,11 @@
 //!
 //! - `jobs`: queue, restart and cancel analyses, registrations and segmentations (and register by points),
 //! - `annotate`: create, change, verify and delete annotations and their files, edit segmentations, screening progress,
-//! - `images`: upload, rename, move, crop and delete images, create and change image sets (tags, products, settings, files).
+//! - `images`: upload, rename, move, crop and delete images, create and change image sets (tags, products, settings, files),
+//! - `catalog`: create, change and delete products and annotation types.
 //!
 //! A token without scopes (all tokens EXACT made) is not limited. A limited one is refused every write that is not named here, which
-//! includes everything that manages accounts, teams, annotation types, products, plugins and workers: those need an unlimited token.
+//! includes everything that manages accounts, teams, plugins and workers: those need an unlimited token.
 //! The check is one layer over the whole router, because it needs the path and the method, which the authentication does not see.
 
 use crate::{error::ApiError, AppState};
@@ -17,7 +18,7 @@ use axum::{
 };
 use exact_auth::tokens;
 
-pub const SCOPES: [&str; 3] = ["jobs", "annotate", "images"];
+pub const SCOPES: [&str; 4] = ["jobs", "annotate", "images", "catalog"];
 
 /// The scope a write to this path needs; `None`: no scope allows it.
 pub fn needed(method: &Method, path: &str) -> Option<&'static str> {
@@ -48,6 +49,8 @@ pub fn needed(method: &Method, path: &str) -> Option<&'static str> {
         | ["api", "v1", "images", ..]
         | ["images", "api", ..]
         | ["images", "image", ..] => "images",
+        // products and annotation types
+        ["api", "v2", "products", ..] | ["api", "v2", "annotation-types", ..] | ["administration", "api", "annotation_type", ..] => "catalog",
         _ => return None,
     })
 }
@@ -127,11 +130,25 @@ mod tests {
         assert!(!ok(&j, Method::POST, "/api/v2/image-sets/3/images"));
         // worker routes, accounts, tokens and configuration are for nobody who is limited
         for p in ["/api/v2/jobs/claim", "/api/v2/plugin-jobs/3/complete", "/api/v2/registration-jobs/3/fail", "/api/v2/plugins/register",
-                  "/api/v2/users/3", "/api/v2/teams/1/members/4", "/api/v2/me/tokens", "/api/v2/me/preferences", "/api/v2/annotation-types",
-                  "/api/v2/products/1", "/api/v2/admin/users"] {
+                  "/api/v2/users/3", "/api/v2/teams/1/members/4", "/api/v2/me/tokens", "/api/v2/me/preferences", "/api/v2/admin/users"] {
             assert!(!ok(&SCOPES, Method::POST, p), "{p}");
             assert!(!ok(&SCOPES, Method::DELETE, p), "{p}");
         }
+    }
+
+    #[test]
+    fn catalog_covers_products_and_annotation_types_and_nothing_else() {
+        let c = ["catalog"];
+        for (m, p) in [(Method::POST, "/api/v2/products"), (Method::PATCH, "/api/v2/products/4"), (Method::DELETE, "/api/v2/products/4"),
+                       (Method::POST, "/api/v2/products/4/annotation-types"), (Method::POST, "/api/v2/annotation-types"),
+                       (Method::PATCH, "/api/v2/annotation-types/9"), (Method::DELETE, "/api/v2/annotation-types/9"),
+                       (Method::POST, "/administration/api/annotation_type/create/")] {
+            assert!(ok(&c, m.clone(), p), "{m} {p}");
+            assert!(!ok(&["annotate", "images", "jobs"], m.clone(), p), "{m} {p}");
+        }
+        assert!(!ok(&c, Method::POST, "/api/v2/annotations"));
+        assert!(!ok(&c, Method::POST, "/api/v2/image-sets/3/images"));
+        assert!(!ok(&c, Method::POST, "/api/v2/teams"));
     }
 
     #[test]

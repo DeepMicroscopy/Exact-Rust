@@ -29,6 +29,7 @@ const ABILITIES: { id: string; label: string; hint: string }[] = [
   { id: "jobs", label: "queue jobs", hint: "start, restart and cancel analyses, registrations and segmentations" },
   { id: "annotate", label: "annotate", hint: "create, change, verify and delete annotations" },
   { id: "images", label: "manage images", hint: "upload, rename, move and delete images, change image sets" },
+  { id: "catalog", label: "manage products and annotation types", hint: "create, change and delete products and annotation types" },
 ];
 /** What a token may do, in words. */
 function mayDo(t: AccessToken): string {

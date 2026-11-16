@@ -1,4 +1,4 @@
-"""Limited personal access tokens: a token with scopes (jobs, annotate, images) may look and do only that (Rust only)."""
+"""Limited personal access tokens: a token with scopes (jobs, annotate, images, catalog) may look and do only that (Rust only)."""
 import os
 import subprocess
 import uuid
@@ -92,6 +92,23 @@ def test_an_annotate_token_annotates_and_nothing_else(tokens, reg_plugin):
     assert a.post(f"/api/v2/images/{IMAGE}/register", json={"target_image": 3}).status_code == 403
     assert a.post(f"/api/v2/image-sets/{SET_ID}/images", files={"file": ("x.txt", b"x")}).status_code == 403
     assert a.patch(f"/api/v2/annotation-types/{BBOX_TYPE}", json={"name": "x"}).status_code == 403
+
+
+def test_a_catalog_token_manages_products_and_annotation_types_and_nothing_else(tokens):
+    _, k = tokens("aubreville", scopes=["catalog"])
+    name = f"scope-{uuid.uuid4().hex[:6]}"
+    prod = k.post("/api/v2/products", json={"name": name})
+    assert prod.status_code == 201, prod.text
+    pid = prod.json()["id"]
+    typ = k.post("/api/v2/annotation-types", json={"name": name, "vector_type": 1, "product": pid})
+    assert typ.status_code == 201, typ.text
+    assert k.patch(f"/api/v2/annotation-types/{typ.json()['id']}", json={"name": name + "b"}).status_code == 200
+    assert k.delete(f"/api/v2/annotation-types/{typ.json()['id']}").status_code == 204
+    assert k.delete(f"/api/v2/products/{pid}").status_code == 204
+    assert k.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": BBOX_TYPE, "vector": BB}).json()["detail"] == LIMITED
+    assert k.post(f"/api/v2/image-sets/{SET_ID}/images", files={"file": ("x.txt", b"x")}).json()["detail"] == LIMITED
+    _, a = tokens("aubreville", scopes=["annotate", "images", "jobs"])
+    assert a.post("/api/v2/products", json={"name": name}).json()["detail"] == LIMITED
 
 
 def test_an_images_token_manages_images_and_nothing_else(tokens):

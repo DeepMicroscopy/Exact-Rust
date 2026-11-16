@@ -4,7 +4,7 @@
 //!
 //! - `GET /api/v2/me/tokens`: the caller's tokens, newest first: `id, name, prefix, created_at, last_used_at, expires_at, revoked_at,
 //!   read_only, teams` (team ids; empty = all teams of the account), `scopes` (null = not limited, else what the token may do besides
-//!   looking: `jobs`, `annotate`, `images`, see `scope.rs`), `active`.
+//!   looking: `jobs`, `annotate`, `images`, `catalog`, see `scope.rs`), `active`.
 //! - `POST /api/v2/me/tokens` `{name, expires_in_days?, read_only?, teams?, scopes?}` -> 201 with the same fields and `token`, the only time the
 //!   secret is ever returned. `teams` must be teams the account belongs to.
 //! - `DELETE /api/v2/me/tokens/{id}`: revokes an active token (204: it stops working at once); deleting one that is already revoked or has
@@ -159,7 +159,7 @@ struct NewToken {
     /// Team ids to restrict it to; none or empty = all teams of the account.
     #[serde(default)]
     teams: Vec<i64>,
-    /// What the token may do besides looking (`jobs`, `annotate`, `images`); none: not limited. Not together with `read_only`.
+    /// What the token may do besides looking (`jobs`, `annotate`, `images`, `catalog`); none: not limited. Not together with `read_only`.
     scopes: Option<Vec<String>>,
 }
 
@@ -187,7 +187,7 @@ async fn create(
             v.sort();
             v.dedup();
             if v.is_empty() || v.iter().any(|x| !SCOPES.contains(&x.as_str())) {
-                return Err(bad("scopes are some of jobs, annotate, images (for a token that only looks, use read_only)."));
+                return Err(bad("scopes are some of jobs, annotate, images, catalog (for a token that only looks, use read_only)."));
             }
             Some(v)
         }
