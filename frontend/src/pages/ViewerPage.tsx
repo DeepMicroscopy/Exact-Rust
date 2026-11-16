@@ -1206,7 +1206,6 @@ export function ViewerPage() {
       <div className={`viewer-body ${overviewShown ? "" : "no-overview"} ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
         {!failed && <ScaleBar viewerRef={viewerRef} mpp={mpp} />}
-        {annotationsHere && !failed && <GlobalLabels labels={labelStates} frame={framed ? frame1 : null} canEdit={!readOnly} onToggle={toggleGlobal} />}
         {!failed && prefs.zoom_slider && <ZoomSlider viewerRef={viewerRef} />}
         {opening && !failed && <OpeningSpinner name={image.data?.name} />}
         {planeBusy && !failed && (
@@ -1290,7 +1289,8 @@ export function ViewerPage() {
                 <span className="muted small">{counts.get(t.id)}</span>
               </label>
             ))}
-          {annotations.data && shapes.length === 0 && <p className="muted small">No annotations.</p>}
+          {annotations.data && shapes.length === 0 && !labelStates.some((l) => l.set) && <p className="muted small">No annotations.</p>}
+          {annotationsHere && <GlobalLabels labels={labelStates} frame={framed ? frame1 : null} canEdit={!readOnly} onToggle={toggleGlobal} />}
           </>}
         </aside>
         {typeMenu && (

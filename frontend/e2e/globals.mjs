@@ -1,4 +1,4 @@
-// End-to-end test of the labels of the whole image (global annotation types): the chips on the image set and unset them, also with the
+// End-to-end test of the labels of the whole image (global annotation types): the rows under the annotation types in the side panel set and unset them, also with the
 // keyboard, and on an image with frames they are labels of the frame shown. Needs a restored scratch database.
 // Usage: node e2e/globals.mjs [baseUrl]   (env: CHROME, SHOTS=dir for screenshots)
 import { chromium } from "playwright-core";
@@ -49,7 +49,7 @@ const name = `e2e-label-${Date.now()}`;
 const type = (await api("POST", "/api/v2/annotation-types", { name, vector_type: 7, product: 1, color_code: "#d9480f" })).json;
 check(type?.id, "a global annotation type exists");
 const labelsOf = async (image) => (await api("GET", `/api/v2/annotations?image=${image}&annotation_type=${type.id}&limit=100`)).json.items;
-const chip = () => page.locator('[data-testid="label-chip"]', { hasText: name });
+const chip = () => page.locator('.viewer-side [data-testid="label-chip"]', { hasText: name });
 let set = null;
 let framedSetAddedProduct = false;
 try {
@@ -71,7 +71,7 @@ try {
   }, set.id);
   await page.goto(`${base}/images/${image}`);
   await page.waitForSelector('[data-testid="global-labels"]');
-  check((await chip().count()) === 1, "the label is offered as a chip on the image");
+  check((await chip().count()) === 1, "the label is offered in the side panel");
   check((await chip().getAttribute("data-set")) === "0", "it is not set");
   await chip().click();
   await waitFor(async () => (await labelsOf(image)).some((a) => !a.deleted), "the label is stored");
@@ -89,7 +89,7 @@ try {
   const n = globals.findIndex((t) => t.id === type.id) + 1;
   await page.locator(".osd").click({ position: { x: 300, y: 300 } });
   await page.keyboard.press(`Shift+Digit${n}`);
-  await waitFor(async () => (await chip().getAttribute("data-set")) === "1", "Shift + digit sets the label, and the chip follows");
+  await waitFor(async () => (await chip().getAttribute("data-set")) === "1", "Shift + digit sets the label, and the row follows");
   await page.keyboard.press(`Shift+Digit${n}`);
   await waitFor(async () => (await chip().getAttribute("data-set")) === "0", "and unsets it");
 
@@ -101,7 +101,7 @@ try {
   }
   await page.goto(`${base}/images/${FRAMED}?frame=2`);
   await page.waitForSelector('[data-testid="global-labels"]');
-  check(/Frame 3/.test(await page.locator(".gl-frame").innerText()), "the bar says which frame it is for");
+  check(/Frame 3/.test(await page.locator(".gl-frame").innerText()), "the list says which frame it is for");
   await chip().click();
   await waitFor(async () => (await labelsOf(FRAMED)).some((a) => !a.deleted), "the label of frame 3 is stored");
   check(JSON.stringify((await labelsOf(FRAMED)).find((a) => !a.deleted).vector) === '{"frame":3}', "it names its frame, and nothing else");
