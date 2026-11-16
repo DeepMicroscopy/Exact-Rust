@@ -27,6 +27,7 @@ import { takeScreenshot } from "../viewer-core/screenshot";
 import { FINDER_FOCUS, ImageFinder, readFinder, saveFinder } from "../components/ImageFinder";
 import { SHOW_HELP } from "../components/GlobalShortcuts";
 import { OVERLAY_TOGGLE, OverlayControl } from "../components/OverlayControl";
+import { GlobalLabels } from "../components/GlobalLabels";
 import { ScaleBar } from "../components/ScaleBar";
 import { ZoomSlider } from "../components/ZoomSlider";
 import { zoomFactor } from "../viewer-core/zoomStep";
@@ -43,6 +44,7 @@ import { ConfirmDelete } from "../components/ConfirmDelete";
 import { ConfirmResize } from "../components/ConfirmResize";
 import { boxVector, centeredBox, isBoxType } from "../viewer-core/geometry";
 import { visibleOnFrame } from "../viewer-core/frames";
+import { labelOn, labelVector } from "../viewer-core/globalLabels";
 import { prefersThreePlanes, rememberThreePlanes } from "./MprPage";
 import { TypeMenu, type TypeMenuModel } from "../components/TypeMenu";
 import { ContextMenu } from "../components/ContextMenu";
@@ -754,13 +756,19 @@ export function ViewerPage() {
     const e = info(typeId);
     if (e && !oneClickCapable(e.vectorType)) setOneClick(false);
   }, [info, exitMulti, notify]);
+  /** The global labels (types of the whole image) and whether each is set on the frame shown. */
+  const labelStates = useMemo(
+    () => globals.map((entry) => ({ entry, set: !!labelOn(annotations.data ?? [], entry.id, frame1, multiFrameTypes.has(entry.id)) })),
+    [globals, annotations.data, frame1, multiFrameTypes],
+  );
   const toggleGlobal = useCallback(
     (typeId: number) => {
-      const existing = (annotations.data ?? []).find((a) => a.annotation_type === typeId && !a.deleted && a.id > 0);
-      if (existing) void actions.remove(existing.id);
-      else void actions.create(typeId, null);
+      const existing = labelOn(annotations.data ?? [], typeId, frame1, multiFrameTypes.has(typeId));
+      if (existing) {
+        if (existing.id > 0) void actions.remove(existing.id);
+      } else void actions.create(typeId, labelVector(stampFrames.current));
     },
-    [annotations.data, actions],
+    [annotations.data, actions, frame1, multiFrameTypes],
   );
   const syncFromEditor = useCallback(() => {
     // Escape may end the draw tool inside the editor
@@ -1198,6 +1206,7 @@ export function ViewerPage() {
       <div className={`viewer-body ${overviewShown ? "" : "no-overview"} ${multiFrame && (kind === "zstack" || kind === "volume") ? "with-z" : ""}`}>
         <div ref={host} className={`osd ${failed ? "osd-hidden" : ""}`} />
         {!failed && <ScaleBar viewerRef={viewerRef} mpp={mpp} />}
+        {annotationsHere && !failed && <GlobalLabels labels={labelStates} frame={framed ? frame1 : null} canEdit={!readOnly} onToggle={toggleGlobal} />}
         {!failed && prefs.zoom_slider && <ZoomSlider viewerRef={viewerRef} />}
         {opening && !failed && <OpeningSpinner name={image.data?.name} />}
         {planeBusy && !failed && (
@@ -1357,7 +1366,7 @@ export function ViewerPage() {
               </>
             )
           }
-          globals={globals.map((entry) => ({ entry, set: (annotations.data ?? []).some((a) => a.annotation_type === entry.id && !a.deleted) }))}
+          globals={labelStates}
           drawing={drawing}
           oneClick={oneClick}
           currentTypeId={currentTypeId}
