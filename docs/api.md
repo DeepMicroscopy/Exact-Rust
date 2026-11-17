@@ -5,7 +5,7 @@ nav_order: 8
 
 # API
 
-EXACT-Rust has two public interfaces on the same data. This page shows both with examples that were run against a server (the responses are real, shortened where they are long).
+EXACT-Rust has two public interfaces on the same data. This page shows both with examples that were run against a server (the responses are real, shortened where they are long). The same work in Python, with `requests`, is on [the API with Python](api-python).
 
 <figure class="diagram"><img src="assets/diagrams/api-layers.svg" alt="exact-sync reaches /api/v1, the web interface reaches /api/v2, workers reach the v2 job endpoints; all share one engine and the database"><figcaption>Three doors, one engine: a change made through one is visible through the others at once.</figcaption></figure>
 
