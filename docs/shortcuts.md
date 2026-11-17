@@ -24,7 +24,8 @@ The shortcuts of the old EXACT interface were kept. Shortcuts are ignored while 
 | `Ctrl` / `⌘` + `A`, `C`, `V` | select all, copy, paste annotations |
 | `E`, `Q` | next, previous image of the image set |
 | `Shift` + `E`, `Shift` + `Q` | next, previous frame |
-| `Page Up`, `Page Down` | next, previous frame (slice in the three-plane view) |
+| `Page Up`, `Page Down` | next, previous frame (in the three-plane view: slice of the plane used last) |
+| `↑` / `↓`, `Shift` + `↑` / `↓`, `Alt` + `↑` / `↓` | three-plane view: next, previous slice of the axial, coronal, sagittal plane (the arrows step the maximized plane when there is one) |
 | `Space` | play or pause a movie |
 | arrow keys | pan |
 | `Shift` + `↑` / `↓`, `+` / `-` | zoom |

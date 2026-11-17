@@ -18,7 +18,7 @@ use crate::{
 };
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, post, put},
@@ -58,6 +58,7 @@ pub fn v2_routes() -> Router<AppState> {
             "/api/v2/products/{id}/annotation-types",
             axum::routing::get(product_types_h),
         )
+        .route("/api/v2/segmentation-groups", axum::routing::get(groups_h))
         .route("/api/v2/image-sets/{id}/tags", post(tag_add_h))
         .route("/api/v2/image-sets/{id}/tags/{name}", delete(tag_delete_h))
         .route(
@@ -505,6 +506,8 @@ struct TypeFields {
     closed: Option<bool>,
     area_hit_test: Option<bool>,
     multi_frame: Option<bool>,
+    /// Some(None) = leave the group, Some(Some(name)) = join it; absent = unchanged
+    seg_group: Option<Option<String>>,
 }
 
 fn float(v: Option<&Value>) -> Result<Option<f64>, ()> {
@@ -546,6 +549,13 @@ fn type_fields(d: &Map<String, Value>) -> ApiResult<TypeFields> {
         Some(Value::String(t)) if t.chars().count() <= 10 => Some(t.clone()),
         Some(_) => return Err(field_err("color_code", "A color like #ff0000 is required.")),
     };
+    let seg_group = match d.get("seg_group") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(Value::String(t)) if t.trim().is_empty() => Some(None),
+        Some(Value::String(t)) if t.trim().chars().count() <= 50 => Some(Some(t.trim().to_string())),
+        Some(_) => return Err(field_err("seg_group", "A group name of up to 50 characters, or empty for none.")),
+    };
     let w = float(d.get("default_width"))
         .map_err(|_| field_err("default_width", "A number is required."))?;
     let h = float(d.get("default_height"))
@@ -569,6 +579,7 @@ fn type_fields(d: &Map<String, Value>) -> ApiResult<TypeFields> {
         closed: flag(d.get("closed")),
         area_hit_test: flag(d.get("area_hit_test")),
         multi_frame: flag(d.get("multi_frame")),
+        seg_group,
     })
 }
 
@@ -610,7 +621,8 @@ async fn insert_type(s: &AppState, f: TypeFields) -> ApiResult<i64> {
     if let Some(n) = &f.name {
         check_unique_name(s, n, f.product.flatten(), None).await?;
     }
-    sqlx::query_scalar(
+    let group = f.seg_group.clone();
+    let id: i64 = sqlx::query_scalar(
         "INSERT INTO annotations_annotationtype (name, active, node_count, vector_type, enable_blurred, enable_concealed, \
          color_code, default_height, default_width, sort_order, closed, product_id, area_hit_test, multi_frame, size_unit) \
          VALUES ($1, COALESCE($2, true), COALESCE($3, 0), COALESCE($4, 1), COALESCE($5, false), COALESCE($6, false), \
@@ -634,7 +646,55 @@ async fn insert_type(s: &AppState, f: TypeFields) -> ApiResult<i64> {
     .bind(f.size_unit)
     .fetch_one(&s.pool)
     .await
-    .map_err(db_err)
+    .map_err(db_err)?;
+    set_group(s, id, &group).await?;
+    Ok(id)
+}
+
+/// Puts a type into a group of segmentation types (their masks exclude each other), or takes it out (`None`).
+async fn set_group(s: &AppState, id: i64, group: &Option<Option<String>>) -> ApiResult<()> {
+    match group {
+        None => {}
+        Some(None) => {
+            sqlx::query("DELETE FROM exact_rust_type_group WHERE annotation_type_id = $1")
+                .bind(id)
+                .execute(&s.pool)
+                .await
+                .map_err(db_err)?;
+        }
+        Some(Some(name)) => {
+            sqlx::query(
+                "INSERT INTO exact_rust_type_group (annotation_type_id, group_name) VALUES ($1, $2) \
+                 ON CONFLICT (annotation_type_id) DO UPDATE SET group_name = EXCLUDED.group_name",
+            )
+            .bind(id)
+            .bind(name)
+            .execute(&s.pool)
+            .await
+            .map_err(db_err)?;
+        }
+    }
+    Ok(())
+}
+
+/// `GET /api/v2/segmentation-groups`: `[{"annotation_type", "product", "group"}]` for the types of the user's teams that are in a group.
+async fn groups_h(State(s): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let rows = sqlx::query(
+        "SELECT g.annotation_type_id, t.product_id, g.group_name FROM exact_rust_type_group g \
+         JOIN annotations_annotationtype t ON t.id = g.annotation_type_id \
+         WHERE t.product_id IN (SELECT pr.id FROM administration_product pr WHERE pr.team_id IN \
+         (SELECT team_id FROM users_teammembership WHERE user_id = $1)) ORDER BY g.group_name, t.sort_order, t.id",
+    )
+    .bind(p.user.id)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|r| json!({"annotation_type": r.get::<i64, _>(0), "product": r.get::<Option<i64>, _>(1), "group": r.get::<String, _>(2)}))
+        .collect();
+    Ok(Json(items).into_response())
 }
 
 /// Rows that protect an annotation type from deletion (`on_delete=PROTECT`).
@@ -648,6 +708,96 @@ async fn type_usage(s: &AppState, id: i64) -> ApiResult<i64> {
     .fetch_one(&s.pool)
     .await
     .map_err(db_err)
+}
+
+/// What keeps a type from being deleted, in words: the kinds of rows (annotations, soft-deleted ones separately, versions of an image set,
+/// plugin results) with their numbers and the first images they are in, so that one can find and remove them.
+async fn usage_report(s: &AppState, id: i64) -> ApiResult<String> {
+    let mut parts = Vec::new();
+    // (what, SQL giving image id, set id, name per row, with `$1` the type)
+    let kinds: [(&str, &str); 4] = [
+        ("annotations", "SELECT i.id, i.name, i.image_set_id FROM annotations_annotation a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1 AND NOT a.deleted"),
+        ("deleted annotations (restore or remove them in the image)", "SELECT i.id, i.name, i.image_set_id FROM annotations_annotation a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1 AND a.deleted"),
+        ("annotation versions of image-set versions", "SELECT i.id, i.name, i.image_set_id FROM annotations_annotationversion a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1"),
+        ("plugin results", "SELECT i.id, i.name, i.image_set_id FROM processing_pluginresultannotation a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1"),
+    ];
+    for (what, sql) in kinds {
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(sql).bind(id).fetch_all(&s.pool).await.map_err(db_err)?;
+        if rows.is_empty() {
+            continue;
+        }
+        let mut per: Vec<((i64, String, i64), usize)> = Vec::new();
+        for r in rows.iter() {
+            match per.iter_mut().find(|(k, _)| k.0 == r.0) {
+                Some((_, n)) => *n += 1,
+                None => per.push((r.clone(), 1)),
+            }
+        }
+        let shown: Vec<String> = per
+            .iter()
+            .take(8)
+            .map(|((iid, name, set), n)| format!("{name} (image {iid}, image set {set}): {n}"))
+            .collect();
+        let more = if per.len() > 8 { format!(", and {} more images", per.len() - 8) } else { String::new() };
+        parts.push(format!("{} {what} in {}{more}", rows.len(), shown.join("; ")));
+    }
+    Ok(parts.join(". "))
+}
+
+/// `GET /api/v2/annotation-types/{id}/usage`: what references the type, per image: live annotations, soft-deleted ones, versions of image sets,
+/// plugin results. The administration screen shows it before a type is deleted (with the soft-deleted annotations if one agrees).
+pub async fn type_usage_h(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    require_model_perm(
+        &s,
+        authenticate(&s, &headers, &Method::GET).await?,
+        &Method::DELETE,
+        "annotations",
+        "annotationtype",
+    )
+    .await?;
+    let name: Option<String> = sqlx::query_scalar("SELECT name FROM annotations_annotationtype WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?;
+    let Some(name) = name else {
+        return Err(ApiError::not_found("Not found."));
+    };
+    let rows = sqlx::query(
+        "SELECT i.id, i.name, i.image_set_id, st.name, u.live, u.gone, u.versions, u.results FROM ( \
+           SELECT image_id, count(*) FILTER (WHERE NOT deleted) AS live, count(*) FILTER (WHERE deleted) AS gone, 0::bigint AS versions, 0::bigint AS results \
+             FROM annotations_annotation WHERE annotation_type_id = $1 GROUP BY image_id \
+           UNION ALL SELECT image_id, 0, 0, count(*), 0 FROM annotations_annotationversion WHERE annotation_type_id = $1 GROUP BY image_id \
+           UNION ALL SELECT image_id, 0, 0, 0, count(*) FROM processing_pluginresultannotation WHERE annotation_type_id = $1 GROUP BY image_id \
+         ) u JOIN images_image i ON i.id = u.image_id JOIN images_imageset st ON st.id = i.image_set_id ORDER BY st.name, i.name, i.id",
+    )
+    .bind(id)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?;
+    let mut places: Vec<Value> = Vec::new();
+    let (mut live, mut gone, mut versions, mut results) = (0i64, 0i64, 0i64, 0i64);
+    for r in &rows {
+        let (l, g, v, x): (i64, i64, i64, i64) = (r.get(4), r.get(5), r.get(6), r.get(7));
+        live += l;
+        gone += g;
+        versions += v;
+        results += x;
+        let image: i64 = r.get(0);
+        if let Some(last) = places.last_mut().filter(|p| p["image"] == json!(image)) {
+            for (k, n) in [("annotations", l), ("deleted", g), ("versions", v), ("results", x)] {
+                last[k] = json!(last[k].as_i64().unwrap_or(0) + n);
+            }
+            continue;
+        }
+        places.push(json!({"image": image, "name": r.get::<String, _>(1), "image_set": r.get::<i64, _>(2), "image_set_name": r.get::<String, _>(3),
+                           "annotations": l, "deleted": g, "versions": v, "results": x}));
+    }
+    Ok(Json(json!({"id": id, "name": name, "annotations": live, "deleted": gone, "versions": versions, "results": results, "places": places})).into_response())
 }
 
 async fn delete_type(s: &AppState, id: i64) -> ApiResult<()> {
@@ -835,8 +985,16 @@ pub async fn type_patch_h(
     if n == 0 {
         return Err(ApiError::not_found("Not found."));
     }
+    set_group(&s, id, &f.seg_group).await?;
     // the vector type of a type in use cannot change: annotations hold vectors of that shape
-    if f.vector_type.is_some() && type_usage(&s, id).await? == 0 {
+    let current_shape: Option<i32> = sqlx::query_scalar("SELECT vector_type FROM annotations_annotationtype WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&s.pool)
+        .await
+        .map_err(db_err)?;
+    if f.vector_type.is_some() && f.vector_type == current_shape {
+        // the same shape again (the administration screen sends the whole type): nothing to change, also when annotations use it
+    } else if f.vector_type.is_some() && type_usage(&s, id).await? == 0 {
         sqlx::query("UPDATE annotations_annotationtype SET vector_type = $2 WHERE id = $1")
             .bind(id)
             .bind(f.vector_type)
@@ -856,6 +1014,7 @@ pub async fn type_delete_h(
     State(s): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<i64>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<Response> {
     require_model_perm(
         &s,
@@ -865,13 +1024,6 @@ pub async fn type_delete_h(
         "annotationtype",
     )
     .await?;
-    let used = type_usage(&s, id).await?;
-    if used > 0 {
-        return Err(ApiError::detail(
-            StatusCode::CONFLICT,
-            format!("The annotation type is used by {used} annotations, versions or results."),
-        ));
-    }
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM annotations_annotationtype WHERE id = $1)",
     )
@@ -881,6 +1033,42 @@ pub async fn type_delete_h(
     .map_err(db_err)?;
     if !exists {
         return Err(ApiError::not_found("Not found."));
+    }
+    // `?purge_deleted=true`: the annotations that were deleted (and can still be restored) go for good with the type, and with them what
+    // hangs on them (versions of image sets). Live annotations and plugin results still stop the deletion.
+    let purge = q.get("purge_deleted").is_some_and(|v| v == "true" || v == "1");
+    let used = type_usage(&s, id).await?;
+    if used > 0 {
+        let blockers: i64 = sqlx::query_scalar(
+            "SELECT (SELECT count(*) FROM annotations_annotation WHERE annotation_type_id = $1 AND NOT deleted) \
+                  + (SELECT count(*) FROM processing_pluginresultannotation WHERE annotation_type_id = $1) \
+                  + (SELECT count(*) FROM annotations_annotationversion v WHERE v.annotation_type_id = $1 \
+                       AND NOT EXISTS (SELECT 1 FROM annotations_annotation a WHERE a.id = v.annotation_id AND a.deleted AND a.annotation_type_id = $1))",
+        )
+        .bind(id)
+        .fetch_one(&s.pool)
+        .await
+        .map_err(db_err)?;
+        if !purge || blockers > 0 {
+            return Err(ApiError::detail(
+                StatusCode::CONFLICT,
+                format!(
+                    "The annotation type is used by {used} annotations, versions or results. {}.{}",
+                    usage_report(&s, id).await?,
+                    if blockers == 0 { " Delete with the deleted annotations to remove them for good." } else { "" }
+                ),
+            ));
+        }
+        let mut tx = s.pool.begin().await.map_err(db_err)?;
+        let gone: Vec<i64> = sqlx::query_scalar("SELECT id FROM annotations_annotation WHERE annotation_type_id = $1 AND deleted")
+            .bind(id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        cascade::delete_rows(&mut tx, "annotations_annotation", &gone).await?;
+        cascade::delete_rows(&mut tx, "annotations_annotationtype", &[id]).await?;
+        tx.commit().await.map_err(db_err)?;
+        return Ok(StatusCode::NO_CONTENT.into_response());
     }
     delete_type(&s, id).await?;
     Ok(StatusCode::NO_CONTENT.into_response())
@@ -1089,7 +1277,8 @@ async fn product_types_h(
     let rows = sqlx::query(
         "SELECT t.id, t.name, t.active, t.vector_type, t.node_count, t.color_code, t.sort_order, t.enable_blurred, \
          t.enable_concealed, t.multi_frame, t.default_width, t.default_height, t.size_unit, t.closed, t.area_hit_test, \
-         (SELECT count(*) FROM annotations_annotation a WHERE a.annotation_type_id = t.id AND NOT a.deleted) \
+         (SELECT count(*) FROM annotations_annotation a WHERE a.annotation_type_id = t.id AND NOT a.deleted), \
+         (SELECT g.group_name FROM exact_rust_type_group g WHERE g.annotation_type_id = t.id) \
          FROM annotations_annotationtype t WHERE t.product_id = $1 ORDER BY t.sort_order, t.name, t.id",
     )
     .bind(id)
@@ -1104,7 +1293,7 @@ async fn product_types_h(
                    "sort_order": r.get::<i32, _>(6), "enable_blurred": r.get::<bool, _>(7), "enable_concealed": r.get::<bool, _>(8),
                    "multi_frame": r.get::<bool, _>(9), "default_width": r.get::<f64, _>(10), "default_height": r.get::<f64, _>(11),
                    "size_unit": r.get::<String, _>(12), "closed": r.get::<bool, _>(13), "area_hit_test": r.get::<bool, _>(14),
-                   "annotation_count": r.get::<i64, _>(15)})
+                   "annotation_count": r.get::<i64, _>(15), "seg_group": r.get::<Option<String>, _>(16)})
         })
         .collect();
     Ok(Json(json!({"items": items})).into_response())

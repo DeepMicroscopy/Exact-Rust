@@ -3,7 +3,8 @@ import { VectorType, type Shape } from "./types";
 
 export type Pt = [number, number];
 export type Box = [number, number, number, number]; // x1, y1, x2, y2 with x1 < x2 and y1 < y2
-export type Bounds = { width: number; height: number };
+/** The image's size. `free`: annotations may reach outside it (negative coordinates, beyond the size), so nothing is held at the edge. */
+export type Bounds = { width: number; height: number; free?: boolean };
 
 export type Handle =
   | { kind: "corner"; id: "nw" | "ne" | "se" | "sw"; at: Pt }
@@ -51,6 +52,13 @@ export function sizeInPixels(value: number, unit: string, mpp: number): number {
 
 /** Box of the given size centred on `c`, moved into the image when it would stick out. */
 export function centeredBox(c: Pt, w: number, h: number, bounds: Bounds): Box {
+  if (bounds.free) {
+    const fw = Math.max(1, Math.round(w));
+    const fh = Math.max(1, Math.round(h));
+    const fx = Math.round(c[0] - fw / 2);
+    const fy = Math.round(c[1] - fh / 2);
+    return [fx, fy, fx + fw, fy + fh];
+  }
   const bw = Math.min(Math.max(1, Math.round(w)), bounds.width);
   const bh = Math.min(Math.max(1, Math.round(h)), bounds.height);
   let x1 = Math.round(c[0] - bw / 2);
@@ -60,7 +68,7 @@ export function centeredBox(c: Pt, w: number, h: number, bounds: Bounds): Box {
   return [x1, y1, x1 + bw, y1 + bh];
 }
 
-export const clampPoint = (p: Pt, b: Bounds): Pt => [Math.min(Math.max(0, p[0]), b.width), Math.min(Math.max(0, p[1]), b.height)];
+export const clampPoint = (p: Pt, b: Bounds): Pt => (b.free ? p : [Math.min(Math.max(0, p[0]), b.width), Math.min(Math.max(0, p[1]), b.height)]);
 
 export const boxOfPoints = (pts: Pt[]): Box => {
   const xs = pts.map((p) => p[0]);
@@ -187,8 +195,8 @@ export function resizeBox(box: Box, h: Extract<Handle, { kind: "corner" | "edge"
 /** The points shifted by (dx, dy), limited so that the whole shape stays inside the image. */
 export function movePoints(points: Pt[], dx: number, dy: number, b: Bounds): Pt[] {
   const [x1, y1, x2, y2] = boxOfPoints(points);
-  const sx = Math.min(Math.max(dx, -x1), b.width - x2);
-  const sy = Math.min(Math.max(dy, -y1), b.height - y2);
+  const sx = b.free ? dx : Math.min(Math.max(dx, -x1), b.width - x2);
+  const sy = b.free ? dy : Math.min(Math.max(dy, -y1), b.height - y2);
   return points.map(([x, y]) => [Math.round(x + sx), Math.round(y + sy)]);
 }
 

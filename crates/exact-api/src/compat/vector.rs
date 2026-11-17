@@ -57,7 +57,10 @@ pub fn validate(vector_type: i32, node_count: i32, vector: &mut Value) -> bool {
     let nodes_ok =
         |min_len: usize| len >= min_len && (node_count == 0 || node_count as usize == len / 2);
     match vector_type {
-        BOUNDING_BOX | FIXED_SIZE_BOUNDING_BOX | GLOBAL => bbox(),
+        BOUNDING_BOX | FIXED_SIZE_BOUNDING_BOX => bbox(),
+        // a global annotation belongs to the whole image: no coordinates, at most the `frame` it is for. (EXACT checks it as a
+        // bounding box, so clients of the old API send a dummy box; that is accepted as well.)
+        GLOBAL => len == 0 || bbox(),
         LINE => {
             // EXACT compares with `is not`: only equal small ints (-5..=256, cached by CPython) are "the same object";
             // a missing coordinate is a fresh float('inf')
@@ -142,6 +145,25 @@ mod tests {
             0,
             &mut json!({"x1": 1, "y1": 2, "x2": 30, "y2": 40, "frame": "a"})
         ));
+    }
+
+    #[test]
+    fn a_global_annotation_has_no_coordinates_but_may_have_a_frame() {
+        assert!(validate(GLOBAL, 0, &mut Value::Null));
+        assert!(validate(GLOBAL, 0, &mut json!({})));
+        assert!(validate(GLOBAL, 0, &mut json!({"frame": 3})));
+        assert!(validate(GLOBAL, 0, &mut json!({"frame": "3"})));
+        // the dummy box that EXACT's own check asks for is still accepted, with or without a frame
+        assert!(validate(GLOBAL, 0, &mut json!({"x1": 0, "y1": 0, "x2": 1, "y2": 1})));
+        assert!(validate(GLOBAL, 0, &mut json!({"x1": 0, "y1": 0, "x2": 1, "y2": 1, "frame": 2})));
+        // anything in between is not a vector of either kind
+        assert!(!validate(GLOBAL, 0, &mut json!({"x1": 1, "y1": 2})));
+        assert!(!validate(GLOBAL, 0, &mut json!({"frame": 2, "z": 1})));
+        assert!(!validate(GLOBAL, 0, &mut json!({"frame": "a"})));
+        assert!(!validate(GLOBAL, 0, &mut json!([1, 2])));
+        // an empty vector is still no vector for the shapes
+        assert!(!validate(BOUNDING_BOX, 0, &mut json!({})));
+        assert!(!validate(BOUNDING_BOX, 0, &mut json!({"frame": 1})));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   boxBetween,
+  clampPoint,
   centeredBox,
   handleAt,
   handlesFor,
@@ -100,5 +101,29 @@ describe("editing", () => {
     expect(removeVertex(sq, 1, minVertices(VectorType.Polygon))).toHaveLength(3);
     expect(removeVertex(sq.slice(0, 3), 1, minVertices(VectorType.Polygon))).toHaveLength(3);
     expect(removeVertex(sq.slice(0, 2), 1, minVertices(VectorType.MultiLine))).toHaveLength(2);
+  });
+});
+
+describe("annotations outside the image (free bounds)", () => {
+  const held = { width: 1000, height: 800 };
+  const free = { width: 1000, height: 800, free: true };
+  it("holds a point at the edge unless the bounds are free", () => {
+    expect(clampPoint([-40, 900], held)).toEqual([0, 800]);
+    expect(clampPoint([-40, 900], free)).toEqual([-40, 900]);
+  });
+  it("moves a shape beyond the edge only when free", () => {
+    const pts: [number, number][] = [[10, 10], [60, 40]];
+    expect(movePoints(pts, -50, 0, held)).toEqual([[0, 10], [50, 40]]);
+    expect(movePoints(pts, -50, 0, free)).toEqual([[-40, 10], [10, 40]]);
+  });
+  it("lets a box reach negative coordinates when a corner is dragged out", () => {
+    const b: [number, number, number, number] = [100, 100, 200, 200];
+    const h = { kind: "corner", id: "nw", at: [100, 100] } as Parameters<typeof resizeBox>[1];
+    expect(resizeBox(b, h, [-30, -20], held)).toEqual([0, 0, 200, 200]);
+    expect(resizeBox(b, h, [-30, -20], free)).toEqual([-30, -20, 200, 200]);
+  });
+  it("centres a fixed-size box on a point at the edge only when free", () => {
+    expect(centeredBox([5, 5], 50, 50, held)).toEqual([0, 0, 50, 50]);
+    expect(centeredBox([5, 5], 50, 50, free)).toEqual([-20, -20, 30, 30]);
   });
 });

@@ -140,6 +140,35 @@ def test_global_annotation_exists_once_and_is_switched_on_again():
         admin.delete(f"/api/v2/annotation-types/{t['id']}")
 
 
+def test_a_global_annotation_has_no_coordinates_and_one_per_frame():
+    admin = client("aubreville")
+    t = admin.post("/api/v2/annotation-types", json={"name": f"glob-{uuid.uuid4().hex[:6]}", "vector_type": 7, "product": 1}).json()
+    c = client("rt_member")
+
+    def post(vector):
+        return c.post("/api/v2/annotations", json={"image": IMAGE, "annotation_type": t["id"], "vector": vector, "unique_identifier": str(uuid.uuid4())})
+
+    try:
+        whole = post({})
+        assert whole.status_code == 201 and whole.json()["vector"] == {}, whole.text
+        f3, f4 = post({"frame": 3}), post({"frame": 4})
+        assert f3.status_code == 201 and f4.status_code == 201 and f3.json()["vector"] == {"frame": 3}
+        assert len({whole.json()["id"], f3.json()["id"], f4.json()["id"]}) == 3
+        again = post({"frame": "3"})  # the same frame: switched on again, not duplicated
+        assert again.status_code == 200 and again.json()["id"] == f3.json()["id"]
+        # a vector with coordinates (EXACT's own dummy box) is accepted, and anything in between is not
+        assert post({"x1": 0, "y1": 0, "x2": 1, "y2": 1, "frame": 5}).status_code == 201
+        assert post({"x1": 1, "y1": 1}).status_code == 400
+        assert post({"frame": 6, "z": 1}).status_code == 400
+        assert post({"frame": "a"}).status_code == 400
+        moved = c.patch(f"/api/v2/annotations/{f4.json()['id']}", json={"vector": {"frame": 7}})
+        assert moved.status_code == 200 and moved.json()["vector"] == {"frame": 7}, moved.text
+    finally:
+        for a in admin.get("/api/v2/annotations", params={"annotation_type": t["id"]}).json()["items"]:
+            admin.delete(f"/api/v2/annotations/{a['id']}", params={"hard": "true"})
+        admin.delete(f"/api/v2/annotation-types/{t['id']}")
+
+
 def test_the_frame_of_an_annotation_in_a_stack_is_stored_with_the_vector():
     c = client()
     a = make(c, vector={**BB, "frame": 4})

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_RENDER, PRESETS, rgbOf, VolumeRenderer, type RenderParams } from "../viewer-core/volumeRender";
+import { DEFAULT_RENDER, PRESETS, VolumeRenderer, type RenderParams } from "../viewer-core/volumeRender";
 
 interface Props {
   imageId: number;
-  /** the mask to show with the volume (none: only the volume) */
-  mask: { annotationId: number; color: string; version: number } | null;
+  /** the masks to show with the volume, each in the colour of its type (none: only the volume) */
+  masks: { annotationId: number; color: string; version: number }[];
   /** the linked segmentation file to show with the volume (none: no file), the segments switched off and the colour of every segment */
   linked?: { id: number; name: string; hide: number[]; colors: string[] } | null;
   onHide(): void;
@@ -60,7 +60,7 @@ const SIZES = [
  * The 3D render in the fourth panel. It only loads and draws when it is switched on: the server averages the volume onto a coarse
  * grid first (the longest side gets the chosen number of cells), which takes a few seconds on a large volume.
  */
-export function Render3D({ imageId, mask, linked = null, onHide }: Props) {
+export function Render3D({ imageId, masks, linked = null, onHide }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<VolumeRenderer | null>(null);
   const [size, setSize] = useState(192);
@@ -68,8 +68,13 @@ export function Render3D({ imageId, mask, linked = null, onHide }: Props) {
   const [error, setError] = useState("");
   const [params, setParams] = useState<RenderParams>({ ...DEFAULT_RENDER });
   const [preset, setPreset] = useState("Bone");
-  const [maskThere, setMaskThere] = useState(false);
-  const [labelsThere, setLabelsThere] = useState(false);
+  // the grids as they were fetched: every mask on its own, and the labels of the linked file; merged into one label volume below
+  const [maskGrids, setMaskGrids] = useState<Map<string, Uint8Array>>(new Map());
+  const [linkedLabels, setLinkedLabels] = useState<Uint8Array | null>(null);
+  const [showMasks, setShowMasks] = useState(true);
+  const [showLinked, setShowLinked] = useState(true);
+  const maskThere = maskGrids.size > 0;
+  const labelsThere = linkedLabels != null;
   const [labelsError, setLabelsError] = useState<string | null>(null);
   const patch = useCallback((p: Partial<RenderParams>) => {
     setParams((q) => ({ ...q, ...p }));
@@ -111,44 +116,38 @@ export function Render3D({ imageId, mask, linked = null, onHide }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageId, size]);
 
-  // the mask: loaded after the volume, and again a moment after each change of it
-  const annotationId = mask?.annotationId;
-  const version = mask?.version;
+  // the masks: loaded after the volume, and again a moment after each change of one of them
+  const maskKey = masks.map((m) => `${m.annotationId}.${m.version}`).join(",");
   useEffect(() => {
     if (status !== "ready") return;
-    const r = renderer.current;
-    if (!r) return;
-    if (annotationId == null) {
-      r.setMask(null);
-      setMaskThere(false);
-      return;
-    }
     const ac = new AbortController();
     const t = window.setTimeout(() => {
-      fetchGrid(`/api/v2/segmentation/${annotationId}/render-mask?max=${size}&v=${version}`, ac.signal)
-        .then((g) => {
-          r.setMask(g.data);
-          setMaskThere(true);
-        })
-        .catch(() => undefined);
+      Promise.all(
+        masks.map((m) =>
+          fetchGrid(`/api/v2/segmentation/${m.annotationId}/render-mask?max=${size}&v=${m.version}`, ac.signal)
+            .then((g): [string, Uint8Array] => [`${m.annotationId}.${m.version}`, g.data])
+            .catch(() => null),
+        ),
+      ).then((got) => {
+        if (!ac.signal.aborted) setMaskGrids(new Map(got.filter((g): g is [string, Uint8Array] => g != null)));
+      });
     }, 500);
     return () => {
       window.clearTimeout(t);
       ac.abort();
     };
-  }, [status, annotationId, version, size]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, maskKey, size]);
 
   // the linked segmentation: its labels on the grid of the volume, again when a segment is switched on or off
   const linkedId = linked?.id;
   const hideKey = linked?.hide.join(",") ?? "";
-  const colorKey = linked?.colors.join(",") ?? "";
   useEffect(() => {
     if (status !== "ready") return;
     const r = renderer.current;
     if (!r) return;
     if (linkedId == null) {
-      r.setLabels(null);
-      setLabelsThere(false);
+      setLinkedLabels(null);
       setLabelsError(null);
       return;
     }
@@ -156,14 +155,7 @@ export function Render3D({ imageId, mask, linked = null, onHide }: Props) {
     const t = window.setTimeout(() => {
       fetchLabels(`/api/v2/linked-volumes/${linkedId}/render-mask?max=${size}&hide=${hideKey}`, ac.signal)
         .then((data) => {
-          r.setLabels(
-            data,
-            colorKey.split(",").map((c) => {
-              const v = parseInt(c.replace("#", ""), 16) || 0;
-              return [(v >> 16) & 255, (v >> 8) & 255, v & 255] as [number, number, number];
-            }),
-          );
-          setLabelsThere(true);
+          setLinkedLabels(data);
           setLabelsError(null);
         })
         .catch((e: Error) => {
@@ -174,11 +166,42 @@ export function Render3D({ imageId, mask, linked = null, onHide }: Props) {
       window.clearTimeout(t);
       ac.abort();
     };
-  }, [status, linkedId, hideKey, colorKey, size]);
+  }, [status, linkedId, hideKey, size]);
 
+  // one label volume out of the linked file (if shown) and the masks that are shown: per cell the label with the most coverage;
+  // the linked segments keep their indices, the masks come after them, each in the colour of its type
+  const linkedColors = linked?.colors ?? [];
+  const colorKey = linkedColors.join(",");
+  const maskColors = masks.map((m) => m.color).join(",");
   useEffect(() => {
-    if (mask) patch({ maskColor: rgbOf(mask.color) });
-  }, [mask?.color, patch]); // eslint-disable-line react-hooks/exhaustive-deps
+    const r = renderer.current;
+    if (status !== "ready" || !r) return;
+    const lab = showLinked && linkedLabels ? linkedLabels : null;
+    const grids = showMasks ? masks.map((m) => maskGrids.get(`${m.annotationId}.${m.version}`) ?? null) : [];
+    if (!lab && grids.every((g) => !g)) {
+      r.setLabels(null);
+      return;
+    }
+    const cells = (lab ? lab.length / 2 : grids.find((g) => g)?.length) ?? 0;
+    const out = new Uint8Array(cells * 2);
+    if (lab) out.set(lab);
+    const base = linkedColors.length;
+    grids.forEach((g, k) => {
+      if (!g || g.length !== cells) return;
+      for (let i = 0; i < cells; i++) {
+        if (g[i] > out[2 * i]) {
+          out[2 * i] = g[i];
+          out[2 * i + 1] = base + k + 1;
+        }
+      }
+    });
+    const rgb = (c: string): [number, number, number] => {
+      const v = parseInt(c.replace("#", ""), 16) || 0;
+      return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+    };
+    r.setLabels(out, [...linkedColors.map(rgb), ...masks.map((m) => rgb(m.color))]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, maskGrids, linkedLabels, showMasks, showLinked, colorKey, maskColors, maskKey]);
 
   // turning, zooming
   const drag = useRef<{ x: number; y: number } | null>(null);
@@ -258,12 +281,12 @@ export function Render3D({ imageId, mask, linked = null, onHide }: Props) {
           </label>
           {linked && (
             <label title={labelsError ?? `The linked segmentation ${linked.name}, in the colours of its segments`}>
-              <input type="checkbox" checked={params.showLabels && labelsThere} disabled={!labelsThere} onChange={(e) => patch({ showLabels: e.target.checked })} data-testid="render3d-seg" /> Segmentation
+              <input type="checkbox" checked={showLinked && labelsThere} disabled={!labelsThere} onChange={(e) => setShowLinked(e.target.checked)} data-testid="render3d-seg" /> Segmentation
             </label>
           )}
-          {(mask || !linked) && (
-            <label title={mask ? "" : "Choose a segmentation type to see its mask here"}>
-              <input type="checkbox" checked={params.showMask && !!mask && maskThere} disabled={!mask || !maskThere} onChange={(e) => patch({ showMask: e.target.checked })} data-testid="render3d-mask" /> Mask
+          {(masks.length > 0 || !linked) && (
+            <label title={masks.length ? "The masks of the types that are shown, each in the colour of its type" : "Choose a segmentation type to see its mask here"}>
+              <input type="checkbox" checked={showMasks && masks.length > 0 && maskThere} disabled={masks.length === 0 || !maskThere} onChange={(e) => setShowMasks(e.target.checked)} data-testid="render3d-mask" /> {masks.length > 1 ? "Masks" : "Mask"}
             </label>
           )}
           <span className="muted small">Drag turns, scroll zooms.</span>

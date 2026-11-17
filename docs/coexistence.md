@@ -49,7 +49,7 @@ The same Django update brought migration `processing/0015_registration_plugins`,
 * **Personal access tokens cannot be created or revoked on the Rust server** (it validates them): until it can, they are made in Django's UI (`test_a_personal_access_token_can_be_made_on_rust` is an expected failure that turns into an error the day it works, so the note is removed).
 * Django still accepts the token of a **deactivated** user; Rust refuses it (on purpose).
 * `PUT` on the REST annotation endpoint: Django insists on `annotationversion_set` and `uploaded_media_files` in the body, Rust does not (a client that works on Django works on Rust).
-* **No v1 REST create of image sets** on Rust (501; its own is `POST /api/v2/image-sets`); the old delete URL `GET /images/api/image/delete/<id>/` does not exist on Rust (`DELETE /api/v2/images/<id>`). exact-sync does not use either.
+* **No v1 REST create of image sets** on Rust (501; its own is `POST /api/v2/image-sets`); the old delete URL `GET /images/api/image/delete/<id>/` does not exist on Rust (`DELETE /api/v2/images/<id>`; `DELETE /api/v1/images/images/<id>/`, which is what exact-sync's `destroy_image` calls, works). exact-sync does not use the others.
 * A URL the Rust server does not implement answers with the web app's start page (status 200), not a 404, when the web app is served.
 * Six simultaneous uploads of the same file: Django alone creates six images (it checks, then inserts, with no unique constraint); with both servers fewer. Not a coexistence problem.
 

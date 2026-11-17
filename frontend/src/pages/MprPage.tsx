@@ -137,31 +137,49 @@ export function MprPage() {
   const [segError, setSegError] = useState<string | null>(null);
   const segType = segTypes.find((t) => t.id === segTypeId) ?? null;
   const segAnnotation = segTypeId == null ? null : (annotations.data ?? []).find((a) => a.annotation_type === segTypeId && !a.deleted && a.id > 0) ?? null;
-  const seg3d = useSegment3D(segAnnotation?.id ?? null);
+  // masks of the same group that lost voxels to the one being painted (or got them back by undo) are drawn anew
+  const [maskVersions, setMaskVersions] = useState<Record<number, number>>({});
+  const bumpOthers = useCallback((ids: number[]) => setMaskVersions((m) => Object.fromEntries([...Object.entries(m), ...ids.map((i) => [i, (m[i] ?? 0) + 1])])), []);
+  const seg3d = useSegment3D(segAnnotation?.id ?? null, bumpOthers);
+  // groups of segmentation types: the masks of one group exclude each other
+  const groupRows = useQuery({ queryKey: ["segmentation-groups"], queryFn: () => api<{ annotation_type: number; group: string }[]>("/api/v2/segmentation-groups") });
+  const groupOf = useMemo(() => new Map((groupRows.data ?? []).map((g) => [g.annotation_type, g.group])), [groupRows.data]);
+  // the masks shown next to the one being painted (the eyes of the list), striped
+  const [shownTypes, setShownTypes] = useState<Set<number>>(new Set());
+  useEffect(() => setShownTypes(new Set()), [id]);
+  const toggleShown = useCallback((t: number) => setShownTypes((cur) => { const n = new Set(cur); if (!n.delete(t)) n.add(t); return n; }), []);
+  const maskOf = (typeId: number) => (annotations.data ?? []).find((a) => a.annotation_type === typeId && !a.deleted && a.id > 0) ?? null;
+  const others: OtherMask[] = segTypes.flatMap((t) => {
+    const a = t.id !== segTypeId && shownTypes.has(t.id) ? maskOf(t.id) : null;
+    return a ? [{ annotationId: a.id, color: t.color_code, version: maskVersions[a.id] ?? 0 }] : [];
+  });
+  // the 3D render shows every mask that is visible (the one being painted and the ones with an eye), all solid
+  const renderMasks = [...(segAnnotation && segType ? [{ annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version }] : []), ...others];
+  const mates = segType ? segTypes.filter((t) => t.id !== segType.id && groupOf.get(t.id) && groupOf.get(t.id) === groupOf.get(segType.id)).map((t) => t.name) : [];
   const [autoOpen, setAutoOpen] = useState(false);
   // ---- segmentation files linked to the volume (read-only overlay, see v2/linked.rs) ----
   const linkedFiles = useQuery({ queryKey: ["linked-image", id], queryFn: () => api<LinkedFile[]>(`/api/v2/images/${id}/linked-volumes`) });
   const [linkedView, setLinkedView] = useState<Record<number, LinkedView>>({});
   const [linkedOpacity, setLinkedOpacity] = useState(0.6);
-  const [linkedPanel, setLinkedPanel] = useState(true);
+  const [linkedPanel, setLinkedPanel] = useState(() => !!new URLSearchParams(window.location.search).get("seg"));
   const [importing, setImporting] = useState<LinkedFile | null>(null);
   const allProducts = useQuery({ queryKey: ["products"], queryFn: () => listAll<Product>("/api/v2/products", { fields: "id,name,team" }) });
   const linkedAll = linkedFiles.data ?? [];
   const linked: LinkedPane[] = linkedAll.filter((f) => !linkedView[f.id]?.off).map((f) => ({ id: f.id, hide: linkedView[f.id]?.hidden ?? [] }));
-  // Which files are drawn: the one that was opened (`?seg=`), else the newest. Several at once overlap and are not what one wants to look at;
-  // the others are in the window, unticked.
+  // Which files are drawn: only the one that was opened (`?seg=`); a volume opened on its own shows none and keeps the window closed
+  // (the button in the top bar opens it, a tick draws a file). Several at once overlap and are not what one wants to look at.
   const shownFor = useRef<number | null>(null);
   useEffect(() => {
     setLinkedView({});
     shownFor.current = null;
+    setLinkedPanel(!!new URLSearchParams(window.location.search).get("seg"));
   }, [id]);
   useEffect(() => {
     const files = linkedFiles.data;
     if (!files || files.length === 0 || shownFor.current === id) return;
     shownFor.current = id;
     const wanted = Number(search.get("seg"));
-    const chosen = files.find((f) => f.id === wanted) ?? [...files].sort((a, b) => b.time.localeCompare(a.time))[0];
-    setLinkedView(Object.fromEntries(files.map((f) => [f.id, { hidden: [], off: f.id !== chosen.id }])));
+    setLinkedView(Object.fromEntries(files.map((f) => [f.id, { hidden: [], off: f.id !== wanted }])));
   }, [linkedFiles.data, id, search]);
   // the 3D render shows the first linked file that is switched on
   const firstLinked = linkedAll.find((f) => !linkedView[f.id]?.off);
@@ -205,7 +223,30 @@ export function MprPage() {
           onSize: (steps) => setTool((t) => ({ ...t, size: resized(t.size, steps, t.unit) })),
         }
       : null;
-  const segItems: DropdownItem[] = [...segTypes.map((t) => ({ id: t.id, label: `▨ ${t.name}`, color: t.color_code, checked: t.id === segTypeId })), ...(segTypeId != null ? [{ id: "off", label: "Leave segmentation" }] : [])];
+  // the Segment list: every type with an eye (show its mask, striped, next to the one being painted); types of a group are listed together
+  const segItems: DropdownItem[] = [
+    ...[...segTypes]
+      .map((t) => ({ t, group: groupOf.get(t.id) ?? null }))
+      .sort((x, y) => (x.group ?? "").localeCompare(y.group ?? "") || 0)
+      .sort((x, y) => Number(x.group != null) - Number(y.group != null))
+      .map(({ t, group }) => {
+        const active = t.id === segTypeId;
+        const has = !!maskOf(t.id);
+        return {
+          id: t.id,
+          label: `▨ ${t.name}`,
+          color: t.color_code,
+          checked: active,
+          group,
+          eye: active || (shownTypes.has(t.id) && has),
+          eyeDisabled: active || !has,
+          eyeTitle: active ? "The mask being painted is always shown" : has ? "Show or hide this mask (striped) next to the one being painted" : "This volume has no mask of this type yet",
+          onEye: () => toggleShown(t.id),
+          striped: !active && shownTypes.has(t.id) && has,
+        };
+      }),
+    ...(segTypeId != null ? [{ id: "off", label: "Leave segmentation" }] : []),
+  ];
 
   // the crosshair starts where a link says, else in the middle of the volume
   useEffect(() => {
@@ -301,6 +342,16 @@ export function MprPage() {
           return;
         }
       }
+      // slices: the arrows step the axial plane (the maximized plane, when there is one), Shift the coronal and Alt the sagittal plane;
+      // Page Up / Down step the plane used last
+      const up = e.key === "ArrowUp" || e.key === "PageUp";
+      if (!mod && (up || e.key === "ArrowDown" || e.key === "PageDown")) {
+        const plane: Plane = e.key.startsWith("Page") ? active : e.altKey ? 2 : e.shiftKey ? 1 : maxed ?? 0;
+        setActive(plane);
+        step(plane, up ? 1 : -1);
+        e.preventDefault();
+        return;
+      }
       if (segTypeId != null) {
         const k = e.key.toLowerCase();
         const mod = e.ctrlKey || e.metaKey;
@@ -309,21 +360,14 @@ export function MprPage() {
         else if (mod && k === "y") void segLive.current.redo();
         else if (!mod && !e.altKey && editableRef.current && (k === "b" || k === "l" || k === "w")) setTool((t) => ({ ...t, tool: k === "b" ? "brush" : k === "l" ? "lasso" : "wand" }));
         else if (!mod && !e.altKey && !e.shiftKey && editableRef.current && (e.code === "Comma" || e.code === "Period")) setTool((t) => ({ ...t, size: resized(t.size, e.code === "Period" ? 1 : -1, t.unit) }));
-        else if (!(e.key === "PageUp" || e.key === "ArrowUp" || e.key === "PageDown" || e.key === "ArrowDown")) return;
-        else {
-          step(active, e.key === "PageUp" || e.key === "ArrowUp" ? 1 : -1);
-        }
+        else return;
         e.preventDefault();
         return;
       }
-      if (e.key === "PageUp" || e.key === "ArrowUp") step(active, 1);
-      else if (e.key === "PageDown" || e.key === "ArrowDown") step(active, -1);
-      else return;
-      e.preventDefault();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [active, step, segTypeId]);
+  }, [active, maxed, step, segTypeId]);
   const [dockEl, setDockEl] = useState<HTMLElement | null>(null);
   const editableRef = useRef(editable);
   editableRef.current = editable;
@@ -420,12 +464,12 @@ export function MprPage() {
       <div className={`mpr-grid ${maxed != null ? "maxed" : ""}`}>
         {shape && planes && voxel
           ? ([0, 1, 2] as Plane[]).map((p) => (
-              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} maxed={maxed === p} hidden={maxed != null && maxed !== p} onMaximize={() => { setActive(p); setMaxed((m) => (m === p ? null : p)); }}  onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} linked={linked} linkedOpacity={linkedOpacity} />
+              <Pane key={p} imageId={id} plane={p} shapes={p === 0 ? shapes : null} styles={styles} shape={shape} info={planes[p]} voxel={voxel} active={active === p} maxed={maxed === p} hidden={maxed != null && maxed !== p} onMaximize={() => { setActive(p); setMaxed((m) => (m === p ? null : p)); }}  onActivate={() => setActive(p)} onPick={setVoxel} onStep={(d) => step(p, d)} seg={segPane} others={others} maskOpacity={tool.opacity} linked={linked} linkedOpacity={linkedOpacity} />
             ))
           : null}
         <div className={`mpr-info glass ${render3d ? "has-render" : ""}`} hidden={maxed != null} data-testid="mpr-info">
           {render3d ? (
-            <Render3D imageId={id} mask={segAnnotation && segType ? { annotationId: segAnnotation.id, color: segType.color_code, version: seg3d.version } : null} linked={renderLinked} onHide={() => setRender3d(false)} />
+            <Render3D imageId={id} masks={renderMasks} linked={renderLinked} onHide={() => setRender3d(false)} />
           ) : voxel && shape ? (
             <Info voxel={voxel} shape={shape} planes={planes ?? []} segmenting={segTypeId != null && editable} onRender3D={() => setRender3d(true)} />
           ) : (
@@ -438,6 +482,7 @@ export function MprPage() {
       {segType && shape && voxel && (
         <Segment3DPanel
           type={{ name: segType.name, color: segType.color_code }}
+          exclusiveWith={mates}
           state={seg3d.state}
           message={seg3d.message}
           busy={seg3d.busy}
@@ -506,7 +551,7 @@ function Info({ voxel, shape, planes, segmenting, onRender3D }: { voxel: Voxel; 
           Show 3D render
         </button>
       </p>
-      <p className="muted small">Click in a plane to set the crosshair. Page Up / Down steps the slices of the plane you used last, and so does the mouse wheel when the top bar says "Wheel: slices" (Shift + wheel in the other mode). Drag moves the image, a pinch zooms.</p>
+      <p className="muted small">Click in a plane to set the crosshair. The arrow keys step the slices (↑ / ↓ axial or the maximized plane, Shift coronal, Alt sagittal), Page Up / Down those of the plane you used last, and so does the mouse wheel when the top bar says "Wheel: slices" (Shift + wheel in the other mode). Drag moves the image, a pinch zooms.</p>
     </>
   );
 }
@@ -526,13 +571,23 @@ interface SegPane {
   onSize(steps: number): void;
 }
 
+/** The mask of a type that is shown next to the one being painted: drawn striped. */
+interface OtherMask {
+  annotationId: number;
+  color: string;
+  version: number;
+}
+
 /** A linked segmentation file as the planes draw it: which one and which of its segments are hidden. */
 interface LinkedPane {
   id: number;
   hide: number[];
 }
 
-function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxed, hidden, onMaximize, onActivate, onPick, onStep, seg, linked, linkedOpacity }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; maxed: boolean; hidden: boolean; onMaximize(): void; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null; linked: LinkedPane[]; linkedOpacity: number }) {
+/** The modifier of the arrow keys that steps a plane (the axial plane needs none, and so has the arrow keys when another is not maximized). */
+const SLICE_KEYS = ["", "Shift +", "Alt +"] as const;
+
+function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxed, hidden, onMaximize, onActivate, onPick, onStep, seg, others, maskOpacity, linked, linkedOpacity }: { imageId: number; plane: Plane; shapes: Shape[] | null; styles: Map<number, TypeStyle>; shape: VolumeShape; info: PlaneInfo; voxel: Voxel; active: boolean; maxed: boolean; hidden: boolean; onMaximize(): void; onActivate(): void; onPick(v: Voxel): void; onStep(delta: number): void; seg: SegPane | null; others: OtherMask[]; maskOpacity: number; linked: LinkedPane[]; linkedOpacity: number }) {
   const host = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null);
   const blender = useRef<ZBlender | null>(null);
@@ -541,10 +596,11 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
   const brush = useRef<BrushLayer | null>(null);
   const overlay = useRef<MaskOverlay | null>(null);
   const linkedOverlays = useRef<Map<number, MaskOverlay>>(new Map());
+  const otherOverlays = useRef<Map<number, MaskOverlay>>(new Map());
   /** the frame of the image on display: the mask of another frame waits until it is */
   const shownFrame = useRef<number | null>(null);
-  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked });
-  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked };
+  const live = useRef({ shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked, others });
+  live.current = { shape, plane, voxel, onPick, onStep, onActivate, shapes, styles, seg, info, linked, others };
   const pointer = useRef<[number, number] | null>(null);
   const [busy, setBusy] = useState(false);
   const frame = frameOf(plane, voxel);
@@ -729,6 +785,7 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
         shownFrame.current = f;
         overlay.current?.setDisplayed(f);
         linkedOverlays.current.forEach((o) => o.setDisplayed(f));
+        otherOverlays.current.forEach((o) => o.setDisplayed(f));
       },
     });
     blender.current = b;
@@ -800,6 +857,34 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
   useEffect(() => {
     linkedOverlays.current.forEach((o) => o.setOpacity(linkedOpacity));
   }, [linkedOpacity, linkedKey, imageId, info.frames, info.width, info.height, plane]);
+  // the masks of the other types that are shown (the eyes): striped, drawn below the one being painted
+  const othersKey = others.map((o) => `${o.annotationId}:${o.color.replace("#", "")}`).join(",");
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+    const made = new Map<number, MaskOverlay>();
+    for (const item of othersKey ? othersKey.split(",") : []) {
+      const [aid, color] = [Number(item.split(":")[0]), `#${item.split(":")[1]}`];
+      const o = new MaskOverlay(v, info.width, info.height, undefined, color);
+      if (shownFrame.current != null) o.setDisplayed(shownFrame.current);
+      made.set(aid, o);
+    }
+    otherOverlays.current = made;
+    return () => {
+      made.forEach((o) => o.destroy());
+      otherOverlays.current = new Map();
+    };
+  }, [othersKey, info.width, info.height, imageId, plane, info.frames]);
+  const othersLook = others.map((o) => `${o.annotationId}:${o.color}:${o.version}`).join("|");
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      for (const o of live.current.others) otherOverlays.current.get(o.annotationId)?.load(`/api/v2/segmentation/${o.annotationId}/slice/${plane}/${frame}?color=${hexDigits(o.color)}&alpha=255&v=${o.version}`, frame);
+    }, 30);
+    return () => window.clearTimeout(t);
+  }, [othersKey, othersLook, plane, frame, imageId, info.frames]);
+  useEffect(() => {
+    otherOverlays.current.forEach((o) => o.setOpacity(Math.min(1, maskOpacity + 0.25)));
+  }, [maskOpacity, othersKey, imageId, info.frames, info.width, info.height, plane]);
   const color = seg?.color;
   const version = seg?.version;
   useEffect(() => {
@@ -859,9 +944,9 @@ function Pane({ imageId, plane, shapes, styles, shape, info, voxel, active, maxe
       </button>
       {busy && <span className="spinner mpr-busy" role="status" aria-label="Loading the slice" />}
       <div className="mpr-steps">
-        <button type="button" className="mpr-step" disabled={frame <= 0} onClick={() => onStep(-1)} aria-label={`${PLANE_NAMES[plane]}: previous slice`}>−</button>
+        <button type="button" className="mpr-step" disabled={frame <= 0} onClick={() => onStep(-1)} aria-label={`${PLANE_NAMES[plane]}: previous slice`} title={`Previous slice (${SLICE_KEYS[plane]} ↓, Page Down)`}>−</button>
         <input className="mpr-slider" type="range" min={0} max={info.frames - 1} value={frame} onChange={(e) => onStep(Number(e.target.value) - frame)} aria-label={`${PLANE_NAMES[plane]} slice`} />
-        <button type="button" className="mpr-step" disabled={frame >= info.frames - 1} onClick={() => onStep(1)} aria-label={`${PLANE_NAMES[plane]}: next slice`}>+</button>
+        <button type="button" className="mpr-step" disabled={frame >= info.frames - 1} onClick={() => onStep(1)} aria-label={`${PLANE_NAMES[plane]}: next slice`} title={`Next slice (${SLICE_KEYS[plane]} ↑, Page Up)`}>+</button>
       </div>
     </div>
   );

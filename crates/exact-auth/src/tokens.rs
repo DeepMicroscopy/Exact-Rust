@@ -22,6 +22,14 @@ pub fn token_matches(token: &str, stored_hash: &str) -> bool {
         .into()
 }
 
+/// A new personal access token: `(token, prefix)`, `token` = `pat_<prefix>.<secret>` (12 and 43 random characters; the same shape as
+/// `exact.users.tokens.generate_pat`, which is what Django makes). Only the hash of the token is stored.
+pub fn generate_pat() -> (String, String) {
+    let prefix = random_token(12);
+    let token = format!("pat_{prefix}.{}", random_token(43));
+    (token, prefix)
+}
+
 /// URL-safe random string for session ids and CSRF tokens.
 pub fn random_token(len: usize) -> String {
     rand::thread_rng()
@@ -48,6 +56,14 @@ mod tests {
         assert_eq!(hash_token("pat_x.y").len(), 64);
         assert!(token_matches("pat_x.y", &hash_token("pat_x.y")));
         assert!(!token_matches("pat_x.z", &hash_token("pat_x.y")));
+    }
+
+    #[test]
+    fn generated_tokens_authenticate_the_way_they_are_parsed() {
+        let (t, prefix) = generate_pat();
+        assert_eq!(pat_prefix(&t), Some(prefix.as_str()));
+        assert!(t.starts_with("pat_") && t.len() == 4 + 12 + 1 + 43);
+        assert_ne!(generate_pat().0, t);
     }
 
     #[test]

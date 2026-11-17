@@ -21,7 +21,7 @@ use crate::{
 use axum::{
     body::Bytes,
     extract::{Path, State},
-    http::{header, HeaderMap, Method, Uri},
+    http::{header, HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -204,6 +204,31 @@ async fn rest_write(
         return Some(match r {
             Ok(r) => with_allow(r, LIST_ALLOW),
             Err(e) => with_allow(e.into_response(), LIST_ALLOW),
+        });
+    }
+    // `destroy_image` of exact-sync: the image with its files and rows (the same as `DELETE /api/v2/images/{id}`, which also asks the
+    // image set for the permission to delete images; Django only asks the model permission)
+    if spec.name == "Image" && *method == Method::DELETE {
+        let pk = pk?;
+        let r = async {
+            let p = require_model_perm(
+                s,
+                authenticate(s, headers, method).await?,
+                method,
+                spec.perm.0,
+                spec.perm.1,
+            )
+            .await?;
+            let id = pk
+                .parse::<i64>()
+                .map_err(|_| ApiError::not_found("Not found."))?;
+            crate::v2::image_sets::delete_image(s, &p, id, false).await?;
+            Ok::<Response, ApiError>(StatusCode::NO_CONTENT.into_response())
+        }
+        .await;
+        return Some(match r {
+            Ok(r) => with_allow(r, DETAIL_ALLOW),
+            Err(e) => with_allow(e.into_response(), DETAIL_ALLOW),
         });
     }
     if !rest_writes::is_annotation(spec) {

@@ -38,6 +38,8 @@ export class AnnotationLayer {
   private shapes: Shape[] = [];
   private styles = new Map<number, TypeStyle>();
   private hidden = new Set<number>();
+  /** types that cannot be clicked for now: drawn with dashed outlines */
+  private locked = new Set<number>();
   private overlay: Overlay = EMPTY_OVERLAY;
   /** a region of the image to point out (a crop's place in its original), dashed white */
   private mark: Box | null = null;
@@ -68,6 +70,11 @@ export class AnnotationLayer {
 
   setHiddenTypes(hidden: Set<number>): void {
     this.hidden = hidden;
+    this.schedule();
+  }
+
+  setLockedTypes(locked: Set<number>): void {
+    this.locked = locked;
     this.schedule();
   }
 
@@ -167,7 +174,9 @@ export class AnnotationLayer {
       trace(s);
       ctx.lineWidth = selected ? 3 : 2;
       ctx.strokeStyle = color;
+      const locked = this.locked.has(s.typeId);
       ctx.fillStyle = color + (selected ? "44" : "26");
+      ctx.setLineDash(locked ? [7, 4] : []);
       if (s.closed || s.vectorType === VectorType.Point) ctx.fill();
       if (selected) {
         ctx.save();

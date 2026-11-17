@@ -27,6 +27,7 @@ import { takeScreenshot } from "../viewer-core/screenshot";
 import { FINDER_FOCUS, ImageFinder, readFinder, saveFinder } from "../components/ImageFinder";
 import { SHOW_HELP } from "../components/GlobalShortcuts";
 import { OVERLAY_TOGGLE, OverlayControl } from "../components/OverlayControl";
+import { GlobalLabels } from "../components/GlobalLabels";
 import { ScaleBar } from "../components/ScaleBar";
 import { ZoomSlider } from "../components/ZoomSlider";
 import { zoomFactor } from "../viewer-core/zoomStep";
@@ -43,7 +44,9 @@ import { ConfirmDelete } from "../components/ConfirmDelete";
 import { ConfirmResize } from "../components/ConfirmResize";
 import { boxVector, centeredBox, isBoxType } from "../viewer-core/geometry";
 import { visibleOnFrame } from "../viewer-core/frames";
+import { labelOn, labelVector } from "../viewer-core/globalLabels";
 import { prefersThreePlanes, rememberThreePlanes } from "./MprPage";
+import { TypeMenu, type TypeMenuModel } from "../components/TypeMenu";
 import { ContextMenu } from "../components/ContextMenu";
 import { usePreferences } from "../hooks/usePreferences";
 import { CropDialog } from "../components/CropDialog";
@@ -155,6 +158,10 @@ export function ViewerPage() {
   const openingRef = useRef(true);
   const viewFor = useRef<number | null>(null);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
+  // types that cannot be clicked for now (the annotations are drawn, but do not take part in selecting, so one can annotate on top of them)
+  const [locked, setLocked] = useState<Set<number>>(new Set());
+  const menuAt = useRef(0);
+  const [typeMenu, setTypeMenu] = useState<TypeMenuModel | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const image = useQuery({
@@ -311,17 +318,31 @@ export function ViewerPage() {
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
   const { prefs } = usePreferences();
+  // Mouse-optimized navigation works as the old EXACT did: annotations are only selected, moved and drawn in "annotate" mode, which the
+  // pencil button (the toolbox) switches on; outside it a click on the slide zooms. Trackpad / tablet navigation has no such mode.
+  const annotate = !prefs.legacy_navigation || toolsOpen;
+  const annotateRef = useRef(annotate);
+  annotateRef.current = annotate;
+  const wasLegacy = useRef<boolean | null>(null);
+  useEffect(() => {
+    // the first time the preference is known (and when it changes), mouse-optimized starts outside annotate mode
+    if (wasLegacy.current === prefs.legacy_navigation) return;
+    if (wasLegacy.current !== null || prefs.legacy_navigation) setToolsOpen(prefs.legacy_navigation ? false : window.innerWidth >= 760);
+    wasLegacy.current = prefs.legacy_navigation;
+  }, [prefs.legacy_navigation]);
   const legacyRef = useRef(prefs.legacy_navigation);
   legacyRef.current = prefs.legacy_navigation;
   const zoomStepRef = useRef(prefs.zoom_step);
   zoomStepRef.current = prefs.zoom_step;
-  const hostState = useRef({ shapes, info, hiddenAll, image: image.data, actions });
-  hostState.current = { shapes, info, hiddenAll, image: image.data, actions };
+  const allowOutsideRef = useRef(prefs.allow_outside);
+  allowOutsideRef.current = prefs.allow_outside;
+  const hostState = useRef({ shapes, info, hiddenAll, locked, image: image.data, actions });
+  hostState.current = { shapes, info, hiddenAll, locked, image: image.data, actions };
   const editorHost: EditorHost = useMemo(
     () => ({
-      shapes: () => hostState.current.shapes.filter((s) => s.id > 0 && !hostState.current.hiddenAll.has(s.typeId)),
+      shapes: () => hostState.current.shapes.filter((s) => s.id > 0 && !hostState.current.hiddenAll.has(s.typeId) && !hostState.current.locked.has(s.typeId)),
       type: (tid) => hostState.current.info(tid),
-      image: () => ({ width: hostState.current.image?.width ?? 1, height: hostState.current.image?.height ?? 1, mpp: hostState.current.image?.mpp ?? 0 }),
+      image: () => ({ width: hostState.current.image?.width ?? 1, height: hostState.current.image?.height ?? 1, mpp: hostState.current.image?.mpp ?? 0, free: allowOutsideRef.current }),
       onCreate: (tid, v) => void hostState.current.actions.create(tid, v),
       onUpdate: (s, v) => void hostState.current.actions.update(s.id, v),
       onDelete: (s) => void hostState.current.actions.remove(s.id),
@@ -463,6 +484,7 @@ export function ViewerPage() {
     resultLayerRef.current = resultLayer;
     const editor = new AnnotationEditor(viewer, layer, hostProxy(editorHostRef));
     editorRef.current = editor;
+    editor.viewOnly = !annotateRef.current;
     const removeGestures = installGestures(viewer, (e) => e.altKey || editor.brushActive());
     const removePointerDebug = installPointerDebug(viewer);
     const masks = new MaskSet(() => layer.invalidate());
@@ -728,18 +750,25 @@ export function ViewerPage() {
     }
     exitMulti();
     setSegTypeId(null);
+    if (legacyRef.current) setToolsOpen(true); // choosing a type to draw is going into annotate mode
     setCurrentTypeId(typeId);
     setDrawing(true);
     const e = info(typeId);
     if (e && !oneClickCapable(e.vectorType)) setOneClick(false);
   }, [info, exitMulti, notify]);
+  /** The global labels (types of the whole image) and whether each is set on the frame shown. */
+  const labelStates = useMemo(
+    () => globals.map((entry) => ({ entry, set: !!labelOn(annotations.data ?? [], entry.id, frame1, multiFrameTypes.has(entry.id)) })),
+    [globals, annotations.data, frame1, multiFrameTypes],
+  );
   const toggleGlobal = useCallback(
     (typeId: number) => {
-      const existing = (annotations.data ?? []).find((a) => a.annotation_type === typeId && !a.deleted && a.id > 0);
-      if (existing) void actions.remove(existing.id);
-      else void actions.create(typeId, null);
+      const existing = labelOn(annotations.data ?? [], typeId, frame1, multiFrameTypes.has(typeId));
+      if (existing) {
+        if (existing.id > 0) void actions.remove(existing.id);
+      } else void actions.create(typeId, labelVector(stampFrames.current));
     },
-    [annotations.data, actions],
+    [annotations.data, actions, frame1, multiFrameTypes],
   );
   const syncFromEditor = useCallback(() => {
     // Escape may end the draw tool inside the editor
@@ -880,6 +909,8 @@ export function ViewerPage() {
       const a = matchShortcut(ev);
       if (!a) return;
       if (readOnly && EDIT_ACTIONS.has(a.type)) return;
+      // mouse-optimized: outside annotate mode nothing is edited (choosing a type to draw switches the mode on)
+      if (!annotateRef.current && ["selectAll", "paste", "delete", "undo", "redo", "polyOp"].includes(a.type)) return;
       const ed = editorRef.current;
       const viewer = viewerRef.current;
       switch (a.type) {
@@ -1000,7 +1031,22 @@ export function ViewerPage() {
 
   useEffect(() => layerRef.current?.setData(shapes, styles), [shapes, styles]);
   useEffect(() => layerRef.current?.setHiddenTypes(hiddenAll), [hiddenAll]);
-  useEffect(() => editorRef.current?.sync(), [shapes, hiddenAll]);
+  useEffect(() => layerRef.current?.setLockedTypes(locked), [locked]);
+  // leaving annotate mode (mouse-optimized): what is selected or half drawn is let go of
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    ed.viewOnly = !annotate;
+    if (!annotate) {
+      ed.cancel();
+      ed.select(null);
+      setDrawing(false);
+      setPolyOp(null);
+      setMenu(null);
+      setGroupMenu(null);
+    }
+  }, [annotate]);
+  useEffect(() => editorRef.current?.sync(), [shapes, hiddenAll, locked]);
 
   // the editor's tool follows the toolbox state
   useEffect(() => {
@@ -1202,7 +1248,29 @@ export function ViewerPage() {
           {types.data
             ?.filter((t) => counts.has(t.id))
             .map((t) => (
-              <label key={t.id} className="type-row">
+              <label
+                key={t.id}
+                className={`type-row ${locked.has(t.id) ? "locked" : ""}`}
+                style={{ "--c": t.color_code } as React.CSSProperties}
+                title={locked.has(t.id) ? "Currently not clickable: these annotations are shown, but cannot be selected or moved (right-click the type to change that)" : "Right-click: make not clickable, change colour"}
+                data-locked={locked.has(t.id) ? "1" : "0"}
+                data-testid="type-row"
+                // a right click (a Ctrl + click on a Mac, a long press) opens the menu and must not tick the box of the row as well
+                onClickCapture={(e) => {
+                  if (e.button !== 0 || e.ctrlKey || Date.now() - menuAt.current < 600) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
+                onMouseDownCapture={(e) => {
+                  if (e.button !== 0 || e.ctrlKey) e.preventDefault();
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  menuAt.current = Date.now();
+                  setTypeMenu({ x: e.clientX, y: e.clientY, id: t.id, name: t.name, color: t.color_code, locked: locked.has(t.id) });
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={!hidden.has(t.id)}
@@ -1217,15 +1285,47 @@ export function ViewerPage() {
                 />
                 <span className="swatch" style={{ background: t.color_code }} />
                 <span className="type-name">{t.name}</span>
+                {locked.has(t.id) && <span className="type-lock-icon" aria-hidden>⊘</span>}
                 <span className="muted small">{counts.get(t.id)}</span>
               </label>
             ))}
-          {annotations.data && shapes.length === 0 && <p className="muted small">No annotations.</p>}
+          {annotations.data && shapes.length === 0 && !labelStates.some((l) => l.set) && <p className="muted small">No annotations.</p>}
+          {annotationsHere && <GlobalLabels labels={labelStates} frame={framed ? frame1 : null} canEdit={!readOnly} onToggle={toggleGlobal} />}
           </>}
         </aside>
+        {typeMenu && (
+          <TypeMenu
+            model={typeMenu}
+            canColor={!readOnly}
+            onClose={() => setTypeMenu(null)}
+            onLock={(l) => {
+              setLocked((o) => {
+                const n = new Set(o);
+                if (l) n.add(typeMenu.id);
+                else n.delete(typeMenu.id);
+                return n;
+              });
+              setTypeMenu(null);
+            }}
+            onColor={(c) => {
+              const tid = typeMenu.id;
+              setTypeMenu(null);
+              api(`/api/v2/annotation-types/${tid}`, { method: "PATCH", json: { color_code: c } })
+                .then(() => qc.invalidateQueries({ queryKey: ["annotation-types"] }))
+                .catch((e) => notify(e instanceof Error && e.message ? `The colour was not changed: ${e.message}` : "The colour was not changed (changing annotation types needs permission)."));
+            }}
+          />
+        )}
         {!readOnly && (
-          <button className="tools-toggle btn glass" onClick={() => setToolsOpen((o) => !o)} aria-expanded={toolsOpen} title="Annotation tools">
-            {toolsOpen ? "✕" : "✎"}
+          <button
+            className={`tools-toggle btn glass ${prefs.legacy_navigation ? "annotate-toggle" : ""} ${prefs.legacy_navigation && annotate ? "on" : ""}`}
+            onClick={() => setToolsOpen((o) => !o)}
+            aria-expanded={toolsOpen}
+            aria-pressed={prefs.legacy_navigation ? annotate : undefined}
+            title={prefs.legacy_navigation ? (annotate ? "Leave annotate mode (annotations cannot be selected or edited)" : "Annotate mode: select, draw and edit annotations") : "Annotation tools"}
+            data-testid="annotate-toggle"
+          >
+            {prefs.legacy_navigation ? (annotate ? "✕ Annotate" : "✎ Annotate") : toolsOpen ? "✕" : "✎"}
           </button>
         )}
         {readOnly && (
@@ -1266,7 +1366,7 @@ export function ViewerPage() {
               </>
             )
           }
-          globals={globals.map((entry) => ({ entry, set: (annotations.data ?? []).some((a) => a.annotation_type === entry.id && !a.deleted) }))}
+          globals={labelStates}
           drawing={drawing}
           oneClick={oneClick}
           currentTypeId={currentTypeId}

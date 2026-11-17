@@ -43,9 +43,9 @@ Inside an image set you can:
 Click a thumbnail to open an image. Drag to pan, scroll to zoom. The left panel lists the annotation types with their counts;
 untick a type to hide it. **Hide** (or `Y`) hides all annotations.
 
-**Slide navigation (a personal setting).** Under your user name (top right) → **Preferences** → *Slide navigation* you choose between **Trackpad / tablet-optimized** (the default: pinch to zoom, two fingers move the slide, a drag on the background draws a selection frame) and **Mouse-optimized**, the navigation of the old EXACT: a click on the background zooms in about the pointer, **Shift** + click zooms out, and a drag on the background always moves the slide (Ctrl / Cmd + drag still frames annotations). Both come with a small animation. A click on an annotation still selects it, and drawing tools work as before. The mouse mode applies to a mouse only; a tap of a finger or pen never zooms, so that tablets are not affected.
+**Slide navigation (a personal setting).** Under your user name (top right) → **Preferences** → *Slide navigation* you choose between **Trackpad / tablet-optimized** (the default: pinch to zoom, two fingers move the slide, a drag on the background draws a selection frame) and **Mouse-optimized**, the navigation of the old EXACT: a click on the background zooms in about the pointer, **Shift** + click zooms out, and a drag on the background always moves the slide (Ctrl / Cmd + drag still frames annotations). Both come with a small animation. **Mouse-optimized also brings back the annotate mode of the old EXACT:** annotations can only be selected, moved, reshaped, copied, pasted, deleted or drawn after you press the **Annotate** button at the bottom left of the viewer (choosing an annotation type with its number key switches the mode on as well). Outside the mode the toolbox is hidden, annotations only look at you, and a click anywhere, also on an annotation, zooms in; the button leaves the mode again and lets go of the selection. With *Trackpad / tablet-optimized* there is no such mode: a click on an annotation selects it and the toolbox is always at hand. The mouse mode applies to a mouse only; a tap of a finger or pen never zooms, so that tablets are not affected.
 
-**User menu and Preferences.** The user name in the top bar opens a short menu: **Preferences**, **User statistics** (your annotations, uploaded images and verifications, per team and per day for the last 30 days) and **Sign out**. Preferences holds your email address, a password change (other devices are signed out), your passkeys (add, rename, remove; the login page then offers *Sign in with a passkey*) and the slide navigation.
+**User menu and Preferences.** The user name in the top bar opens a short menu: **Preferences**, **User statistics** (your annotations, uploaded images and verifications, per team and per day for the last 30 days) and **Sign out**. Preferences holds your email address, a password change (other devices are signed out), your passkeys (add, rename, remove; the login page then offers *Sign in with a passkey*), your **access tokens** (a token lets a script or exact-sync use the API as you without your password: give it a name, an expiry, what it may do (*everything I may*, *only look*, or *look and…* queue jobs, annotate, manage images, so that a script that only starts registrations cannot touch your annotations) and optionally a restriction to some of your teams; it is shown **once** when you create it, and *Revoke* stops it at once) and the slide navigation.
 
 The round icon at the right of the top bar opens **Image adjustments**: brightness, contrast, gamma, saturation, hue, grayscale
 and invert. The window can be moved by its title (and stays where you put it), double-clicking a slider's name resets it, and a dot
@@ -138,7 +138,19 @@ that hold some of it.
   **Clear mask** (click twice) empties it.
 * **Undo** and **Redo** (`Ctrl/Cmd+Z`, `Shift+Ctrl/Cmd+Z`) go back and forth through these steps; the steps are kept while the mask is open in the server.
 * A click or stroke also moves the crosshair to that point, so the other two planes show it. `Ctrl` (`Cmd`) + click moves the crosshair without painting;
-  Shift + mouse wheel (or the wheel, in "Wheel: slices" mode) and Page Up / Down still step through the slices. Accounts that are read-only see the mask and have no tools.
+  Shift + mouse wheel (or the wheel, in "Wheel: slices" mode) step through the slices, and so do the keys: `↑` / `↓` for the axial plane (the maximized plane, if there is one), `Shift` + `↑` / `↓` for the coronal and `Alt` + `↑` / `↓` for the sagittal plane, Page Up / Down for the plane used last (the − / + buttons under each plane say so in their tooltip). Accounts that are read-only see the mask and have no tools.
+
+### Several masks at once, and groups
+The **Segment** list in the top bar names every segmentation type of the image set; types of a group are listed together under the group's name.
+
+* The **eye** shows or hides the mask of a type on the planes. The type being painted is always shown, **solid**; every other mask you switch on is drawn **striped** (alternating stripes of the type's colour and a darker tone), so
+  you can tell at a glance which one the tools change. Without a type chosen, all shown masks are striped (you are only looking). Click a **name** to paint that type (the list stays open when you click an eye, and closes when you pick a type).
+* A **group** is a set of segmentation types that exclude each other, for example the organs of one study: *no voxel can be in two masks of a group*.
+  Painting a voxel for one type takes it from the others of its group (their striped masks follow at once), and **undo** gives the voxels back to them. Erasing never changes another mask.
+  The tool window says which masks the painted type is exclusive with. Types without a group do not interact and may overlap.
+  Groups are made in *Administration → Products*: edit a segmentation type and give it a **Group**; types of one product with the same name are in one group.
+  Only the voxels the stroke really adds are taken, and a mask that loses voxels this way starts a new undo history (its earlier undo steps would otherwise bring the overlap back).
+  Groups apply to volumes; masks of 2D slides are not touched.
 
 The single-plane view of a volume paints masks on the axial plane only; for the other planes its toolbox points to the three-plane view.
 
@@ -156,7 +168,7 @@ A segmentation made elsewhere, for example in 3D Slicer or TotalSegmentator (a `
    change the opacity, and read which segment is under the crosshair. The segments are drawn in their own colours on all three planes.
    The volume's **Related images** (right-click the volume in the overview) lists its segmentation files too.
    When several segmentation files are linked to one volume, **only the one you opened is drawn** (the card or the entry in *Related images* opens its own file; the volume opened
-   by itself shows the newest). The others are listed in the Segmentation window, unticked: tick one to show it as well.
+   by itself shows none, and its Segmentation window stays closed until you press the **Segmentation** button). Files that are not drawn are listed in the window, unticked: tick one to show it.
 
 In the **3D render** (**Show 3D render**) the file has its own **Segmentation** checkbox: every segment is drawn in its colour, and switching segments
 off in the Segmentation window changes the render too. The segments usually lie inside the head or body, so switch **Image** off or lower
@@ -229,7 +241,7 @@ Press **?** on any page (or the **?** button in the top bar) for the keys, shown
 
 - **Everywhere:** `?` the list · `G` then `P` preferences · `/` or `Ctrl/Cmd + F` the search field of the page (`Esc` inside it clears it).
 - **Viewer:** `E` / `Q` next / previous image · `Shift + E` / `Shift + Q` or Page Up / Down frames · `1`–`9` annotation type · `C` select / draw · `A` one-click mode · `Enter` or `V` finish · `Esc` cancel · `Delete`, `Backspace` or `X` delete · `D` polygon knife · `,` and `.` smaller / larger brush · `Y` annotations on / off · `O` overlay image on / off · `H` overview on / off · `Ctrl/Cmd + Z` / `Y` undo / redo.
-- **Three planes:** Page Up / Down or arrows step slices · `E` / `Q` next / previous image · `O` linked segmentation files on / off · `B` / `L` / `W` brush, lasso, wand · **Space** switches between adding and subtracting (hold Space and drag to move a plane) · `,` and `.` brush size · hold `Shift` or `Alt` for the opposite · `Esc` closes the mask tools.
+- **Three planes:** `↑` / `↓` (axial or maximized plane), `Shift` + `↑` / `↓` (coronal), `Alt` + `↑` / `↓` (sagittal) or Page Up / Down (last used plane) step slices · `E` / `Q` next / previous image · `O` linked segmentation files on / off · `B` / `L` / `W` brush, lasso, wand · **Space** switches between adding and subtracting (hold Space and drag to move a plane) · `,` and `.` brush size · hold `Shift` or `Alt` for the opposite · `Esc` closes the mask tools.
 
 `,` and `.` were chosen for the brush size because they are in the same place on English and German keyboards. The start page now loads more image sets as you scroll to the end of the list (no "Show more" button).
 

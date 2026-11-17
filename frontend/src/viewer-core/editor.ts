@@ -54,7 +54,7 @@ export interface EditorHost {
   /** annotations that are shown (hidden types left out) */
   shapes(): Shape[];
   type(id: number): TypeInfo | undefined;
-  image(): { width: number; height: number; mpp: number };
+  image(): { width: number; height: number; mpp: number; free?: boolean };
   onCreate(typeId: number, vector: Record<string, number>): void;
   onUpdate(shape: Shape, vector: Record<string, number>): void;
   onDelete(shape: Shape): void;
@@ -157,6 +157,8 @@ export class AnnotationEditor {
   private penHover = false;
   /** the segmentation tool owns the pointer */
   suspended = false;
+  /** the old way of working (mouse-optimized): outside "annotate" mode nothing is selected, moved or drawn; a click on the slide zooms in */
+  viewOnly = false;
   private session: Session | null = null;
   private draft: { typeId: number; points: Pt[]; op?: PolyOp } | null = null;
   brushMode: BrushMode = "off";
@@ -523,7 +525,7 @@ export class AnnotationEditor {
   // ---- pointer events ------------------------------------------------------------------------------------------
 
   private press(e: Ev): void {
-    if (this.suspended || pen.ignores(this.kind(e))) return; // fingers move the image once a pen is in use
+    if (this.suspended || this.viewOnly || pen.ignores(this.kind(e))) return; // fingers move the image once a pen is in use
     if (this.host.readOnly()) return; // nothing to draw, move or paint: a click still selects
     this.touch = this.isTouch(e);
     this.consumedPress = false;
@@ -729,8 +731,8 @@ export class AnnotationEditor {
       s.moved = true;
       // the group keeps its shape at the edge of the image: one shift for all
       const [minx, miny, maxx, maxy] = [Math.min(...s.shapes.map((q) => q.bbox[0])), Math.min(...s.shapes.map((q) => q.bbox[1])), Math.max(...s.shapes.map((q) => q.bbox[2])), Math.max(...s.shapes.map((q) => q.bbox[3]))];
-      const dx = Math.min(Math.max(dx0, -minx), bounds.width - maxx);
-      const dy = Math.min(Math.max(dy0, -miny), bounds.height - maxy);
+      const dx = bounds.free ? dx0 : Math.min(Math.max(dx0, -minx), bounds.width - maxx);
+      const dy = bounds.free ? dy0 : Math.min(Math.max(dy0, -miny), bounds.height - maxy);
       this.previews = s.shapes.map((q) => shiftedShape(q, dx, dy, bounds));
       this.refresh();
       return;
@@ -844,6 +846,14 @@ export class AnnotationEditor {
 
   private click(e: Ev): void {
     if (this.suspended) return;
+    if (this.viewOnly) {
+      // not annotating: no selecting, also not of what is under the pointer; the click zooms (Shift + click out), as in the old EXACT
+      const oe = (e as unknown as { originalEvent?: MouseEvent }).originalEvent;
+      if (this.consumedPress) this.consumedPress = false;
+      else if (e.quick !== false && this.kind(e) === "mouse" && this.host.legacyNavigation()) this.zoomAt(e, !!oe?.shiftKey);
+      e.preventDefaultAction = true;
+      return;
+    }
     if (this.consumedPress) {
       this.consumedPress = false;
       return;
@@ -925,7 +935,7 @@ export class AnnotationEditor {
     this.mods = { shift: ev.shiftKey, alt: ev.altKey };
     let cursor = "";
     if (this.tool.kind === "draw") cursor = "crosshair";
-    else if (p) {
+    else if (p && !this.viewOnly) {
       const sel = this.selected;
       const t = this.tol(ev.pointerType);
       const h = sel ? handleAt(this.editableHandles(sel), p, t) : null;
@@ -941,6 +951,7 @@ export class AnnotationEditor {
   // ---- actions -------------------------------------------------------------------------------------------------
 
   private openContext(clientX: number, clientY: number, pointer?: string): void {
+    if (this.viewOnly) return;
     const r = (this.viewer.canvas as HTMLElement).getBoundingClientRect();
     const p = this.toImage(new OpenSeadragon.Point(clientX - r.left, clientY - r.top));
     if (!p) return;

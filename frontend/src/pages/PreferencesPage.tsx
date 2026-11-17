@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { passkeysSupported, registerPasskey } from "../auth/webauthn";
+import { AccessTokens } from "../components/AccessTokens";
 import { NavigationDemo } from "../components/NavigationDemo";
 import { usePreferences } from "../hooks/usePreferences";
 
@@ -173,6 +174,17 @@ function ZoomSliderPref() {
   );
 }
 
+function AllowOutsidePref() {
+  const { prefs, set } = usePreferences();
+  return (
+    <label className="check" title="Disabled by default">
+      <input type="checkbox" checked={prefs.allow_outside} onChange={(e) => void set({ allow_outside: e.target.checked })} data-testid="pref-allow-outside" />
+      Allow annotations outside the image
+      <span className="muted small"> – points may lie beyond the edge (coordinates below 0 or past the size of the image) when you draw, move or paste. Off: they stop at the edge</span>
+    </label>
+  );
+}
+
 function ZoomStepPref() {
   const { prefs, set } = usePreferences();
   const steps = [
@@ -233,7 +245,7 @@ function Navigation() {
       legacy: true,
       title: "Mouse-optimized",
       sub: "traditional, as in the old EXACT",
-      lines: ["Click on the slide: zoom in (Shift + click: zoom out)", "Drag: move the slide", "Mouse wheel: zoom", "Ctrl / Cmd + drag: frame annotations"],
+      lines: ["Click on the slide: zoom in (Shift + click: zoom out)", "Drag: move the slide", "Mouse wheel: zoom", "Annotations can only be selected, moved and drawn in annotate mode (the Annotate button, or a type key); outside it they are only looked at", "In annotate mode: Ctrl / Cmd + drag frames annotations"],
     },
     {
       id: "touch",
@@ -284,11 +296,16 @@ export function PreferencesPage() {
         <Passkeys />
       </section>
       <section className="glass">
+        <h2>Access tokens</h2>
+        <AccessTokens />
+      </section>
+      <section className="glass">
         <h2>Viewer</h2>
         <AutoOverlay />
         <OverlayOpacity />
         <ZoomSliderPref />
         <ZoomStepPref />
+        <AllowOutsidePref />
       </section>
       <section className="glass">
         <h2>Slide navigation</h2>

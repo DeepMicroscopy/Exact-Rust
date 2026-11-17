@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import { Modal } from "./Modal";
+import { DeleteTypeDialog } from "./DeleteTypeDialog";
 
 export interface ProductPerms {
   add_product?: boolean;
@@ -38,11 +39,24 @@ interface AType {
   size_unit: string;
   closed: boolean;
   area_hit_test: boolean;
+  /** segmentation types with the same group name exclude each other on a volume: no voxel is in two of them */
+  seg_group: string | null;
   /** annotations (not deleted) of this type */
   annotation_count: number;
 }
 
-const msg = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e));
+/** The message of an error; a validation error names its fields ("name: A name is required."). */
+const msg = (e: unknown) => {
+  if (e instanceof ApiError) {
+    const errors = e.body?.errors;
+    if (errors && typeof errors === "object") {
+      const parts = Object.entries(errors as Record<string, unknown>).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(" ") : String(v)}`);
+      if (parts.length) return parts.join(" · ");
+    }
+    return e.message;
+  }
+  return e instanceof Error ? e.message : String(e);
+};
 
 export const SHAPES: { id: number; label: string }[] = [
   { id: 1, label: "Bounding box" },
@@ -66,17 +80,62 @@ export function ProductsTab({ perms }: { perms: ProductPerms }) {
   const teamName = (id: number | null) => teams.data?.find((t) => t.id === id)?.name ?? "";
   const list = useMemo(() => [...(products.data ?? [])].sort((a, b) => teamName(a.team).localeCompare(teamName(b.team)) || a.name.localeCompare(b.name)), [products.data, teams.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const current = picked != null ? (list.find((p) => p.id === picked) ?? null) : (list[0] ?? null); // a product just created is not in the list until it is fetched
+  // the tree: teams (alphabetically), their products below; a team can be folded, the choice is remembered
+  const tree = useMemo(() => {
+    const groups = new Map<string, { key: string; name: string; products: Product[] }>();
+    for (const p of list) {
+      const key = String(p.team ?? "none");
+      if (!groups.has(key)) groups.set(key, { key, name: p.team == null ? "No team" : teamName(p.team) || `Team ${p.team}`, products: [] });
+      groups.get(key)!.products.push(p);
+    }
+    return [...groups.values()];
+  }, [list, teams.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [closed, setClosed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("exact.productTree.closed") ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const toggle = (key: string) =>
+    setClosed((cur) => {
+      const n = new Set(cur);
+      if (!n.delete(key)) n.add(key);
+      try {
+        localStorage.setItem("exact.productTree.closed", JSON.stringify([...n]));
+      } catch {
+        /* private mode */
+      }
+      return n;
+    });
   const refresh = () => void qc.invalidateQueries({ queryKey: ["admin-products"] });
   return (
     <div className="two-col">
       <aside className="sidebar">
         <div className="sidebar-title">Products</div>
-        {list.map((p) => (
-          <button key={p.id} className={`side-item ${current?.id === p.id ? "active" : ""}`} onClick={() => setPicked(p.id)} title={teamName(p.team)}>
-            {p.name}
-            <span className="muted small"> {teamName(p.team)}</span>
-          </button>
-        ))}
+        <ul className="tree" role="tree" data-testid="product-tree">
+          {tree.map((g) => {
+            const open = !closed.has(g.key);
+            return (
+              <li key={g.key} role="treeitem" aria-expanded={open} data-testid="tree-team">
+                <button className="tree-node" onClick={() => toggle(g.key)} aria-label={`${open ? "Collapse" : "Expand"} ${g.name}`}>
+                  <span className="tree-caret" aria-hidden>{open ? "▾" : "▸"}</span> {g.name} <span className="muted small">{g.products.length}</span>
+                </button>
+                {open && (
+                  <ul role="group">
+                    {g.products.map((p) => (
+                      <li key={p.id} role="treeitem">
+                        <button className={`side-item tree-leaf ${current?.id === p.id ? "active" : ""}`} onClick={() => setPicked(p.id)} title={g.name} aria-selected={current?.id === p.id}>
+                          {p.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
         {perms.add_product && (
           <button className="btn small" onClick={() => setCreating(true)} style={{ marginTop: 8 }}>
             New product…
@@ -98,6 +157,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
   const [editing, setEditing] = useState<AType | "new" | null>(null);
   const [editProduct, setEditProduct] = useState(false);
   const reload = () => void qc.invalidateQueries({ queryKey: ["admin-types", product.id] });
+  const [deleting, setDeleting] = useState<{ id: number; name: string } | null>(null);
   const run = (fn: () => Promise<unknown>, after: () => void) =>
     void fn().then(
       () => {
@@ -110,6 +170,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
   const canEdit = !!perms.change_annotationtype;
   return (
     <div data-testid="product-panel">
+      {deleting && <DeleteTypeDialog type={deleting} onClose={() => setDeleting(null)} onDone={() => { setDeleting(null); setError(null); reload(); }} />}
       <div className="toolbar">
         <h3>{product.name}</h3>
         <span className="muted small">{teams.find((t) => t.id === product.team)?.name}</span>
@@ -154,7 +215,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
               </td>
               <td className="muted small" data-testid="type-id">{t.id}</td>
               <td>{t.name}</td>
-              <td className="muted small">{shapeName(t.vector_type)}</td>
+              <td className="muted small">{shapeName(t.vector_type)}{t.seg_group ? <span className="group-tag" data-testid="type-group" title="The masks of the types in this group exclude each other"> ⛓ {t.seg_group}</span> : null}</td>
               <td className="muted small">{t.annotation_count}</td>
               <td className="muted small">{t.sort_order}</td>
               <td>
@@ -167,7 +228,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
                   </button>
                 )}
                 {perms.delete_annotationtype && (
-                  <button className="btn ghost small danger" onClick={() => window.confirm(`Delete the annotation type ${t.name}? (Deactivate it instead to keep existing annotations.)`) && run(() => api(`/api/v2/annotation-types/${t.id}`, { method: "DELETE" }), reload)}>
+                  <button className="btn ghost small danger" onClick={() => setDeleting({ id: t.id, name: t.name })} data-testid="type-delete">
                     Delete
                   </button>
                 )}
@@ -188,7 +249,7 @@ function ProductPanel({ product, teams, perms, onChanged, onGone }: { product: P
           New annotation type…
         </button>
       )}
-      {editing && <TypeDialog productId={product.id} type={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={reload} />}
+      {editing && <TypeDialog productId={product.id} groups={[...new Set(rows.map((t) => t.seg_group).filter((g): g is string => !!g))]} type={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={reload} />}
       {editProduct && <ProductDialog product={product} teams={teams} products={[]} onClose={() => setEditProduct(false)} onSaved={onChanged} />}
     </div>
   );
@@ -269,7 +330,7 @@ function ProductDialog({ product, teams, products, onClose, onSaved }: { product
   );
 }
 
-const DEFAULT: Omit<AType, "id" | "annotation_count"> = { name: "", active: true, vector_type: 1, node_count: 0, color_code: "#cc4444", sort_order: 0, enable_blurred: true, enable_concealed: true, multi_frame: false, default_width: 50, default_height: 50, size_unit: "px", closed: true, area_hit_test: true };
+const DEFAULT: Omit<AType, "id" | "annotation_count"> = { name: "", active: true, vector_type: 1, node_count: 0, color_code: "#cc4444", sort_order: 0, enable_blurred: true, enable_concealed: true, multi_frame: false, default_width: 50, default_height: 50, size_unit: "px", closed: true, area_hit_test: true, seg_group: null };
 
 /** The fields of an annotation type that matter for a shape (the others stay at their defaults). */
 export function fieldsFor(shape: number) {
@@ -282,7 +343,7 @@ export function fieldsFor(shape: number) {
   };
 }
 
-function TypeDialog({ productId, type, onClose, onSaved }: { productId: number; type: AType | null; onClose(): void; onSaved(): void }) {
+function TypeDialog({ productId, groups, type, onClose, onSaved }: { productId: number; groups: string[]; type: AType | null; onClose(): void; onSaved(): void }) {
   const [f, setF] = useState<Omit<AType, "id" | "annotation_count">>(type ? { ...type } : DEFAULT);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -366,6 +427,18 @@ function TypeDialog({ productId, type, onClose, onSaved }: { productId: number; 
           <label className="field">
             <span>Required number of points (0 = any)</span>
             <input type="number" min={0} value={f.node_count} onChange={(e) => set("node_count", Number(e.target.value))} aria-label="Node count" style={{ width: 100 }} />
+          </label>
+        )}
+        {f.vector_type === 8 && (
+          <label className="field">
+            <span>Group (optional)</span>
+            <input list="seg-groups" value={f.seg_group ?? ""} onChange={(e) => set("seg_group", e.target.value.slice(0, 50) || null)} aria-label="Group" data-testid="type-group-input" placeholder="e.g. organs" maxLength={50} />
+            <datalist id="seg-groups">
+              {groups.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+            <small className="muted">Segmentation types of one product with the same group exclude each other: no voxel of a volume can be in two of them. Leave empty for none.</small>
           </label>
         )}
         <div className="checks">

@@ -15,6 +15,8 @@ export interface MaskState {
   can_redo: boolean;
   note?: string;
   changed?: boolean;
+  /** masks of the same group that lost (or got back) voxels through this step */
+  changed_others?: number[];
 }
 
 export type Op =
@@ -36,7 +38,9 @@ export interface Message {
  * (a stroke drawn while the one before is still being stored waits for it), `version` counts the changes so that the plane
  * overlays know when to load their slice again.
  */
-export function useSegment3D(annotationId: number | null) {
+export function useSegment3D(annotationId: number | null, onOthers?: (annotations: number[]) => void) {
+  const othersRef = useRef(onOthers);
+  othersRef.current = onOthers;
   const [state, setState] = useState<MaskState | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(0);
@@ -69,6 +73,7 @@ export function useSegment3D(annotationId: number | null) {
         if (current.current === id) {
           setState(s);
           if (s.changed !== false) setVersion((v) => v + 1);
+          if (s.changed_others?.length) othersRef.current?.(s.changed_others);
           setMessage(s.note ? { kind: "note", text: s.note } : null);
         }
         return s;

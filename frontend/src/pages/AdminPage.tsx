@@ -3,6 +3,7 @@ import { SearchInput } from "../components/SearchInput";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, listAll } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { UserTokensDialog } from "../components/AccessTokens";
 import { LogTab } from "../components/LogAdmin";
 import { PluginsTab } from "../components/PluginsAdmin";
 import { ProductsTab, type ProductPerms } from "../components/ProductsAdmin";
@@ -461,6 +462,7 @@ function UsersTab({ me }: { me: AdminMe }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [permsOf, setPermsOf] = useState<{ id: number; username: string } | null>(null);
   const [newUser, setNewUser] = useState(false);
+  const [tokensOf, setTokensOf] = useState<{ id: number; username: string } | null>(null);
   const users = useQuery({ queryKey: ["admin-users"], queryFn: () => listAll<UserRow>("/api/v2/users", { fields: "id,username,is_active,is_staff,is_superuser,last_login,team_set" }), staleTime: 0 });
   const teams = useQuery({ queryKey: ["admin-teams"], queryFn: () => listAll<TeamRow>("/api/v2/teams", { fields: "id,name" }), staleTime: 0 });
   const roles = useQuery({ queryKey: ["admin-roles"], queryFn: () => api<{ site_admin_ids: number[]; read_only_ids: number[] }>("/api/v2/admin/roles"), staleTime: 0 });
@@ -556,6 +558,11 @@ function UsersTab({ me }: { me: AdminMe }) {
                   <button className="btn ghost small" onClick={() => setEditing(u.id)}>
                     Edit
                   </button>
+                  {me.is_site_admin && (
+                    <button className="btn ghost small" onClick={() => setTokensOf({ id: u.id, username: u.username })} data-testid="user-tokens" title="Personal access tokens of this account: see and revoke">
+                      Tokens
+                    </button>
+                  )}
                   {me.is_superuser && !self && !u.is_superuser && (
                     <button className="btn ghost small" onClick={() => setPermsOf({ id: u.id, username: u.username })}>
                       Permissions
@@ -598,6 +605,7 @@ function UsersTab({ me }: { me: AdminMe }) {
         </tbody>
       </table>
       {secret && <SecretDialog {...secret} onClose={() => setSecret(null)} />}
+      {tokensOf && <UserTokensDialog user={tokensOf} onClose={() => setTokensOf(null)} />}
       {permsOf && <PermissionsDialog userId={permsOf.id} username={permsOf.username} onSaved={() => void qc.invalidateQueries({ queryKey: ["admin-users"] })} onClose={() => setPermsOf(null)} />}
       {newUser && <NewUserDialog teams={teams.data ?? []} superuser={me.is_superuser} onCreated={() => {
           void qc.invalidateQueries({ queryKey: ["admin-users"] });

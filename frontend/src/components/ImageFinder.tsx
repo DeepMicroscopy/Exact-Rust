@@ -60,7 +60,7 @@ export function ImageFinder({
     staleTime: 60_000,
   });
   const [q, setQ] = useState("");
-  // the dialog focuses its first button (the close button): the search field is where typing must go
+  // (the dialog itself puts the focus into the first field; this also covers the pin, which replaces the dialog by a panel)
   const focusSearch = () =>
     document.querySelector<HTMLInputElement>(".finder input")?.focus();
   // pinning moves the finder from the dialog to the panel (new elements): the search field takes the focus again

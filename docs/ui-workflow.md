@@ -27,7 +27,7 @@ The interface is a single-page application (React, TypeScript, OpenSeadragon). I
 | **Three planes** | `/images/{id}/planes` | NIfTI and DICOM volumes: axial, coronal and sagittal planes with a crosshair, a 3D render, and 3D segmentation tools. |
 | **Jobs** | `/jobs` | Registrations, analyses and segmentations with their status (queued, running with progress, done, failed with the error). Restart failed jobs, cancel queued or running ones. Shows whether a worker has asked for work lately. |
 | **Administration** | `/admin` | Teams, Products (annotation types), Plugins, Log, Users (for administrators). See [Administration](administration). |
-| **Preferences** | `/preferences` | Email, password, **passkeys**, slide navigation, overlays, an optional **zoom slider**, zoom step of the `+`/`-` keys. |
+| **Preferences** | `/preferences` | Email, password, **passkeys**, **access tokens**, slide navigation, overlays, an optional **zoom slider**, zoom step of the `+`/`-` keys, **allow annotations outside the image**. |
 
 The **pulse icon** in the top bar (site admins) shows system health; the **?** opens help with the keyboard, the mouse and trackpad gestures; **What's new** repeats the welcome tour.
 
@@ -54,13 +54,18 @@ The **pulse icon** in the top bar (site admins) shows system health; the **?** o
 
 While you draw, the area (µm² or mm² when the image has a resolution) or the length is shown on the shape. Moving the slide while drawing: `Shift` + drag, `Space` + drag, the middle mouse button, or a finger.
 
+**Types in the side list.** Right-click an annotation type in the list on the left: **Make not clickable** takes its annotations out of selecting, moving and the cursor until you switch it on again (it is kept only while the viewer is open), so that you can draw on top of large annotations of another type. Such a type is shown with dashed outlines, its row is greyed out and says so in a tooltip. The same menu **changes the colour** of the type for good (for everybody, as in *Administration → Products*; it needs the permission to change annotation types, otherwise a message says so).
+
+**Annotations outside the image.** Boxes, lines, polygons and points can be drawn, dragged and pasted past the edge of the image and keep their negative or too large coordinates (for example to mark a structure that is cut off by the scan). If you would rather have them held at the edge, which makes drawing along the border easy, switch off *Allow annotations outside the image* in *Preferences → Viewer*. The API never restricted them: `POST /api/v2/annotations` and `/api/v1/annotations/annotations/` store whatever integers they get.
+
 ### Tools for looking
 
-* **Navigation** is a preference: *Trackpad / tablet-optimized* (pinch to zoom, two fingers pan) or *Mouse-optimized* (click zooms in, `Shift` + click out), as in the old EXACT.
+* **Navigation** is a preference: *Trackpad / tablet-optimized* (pinch to zoom, two fingers pan) or *Mouse-optimized* (click zooms in, `Shift` + click out), as in the old EXACT. Mouse-optimized also has the old **annotate mode**: annotations can only be selected, moved, deleted or drawn after you press the **Annotate** button (bottom left; a type key such as `1` does it too, `Esc` does not leave it, the button does). Outside the mode the toolbox is hidden and a click, also on an annotation, zooms; with the trackpad / tablet setting there is no such mode and a click on an annotation selects it.
 * **Zoom:** scroll or pinch; `+` and `-` zoom in steps you choose (low, medium, high); an optional **zoom slider** shows the zoom in percent with a `100 %` button; the **scale bar** follows when the image has a resolution.
 * **Image adjustments** (round icon): brightness, contrast, gamma, saturation, hue, grayscale, invert. Only the display changes, never the file or the annotations.
 * **Overlay** of a registered image with an opacity slider (`O` toggles it): see [registration](howto-registration).
 * **Frames:** z-stacks and movies get a slider (`Shift+E` / `Shift+Q`, `Space` plays).
+* **Labels of the whole image** (annotation types of the kind *global*): a *Labels* section under the annotation types in the left panel, one row per label of the image set. A ticked row is **set**; ticking or unticking it sets or unsets the label, as `Shift` + the number of the label and the *Labels* menu of the toolbox do. On a stack, volume or movie the section says *Frame n* and lists the labels of that frame: a label you set there is stored with its frame (`{"frame": 3}`), so every frame can have its own. Someone who may not annotate sees the set labels only.
 * **Screening:** a guided walk over the slide in windows of a size and overlap you choose, remembering what you have seen (WASD steps and counts, IJKL steps without counting).
 * **Screenshot** saves the view as a PNG with annotations and adjustments; **Crop to new image** cuts a region into a new image that remembers where it came from.
 
@@ -75,7 +80,7 @@ Closing the panel keeps the detections on the image; changing the image clears t
 
 ### Volumes
 
-NIfTI and DICOM volumes open in the **three-plane view**, with a crosshair, a 3D render and the **Segment** tools: brush, lasso and wand, interpolate between slices, grow and shrink, undo and redo, and an optional **automatic segmentation** by a worker. Segmentations made elsewhere (3D Slicer `.seg.nrrd`) can be linked to a volume and shown over its planes. Details in the [user guide](user-guide#3d-segmentation).
+NIfTI and DICOM volumes open in the **three-plane view**, with a crosshair, a 3D render and the **Segment** tools: brush, lasso and wand, interpolate between slices, grow and shrink, undo and redo, and an optional **automatic segmentation** by a worker. Several masks can be shown at once with the **eye** in the *Segment* list of the top bar (the one being painted solid, the others in stripes of two tones; the 3D render shows all visible masks), and types in a **group** exclude each other: painting one takes the voxels from the others of its group. Segmentations made elsewhere (3D Slicer `.seg.nrrd`) can be linked to a volume and shown over its planes. Details in the [user guide](user-guide#3d-segmentation).
 
 ## Devices
 

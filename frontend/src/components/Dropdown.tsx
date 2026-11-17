@@ -9,6 +9,15 @@ export interface DropdownItem {
   key?: string | number | null;
   checked?: boolean;
   disabled?: boolean;
+  /** a group the item belongs to: a heading is shown above the first item of every group (items of a group should follow each other) */
+  group?: string | null;
+  /** an eye in front of the item: on or off (undefined: no eye); a click on it does not pick the item and does not close the list */
+  eye?: boolean;
+  eyeDisabled?: boolean;
+  eyeTitle?: string;
+  onEye?(): void;
+  /** the swatch is striped (a mask that is shown but is not the one being painted) */
+  striped?: boolean;
 }
 
 interface Props {
@@ -25,6 +34,23 @@ interface Props {
   down?: boolean;
   /** data-testid style hook for tests */
   name?: string;
+}
+
+/** An eye, open or shut. */
+function Eye({ on }: { on: boolean }) {
+  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  return on ? (
+    <svg {...common}>
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ) : (
+    <svg {...common}>
+      <path d="M3 3l18 18" />
+      <path d="M10.6 6.1A10 10 0 0 1 12 6c6.4 0 10 6 10 6a17 17 0 0 1-3.2 3.9M6.5 7.6A16 16 0 0 0 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4-.9" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </svg>
+  );
 }
 
 /**
@@ -87,13 +113,27 @@ export function Dropdown({ children, items, onPick, title, className = "", disab
             />
           )}
           <div className="dd-list">
-            {shown.map((i) => (
-              <button key={i.id} className={`dd-item ${i.checked ? "checked" : ""}`} role="option" aria-selected={!!i.checked} disabled={i.disabled} onClick={() => pick(i)}>
-                {i.color && <span className="swatch" style={{ background: i.color }} />}
-                <span className="dd-label">{i.label}</span>
-                {i.key != null && <kbd>{i.key}</kbd>}
-                {i.checked && <span className="tick">✓</span>}
-              </button>
+            {shown.map((i, n) => (
+              <div key={i.id} className={`dd-row ${i.group ? "in-group" : ""}`} data-id={i.id}>
+                {i.group && i.group !== shown[n - 1]?.group && (
+                  <div className="dd-group" data-testid="dd-group" title="The masks of this group exclude each other: a voxel painted for one is taken from the others">
+                    ⛓ {i.group} <span className="muted small">exclusive</span>
+                  </div>
+                )}
+                <div className="dd-line">
+                  {i.eye !== undefined && (
+                    <button type="button" className={`dd-eye ${i.eye ? "on" : ""}`} disabled={i.eyeDisabled} aria-pressed={i.eye} aria-label={`${i.eye ? "Hide" : "Show"} ${i.label}`} title={i.eyeTitle} data-testid="dd-eye" onClick={() => i.onEye?.()}>
+                      <Eye on={i.eye} />
+                    </button>
+                  )}
+                  <button className={`dd-item ${i.checked ? "checked" : ""}`} role="option" aria-selected={!!i.checked} disabled={i.disabled} onClick={() => pick(i)}>
+                    {i.color && <span className={`swatch ${i.striped ? "striped" : ""}`} style={i.striped ? ({ ["--c" as string]: i.color } as React.CSSProperties) : { background: i.color }} />}
+                    <span className="dd-label">{i.label}</span>
+                    {i.key != null && <kbd>{i.key}</kbd>}
+                    {i.checked && <span className="tick">✓</span>}
+                  </button>
+                </div>
+              </div>
             ))}
             {shown.length === 0 && <div className="dd-empty muted small">Nothing matches.</div>}
           </div>

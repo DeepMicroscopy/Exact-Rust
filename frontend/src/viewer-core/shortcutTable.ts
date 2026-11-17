@@ -47,7 +47,10 @@ export const SHORTCUTS: Shortcut[] = [
   { scope: "viewer", keys: "Ctrl/Cmd + drag", text: "While drawing: move the slide (a click with it places nothing). While selecting: frame annotations to select them" },
   { scope: "viewer", keys: "Ctrl/Cmd + A / C / V", text: "Select all / copy / paste annotations" },
 
-  { scope: "volume", keys: "Page Up / Page Down, ↑ / ↓", text: "Next / previous slice of the active plane" },
+  { scope: "volume", keys: "↑ / ↓", text: "Next / previous slice of the axial plane (of the maximized plane, when one is)" },
+  { scope: "volume", keys: "Shift + ↑ / ↓", text: "Next / previous slice of the coronal plane" },
+  { scope: "volume", keys: "Alt + ↑ / ↓", text: "Next / previous slice of the sagittal plane" },
+  { scope: "volume", keys: "Page Up / Page Down", text: "Next / previous slice of the plane used last" },
   { scope: "volume", keys: "E / Q", text: "Next / previous image of the set" },
   { scope: "volume", keys: "/  or  Ctrl/Cmd + F", text: "Find another image of the set by name" },
   { scope: "volume", keys: "O", text: "Linked segmentation files on / off" },

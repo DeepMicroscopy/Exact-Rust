@@ -25,7 +25,7 @@ export const clipboard = {
   },
 };
 
-type Bounds = { width: number; height: number };
+type Bounds = { width: number; height: number; free?: boolean };
 
 const pairs = (v: Record<string, number>): [number, number][] => {
   const out: [number, number][] = [];
@@ -63,13 +63,13 @@ export function pasteVector(item: ClipItem, bounds: Bounds, how: { map?: Affine 
     }
     const [w, h] = [x1 - x0, y1 - y0];
     // keep the size, move the box back inside the image
-    const nx = clamp(x0, 0, Math.max(0, bounds.width - w));
-    const ny = clamp(y0, 0, Math.max(0, bounds.height - h));
+    const nx = bounds.free ? x0 : clamp(x0, 0, Math.max(0, bounds.width - w));
+    const ny = bounds.free ? y0 : clamp(y0, 0, Math.max(0, bounds.height - h));
     return { ...out, x1: Math.round(nx), y1: Math.round(ny), x2: Math.round(nx + w), y2: Math.round(ny + h) };
   }
   pts.forEach(([x, y], i) => {
-    out[`x${i + 1}`] = Math.round(clamp(x, 0, bounds.width));
-    out[`y${i + 1}`] = Math.round(clamp(y, 0, bounds.height));
+    out[`x${i + 1}`] = Math.round(bounds.free ? x : clamp(x, 0, bounds.width));
+    out[`y${i + 1}`] = Math.round(bounds.free ? y : clamp(y, 0, bounds.height));
   });
   return out;
 }

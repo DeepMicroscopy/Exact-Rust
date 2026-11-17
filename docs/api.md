@@ -24,7 +24,7 @@ export EXACT_PASSWORD=...   # in your shell, never in a file that is committed
 # HTTP Basic (every request): fine for scripts
 curl -u "alice:$EXACT_PASSWORD" https://exact.example.org/api/v2/auth/me
 
-# A personal access token (made in Django's UI today)
+# A personal access token (made in Preferences -> Access tokens, or see "Access tokens" below)
 curl -H "Authorization: Bearer <token>" https://exact.example.org/api/v2/auth/me
 
 # A session, as the web interface does it
@@ -82,7 +82,7 @@ Pass `next_cursor` as `cursor` to get the next page; the last page has no `next_
 | Area | Endpoints |
 |---|---|
 | Authentication | `POST /auth/login`, `/auth/logout`, `GET /auth/me`, passkeys under `/auth/passkey*`, `/auth/passkeys` |
-| Account | `/me/account`, `/me/email`, `/me/password`, `/me/preferences`, `/me/statistics` |
+| Account | `/me/account`, `/me/email`, `/me/password`, `/me/preferences`, `/me/statistics`, `/me/tokens` (access tokens) |
 | Catalogue | `GET /image-sets`, `/images`, `/annotation-types`, `/products`, `/teams`, `/annotations`, `/verifications`, `/action-logs`, and the generic `/{resource}` lists |
 | Teams | `POST /teams`, `PATCH`/`DELETE /teams/{id}`, `PUT`/`DELETE /teams/{id}/members/{user}`, `GET /teams/{id}/statistics`, `/invitations` |
 | Image sets | `POST /image-sets`, `PATCH`/`DELETE /image-sets/{id}`, `/image-sets/{id}/images` (upload), `/tags`, `/products/{pid}`, `/settings`, `/exports`, `/export-formats`, `/auxiliary-files`, `/annotation-counts` |
@@ -134,8 +134,10 @@ curl "${H[@]}" -X POST /api/v2/image-sets -d '{"name":"Study images","team":4,"p
  "path":"exact_rust_test_4_35","product_set":[5],"set_tags":[],"team":4}
 ```
 
-`vector_type` is `1` box · `2` point · `3` line · `4` polyline · `5` polygon · `6` fixed-size box · `7` global (a label for the whole image) · `8` segmentation mask.
+`vector_type` is `1` box · `2` point · `3` line · `4` polyline · `5` polygon · `6` fixed-size box · `7` global (a label for the whole image: its `vector` has no coordinates, `null`, `{}` or `{"frame": 3}` for a frame of a stack or sequence, and there is one per image, type and frame; a dummy box as the old API wants it is accepted too) · `8` segmentation mask.
 `size_unit` is `px`, `um` or `mm`.
+
+**Groups of segmentation types (v2 only).** `"seg_group": "organs"` in the body of `POST` / `PATCH /api/v2/annotation-types` puts a segmentation type into a group (`null` or `""` takes it out; up to 50 characters). The masks of the types of one product with the same group name exclude each other on volumes: the 3D operations (`/segmentation/{annotation}/ops`, `labels`, `undo`, `redo`) take every voxel they add from the other masks of the group on that image, and the answer lists the masks that changed as `"changed_others": [annotation ids]`. `GET /api/v2/products/{id}/annotation-types` shows `seg_group`, and `GET /api/v2/segmentation-groups` lists `[{"annotation_type", "product", "group"}]` for the types of your teams that are in a group.
 
 ### Upload images
 ```bash
@@ -146,6 +148,31 @@ curl -b jar.txt -H "x-csrf-token: $CSRF" -F "files=@slide1.svs" -F "files=@slide
 {"items":[{"id":190,"name":"docs-demo.png","size":1880,"type":"image"}]}
 ```
 Any number of files per request. A ZIP is unpacked (an archive with a `.mrxs`, `.vms` or `.vsi` makes only those files images); documents (`pdf`, `docx`, `xlsx`, `csv`, ...) become *auxiliary files*; `.nrrd` becomes a segmentation file. See [file formats](file-formats).
+
+### Access tokens
+
+A token lets a script or exact-sync use the API as you without your password. Make one in **Preferences → Access tokens**, or through the API with your password or a signed-in session (a token itself cannot make tokens, and neither can an administrator who is impersonating you):
+```bash
+curl -u "alice:$EXACT_PASSWORD" -X POST https://exact.example.org/api/v2/me/tokens -H 'content-type: application/json' \
+     -d '{"name":"nightly registration","expires_in_days":90,"scopes":["jobs"],"teams":[3]}'
+```
+```json
+{"id":17,"name":"nightly registration","prefix":"Qm3xT0pLw9aB","token":"pat_Qm3xT0pLw9aB.<43 characters>","read_only":false,"scopes":["jobs"],"teams":[3],
+ "created_at":"2026-11-11T08:02:11+00:00","expires_at":"2027-02-09T08:02:11+00:00","last_used_at":null,"revoked_at":null,"active":true}
+```
+**The `token` is in this answer only.** The server keeps just a hash of it, so a lost token is replaced, not recovered. `expires_in_days` (1 to 3650; leave it out for no expiry), `read_only` (the token may only look: every write is refused with 403), `scopes` and `teams` (ids of teams you belong to; the token then sees only their data; empty means all your teams) are optional.
+
+**Scopes** limit what a token may do beyond looking (every `GET` always works). Without `scopes` a token is not limited:
+
+| Scope | Allows |
+|---|---|
+| `jobs` | queue, restart and cancel analyses, registrations and segmentations (`POST /images/{id}/analyze`, `/register`, `/auto-segment`, `/registrations/manual`, `/jobs/{kind}/{id}/restart`, `DELETE /jobs/{kind}/{id}`) |
+| `annotate` | create, change, verify and delete annotations and their files, edit segmentations (`/annotations`, `/segmentation/…`, `/api/v1/annotations/annotations/`, `/annotations/api/…`) |
+| `images` | upload, rename, move, crop and delete images, create and change image sets, their tags, products, settings and documents |
+| `catalog` | create, change and delete products and annotation types (`/products`, `/annotation-types`) |
+
+A token with a scope list is refused every other write with `403 {"detail":"This token is limited and may not do this."}`, in particular everything that manages accounts, teams, plugins and workers (a worker that claims jobs uses its own account, not a limited token). `scopes` cannot be combined with `read_only` (which is the narrowest). The answers show `"scopes": null` for a token that is not limited. A token that only queues jobs, for example, is what a nightly script or a pipeline should hold: if it leaks, nobody can read or change anything beyond what the script needed, and it can be revoked without touching anything else. A token that has no business reading your data either should belong to an account of its own, in a team that holds only what it needs.
+`GET /api/v2/me/tokens` lists your tokens with `last_used_at`, `expires_at`, `revoked_at` and `active`. `DELETE /api/v2/me/tokens/{id}` **revokes** an active token at once; deleting a revoked or expired one removes it from the list. Site administrators can list the tokens of any account with `GET /api/v2/admin/tokens?user={id}` and revoke them with `DELETE /api/v2/admin/tokens/{id}`; they never see a secret. Tokens made by the old EXACT (Django) are the same thing and appear in the list. **Scopes are kept in a table of this server's own, so EXACT (Django) does not know them:** while a database is also used by the old EXACT, a token's scopes only limit it on this server, and a token that has scopes is not limited when it is presented to Django.
 
 ## Examples: annotations
 
@@ -211,7 +238,38 @@ HTTP/1.1 202 Accepted
 {"id":221,"source_image":15,"target_image":16,"plugin":3,"status":"queued","registration":null,
  "created_at":"2026-11-07T20:35:07.788722Z","created_by":1,"worker":null,"error":null,"params":{}}
 ```
-Optional body fields: `plugin` (a registration plugin id, see `GET /api/v2/registration-plugins`), the plugin's parameters by name (`mode`, `thumbnail_size`, ...), and `create_inverse_registration`. A job that is already open for the pair is reused.
+Optional body fields: `plugin` (a registration plugin id, see `GET /api/v2/registration-plugins`), the plugin's parameters by name (`mode`, `thumbnail_size`, ...), and `create_inverse_registration` (when the job is done, the registration of the other direction is made, or replaced by the inverse of the new one if it exists). A job that is already open for the pair is reused.
+
+### Queue a registration with DeeperHistReg and wait for it
+Find the plugin first (the default one comes first; DeeperHistReg appears once a worker with the package has announced itself), then queue the job with the plugin's parameters by name:
+```bash
+curl "${H[@]}" /api/v2/registration-plugins            # [{"id":7,"name":"DeeperHistReg",...,"parameters":[...]}, ...]
+curl "${H[@]}" -X POST /api/v2/images/15/register -d '{
+  "target_image": 16, "plugin": 7,
+  "mode": "deformable", "transform_type": "rigid",
+  "thumbnail_size": 4096, "registration_size": 2048,
+  "device": "auto", "sift": true, "superglue": true, "angle_step": 60,
+  "create_inverse_registration": true}'
+```
+```
+HTTP/1.1 202 Accepted
+{"id":230,"source_image":15,"target_image":16,"plugin":7,"status":"queued","registration":null,"error":null,
+ "params":{"mode":"deformable","transform_type":"rigid","thumbnail_size":4096,"registration_size":2048,...}}
+```
+All parameters are optional (defaults: `affine`, `rigid`, 4096, 2048, `auto`, SIFT and SuperGlue on, 60°); at least one of `sift` and `superglue` must be on. A worker running `helpers/queue_worker.py` (with `pip install deeperhistreg`) claims the job. Poll it until it leaves `queued` / `running`; a finished job names its registration, which you can then use as in the examples below:
+```bash
+until [ "$(curl -s "${H[@]}" /api/v2/registration-jobs/230 | jq -r .status)" != "queued" ] ; do sleep 5; done   # then "running" -> "done" / "failed"
+curl "${H[@]}" /api/v2/registration-jobs/230           # {"status":"done","registration":87,...}  or  "error":"CUDA out of memory..."
+curl "${H[@]}" "/api/v2/registrations/87/convert?vector=%7B%22x1%22%3A1500%2C%22y1%22%3A1500%7D"
+```
+With *deformable* the server converts points through the stored deformation field, not just the matrix. In Python with `requests`:
+```python
+s = requests.Session(); s.auth = ("alice", password)           # or headers={"Authorization": f"Bearer {token}"}
+job = s.post(f"{host}/api/v2/images/15/register", json={"target_image": 16, "plugin": 7, "mode": "affine"}).json()
+while (job := s.get(f"{host}/api/v2/registration-jobs/{job['id']}").json())["status"] in ("queued", "running"):
+    time.sleep(5)
+assert job["status"] == "done", job["error"]
+```
 
 ### Register by points
 ```bash

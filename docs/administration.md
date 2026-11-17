@@ -12,9 +12,15 @@ Create, rename and delete teams, add existing users, tick *team admin*, and remo
 link for a new user; open invitations are listed and can be revoked.
 
 ## Products
-Products group annotation types. Each type has a name (unique per product), colour, vector type (box, fixed-size box, point,
+The list on the left is a tree: the teams, each with its products below it (click a team to fold it; the choice is remembered in the browser). Products group annotation types. Each type has a name (unique per product), colour, vector type (box, fixed-size box, point,
 line, polygon, global …), a default size for fixed-size boxes in pixels, µm or mm, and a key `1`–`9`. An image set uses the types
 of its products.
+
+**Deleting a type** opens a dialog that lists what is still tied to it, image by image (image set, a link to the image, and how many live annotations, deleted annotations, entries in versions of image sets and plugin results). Live annotations and plugin results have to be removed or changed to another type where they are listed first. Annotations that were *deleted* (and could still be restored) can be removed for good together with the type: the dialog warns what that means (they are gone from exports and the API, including their entries in versions of image sets) and asks for a confirmation. Through the API: `GET /api/v2/annotation-types/{id}/usage` gives the same list, `DELETE /api/v2/annotation-types/{id}?purge_deleted=true` does the deletion.
+
+A **segmentation** type can be given a **Group** (a free name). Segmentation types of one product that share a group name *exclude each other* on a volume:
+no voxel is in two of their masks, painting one takes the voxels from the others (see the [user guide](user-guide#3d-segmentation)). An empty group means none.
+The group is stored in the Rust-only table `exact_rust_type_group`, so the Django schema is untouched; Django does not know groups.
 
 ## Plugins
 Lists the analysis and registration plugins that workers have announced, with the worker that served them last. Plugins register
@@ -28,6 +34,7 @@ The Users tab (for administrators) lists everybody. **New user…** creates an a
 * for superusers also a **worker** (a service account, see below) with its permissions.
 
 Edit a user's name and e-mail, give them a **reset link** or a **random password** (shown once), deactivate, make read only or delete them.
+**Tokens** (site administrators) lists the personal access tokens of an account (name, what it may do, teams, last use, expiry) and revokes them, for example when somebody leaves or a token has leaked; the secrets are never shown. Tokens cannot be made for somebody else.
 The server can also let a superuser impersonate a user (`/api/v2/admin/users/{id}/impersonate`); there is no button for it yet.
 
 **Read only** accounts (reviewers, guests, a test account) see everything their teams give them and can change nothing: the server refuses every create, change

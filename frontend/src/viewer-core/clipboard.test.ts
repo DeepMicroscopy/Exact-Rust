@@ -35,4 +35,10 @@ describe("pasting annotations", () => {
     const v = pasteVector({ typeId: 2, vectorType: VectorType.Point, vector: { x1: 990, y1: 5 } }, bounds, { shift: [30, -20] });
     expect(v).toEqual({ x1: 1000, y1: 0 });
   });
+
+  it("keeps pasted coordinates outside the image when the bounds are free", () => {
+    const free = { ...bounds, free: true };
+    expect(pasteVector({ typeId: 2, vectorType: VectorType.Point, vector: { x1: 990, y1: 5 } }, free, { shift: [30, -20] })).toEqual({ x1: 1020, y1: -15 });
+    expect(pasteVector({ typeId: 1, vectorType: VectorType.BoundingBox, vector: { x1: 10, y1: 10, x2: 60, y2: 50 } }, free, { shift: [-30, -30] })).toMatchObject({ x1: -20, y1: -20, x2: 30, y2: 20 });
+  });
 });

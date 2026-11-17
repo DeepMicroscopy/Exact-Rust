@@ -109,12 +109,14 @@ input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
 .viewer-title { font-weight: 600; line-height: 1.2; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .viewer-body { position: relative; flex: 1; min-height: 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: #000; }
 .osd { width: 100%; height: 100%; } /* OpenSeadragon forces position: relative on its element */
-.viewer-side { position: absolute; top: 12px; left: 12px; width: 230px; max-height: calc(100% - 24px); overflow: auto; padding: 12px; z-index: 3; background: rgba(15, 15, 20, 0.75); }
+.viewer-side { position: absolute; top: 12px; left: 12px; width: 270px; max-height: calc(100% - 24px); overflow: auto; padding: 12px; z-index: 3; background: rgba(15, 15, 20, 0.75); }
 .viewer-error { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 16px 22px; color: var(--danger); z-index: 4; background: rgba(15, 15, 20, 0.9); }
 .viewer-foot { display: flex; align-items: center; gap: 14px; padding: 8px 14px; }
 .viewer-foot input[type="range"] { flex: 1; accent-color: var(--purple); }
 .type-row { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer; font-size: 0.85rem; }
-.type-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.type-name { flex: 1; min-width: 0; overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; } /* a long name takes a second line before it is cut */
+.type-row { align-items: flex-start; }
+.type-row .swatch { margin-top: 2px; }
 .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { background: transparent; border: 0; color: var(--text); padding: 6px 12px; cursor: pointer; font: inherit; }
@@ -225,6 +227,12 @@ kbd { font: 600 0.72rem/1 ui-monospace, monospace; background: rgba(255, 255, 25
 .toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; padding: 10px 16px; max-width: min(520px, 90%); background: rgba(40, 20, 18, 0.95); border-color: #8a2b22; cursor: pointer; }
 .side-toggle { position: absolute; top: 12px; left: 12px; z-index: 4; padding: 6px 11px; display: none; }
 .viewer-side.closed { display: none; }
+/* the labels of the whole image (global annotation types), under the annotation types in the side panel */
+.side-labels { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.side-labels-title { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding: 0 2px 4px; }
+.side-labels-title .gl-frame { font-weight: 400; letter-spacing: 0; text-transform: none; }
+.label-row.set .type-name { font-weight: 600; }
+.label-row:not(.set) .swatch { opacity: 0.45; }
 .scale-bar { position: absolute; left: 12px; bottom: 12px; z-index: 3; pointer-events: none; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 6px; border-radius: 6px; background: rgba(15, 15, 20, 0.6); color: #fff; font-size: 0.75rem; }
 .scale-bar i { display: block; height: 6px; border: 2px solid #fff; border-top: 0; box-sizing: content-box; }
 .zoom-slider { position: absolute; top: 12px; right: 12px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 4px 8px; }
@@ -694,6 +702,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 .passkey-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
 .passkey-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
 .passkey-list .grow { flex: 1 1 200px; }
+.passkey-list li.inactive { opacity: .6; }
 .nav-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 10px; }
 .nav-card { text-align: left; padding: 12px; border: 2px solid var(--border); border-radius: var(--radius); background: rgba(255, 255, 255, 0.03); color: inherit; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }
 .nav-card[aria-checked="true"] { border-color: var(--purple); background: rgba(150, 110, 255, 0.1); }
@@ -857,3 +866,34 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .analysis-card { padding: 8px 10px; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; }
 .analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .analysis-card progress { display: block; width: 100%; margin-top: 4px; }
+
+/* ---- segmentation types of a volume: eyes, striped swatches and groups in the Segment list ---- */
+.dd-line { display: flex; align-items: center; }
+.dd-line .dd-item { flex: 1; }
+.dd-eye { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--muted, #888); cursor: pointer; }
+.dd-eye.on { color: var(--fg, currentColor); }
+.dd-eye:disabled { cursor: default; opacity: 0.7; }
+.dd-eye:hover:not(:disabled) { background: rgba(127, 127, 127, 0.18); }
+.dd-group { font-size: 0.85em; margin: 6px 4px 2px; }
+.dd-row.in-group .dd-line { margin-left: 8px; border-left: 3px solid rgba(127, 127, 127, 0.4); }
+.swatch.striped { background: repeating-linear-gradient(135deg, var(--c) 0 3px, color-mix(in srgb, var(--c) 50%, black) 3px 6px); }
+
+/* ---- products: teams with their products as a tree ---- */
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+.tree ul { margin-left: 14px; border-left: 1px solid rgba(127, 127, 127, 0.3); padding-left: 6px; }
+.tree-node { display: flex; align-items: center; gap: 4px; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; padding: 5px 4px; cursor: pointer; border-radius: 6px; }
+.tree-node:hover { background: rgba(127, 127, 127, 0.15); }
+.tree-caret { display: inline-block; width: 1em; color: var(--muted, #888); }
+
+/* annotation types in the viewer's list: the menu, and the types that cannot be clicked for now */
+.type-custom { display: flex; gap: 8px; align-items: center; padding: 2px 8px 6px; }
+.type-custom input[type="color"] { width: 40px; height: 28px; padding: 0; border: 0; background: transparent; }
+.type-row.locked .type-name, .type-row.locked .muted { color: var(--muted, #8a8a98); opacity: 0.6; }
+.type-row.locked .swatch { background: repeating-linear-gradient(135deg, var(--c) 0 3px, color-mix(in srgb, var(--c) 50%, black) 3px 6px) !important; outline: 1px dashed var(--c); outline-offset: 1px; }
+.type-lock-icon { font-size: 0.75rem; opacity: 0.7; }
+[data-testid="delete-type-places"] { margin: 8px 0 12px; border-collapse: collapse; }
+[data-testid="delete-type-places"] th, [data-testid="delete-type-places"] td { text-align: left; padding: 3px 14px 3px 0; }
+
+/* mouse-optimized navigation: the button that switches annotate mode on and off is there on every screen size */
+.tools-toggle.annotate-toggle { display: block; font-size: 0.95rem; }
+.tools-toggle.annotate-toggle.on { background: var(--purple, #7a4bd6); color: #fff; }

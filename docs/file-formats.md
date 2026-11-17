@@ -50,6 +50,11 @@ Each file goes through the same steps (`POST /api/v2/image-sets/{id}/images`, or
 
 No conversion happens. (Django converted CZI, multi-page TIFF and HDF5 to pyramidal TIFF with pyvips; here CZI is read as it is, through slideio, and TIFFs by the TIFF readers. HDF5 is not supported.)
 
+## When a file cannot be read
+
+The viewer only says *The slide cannot be read*. The cause is in *Administration → Log* (and in the server's log), and `exact-cli inspect <file>` opens one file the way the server does and prints the reader, the size, the levels and frames, or the reason it fails (in the container: `docker exec <container> exact-cli inspect /data/images/<set folder>/<file>`).
+A `.nii.gz` volume is inflated once into the folder `EXACT_NIFTI_CACHE` (it can be deleted at any time). If that folder is full the oldest copies are removed until the new one fits, and if it cannot be written to at all the system temp directory is used instead; if that fails too, the log says so.
+
 ## Damaged pyramids
 
 TIFFs whose zoom pyramid is not a copy of level 0 show up as tiles that "wobble" when you zoom. The viewer then offers a **one-time repair**: the pyramid is rebuilt from level 0 and the original is kept as `<name>.orig.<ext>`, restorable. On the command line: `exact-cli check-images <folder>` finds them, `exact-cli repair-image <file>` repairs one.
