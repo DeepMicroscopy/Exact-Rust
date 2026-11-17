@@ -1,6 +1,7 @@
 //! `/api/v2`: the clean API. Phase 2 provides session authentication for the new UI;
 //! resources follow in Phase 3.
 
+pub mod access_tokens;
 pub mod account;
 pub mod admin;
 pub mod admin_log;
@@ -17,7 +18,6 @@ pub mod jobs;
 pub mod linked;
 pub mod move_image;
 pub mod passkeys;
-pub mod access_tokens;
 pub mod plugins;
 pub mod preferences;
 pub mod processing;

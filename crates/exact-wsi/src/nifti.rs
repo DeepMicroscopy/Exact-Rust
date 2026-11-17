@@ -810,7 +810,9 @@ mod tests {
             assert_eq!(a.render(p, 1).as_raw(), b.render(p, 1).as_raw());
         }
         // the second open of the gz finds the inflated sidecar
-        assert!(sidecar_in(&cache_dir(), gz.to_str().unwrap()).unwrap().exists());
+        assert!(sidecar_in(&cache_dir(), gz.to_str().unwrap())
+            .unwrap()
+            .exists());
         assert!(Nifti::open(gz.to_str().unwrap()).is_ok());
         std::fs::remove_dir_all(&dir).ok();
     }

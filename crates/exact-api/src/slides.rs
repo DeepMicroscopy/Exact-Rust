@@ -531,12 +531,13 @@ async fn centered_snapshot(
             ))
         }
     };
-    let default_frame: i32 = sqlx::query_scalar("SELECT \"defaultFrame\" FROM images_image WHERE id = $1")
-        .bind(img.id)
-        .fetch_optional(&s.pool)
-        .await
-        .map_err(db_err)?
-        .unwrap_or(0);
+    let default_frame: i32 =
+        sqlx::query_scalar("SELECT \"defaultFrame\" FROM images_image WHERE id = $1")
+            .bind(img.id)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?
+            .unwrap_or(0);
     let path = img.path(&s, 1, 1).to_string_lossy().into_owned();
     let st = s.slides.clone();
     // the corner: Django's int(cx - w / 2)
@@ -545,7 +546,8 @@ async fn centered_snapshot(
         let slide = st.slides.get(&path)?;
         let (sw, sh) = slide.level_dimensions().first().copied().unwrap_or((0, 0));
         let (sw, sh) = (sw as i64, sh as i64);
-        let mut canvas = image::RgbImage::from_pixel(w as u32, h as u32, image::Rgb([255, 255, 255]));
+        let mut canvas =
+            image::RgbImage::from_pixel(w as u32, h as u32, image::Rgb([255, 255, 255]));
         // the part of the wanted region that lies inside the slide
         let (ix0, iy0) = (x0.max(0), y0.max(0));
         let (ix1, iy1) = ((x0 + w).min(sw), (y0 + h).min(sh));
@@ -555,7 +557,8 @@ async fn centered_snapshot(
             } else {
                 0
             };
-            let part = slide.read_region(ix0, iy0, 0, (ix1 - ix0) as u32, (iy1 - iy0) as u32, frame)?;
+            let part =
+                slide.read_region(ix0, iy0, 0, (ix1 - ix0) as u32, (iy1 - iy0) as u32, frame)?;
             for (px, py, c) in part.enumerate_pixels() {
                 // transparent pixels (a slide with no data there) are white, too
                 let a = c[3] as u32;

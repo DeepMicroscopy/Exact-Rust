@@ -128,8 +128,16 @@ async fn main() -> anyhow::Result<()> {
             match exact_wsi::formats::SlideCache::new(1).get(&path) {
                 Ok(slide) => {
                     println!("opened: {path}");
-                    println!("level 0: {:?}   levels: {}", slide.level_dimensions().first(), slide.level_dimensions().len());
-                    println!("frames: {} ({})", slide.frame_count(), slide.frame_kind().as_str());
+                    println!(
+                        "level 0: {:?}   levels: {}",
+                        slide.level_dimensions().first(),
+                        slide.level_dimensions().len()
+                    );
+                    println!(
+                        "frames: {} ({})",
+                        slide.frame_count(),
+                        slide.frame_kind().as_str()
+                    );
                     for plane in 0..3 {
                         if let Some(d) = slide.plane_dimensions(plane) {
                             println!("plane {plane}: {d:?}, {} slices", slide.plane_frames(plane));

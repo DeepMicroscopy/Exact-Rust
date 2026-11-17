@@ -15,6 +15,7 @@
 //! A token cannot make tokens: managing them needs the password or a sign-in session, and not an impersonation (an administrator who
 //! impersonates somebody must not be able to mint a lasting credential in their name).
 
+use crate::scope::SCOPES;
 use crate::{
     auth::{authenticate_account, require_user, AuthKind, Principal},
     compat::engine::db_err,
@@ -29,7 +30,6 @@ use axum::{
 };
 use chrono::{DateTime, Duration, Utc};
 use exact_auth::tokens::{generate_pat, hash_token};
-use crate::scope::SCOPES;
 use exact_db::users;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -90,14 +90,15 @@ async fn json_of(s: &AppState, rows: Vec<Row>, with_user: bool) -> ApiResult<Vec
     } else {
         HashMap::new()
     };
-    let scopes: HashMap<i64, Vec<String>> =
-        sqlx::query_as::<_, (i64, Vec<String>)>("SELECT token_id, scopes FROM exact_rust_token_scope WHERE token_id = ANY($1)")
-            .bind(&ids)
-            .fetch_all(&s.pool)
-            .await
-            .map_err(db_err)?
-            .into_iter()
-            .collect();
+    let scopes: HashMap<i64, Vec<String>> = sqlx::query_as::<_, (i64, Vec<String>)>(
+        "SELECT token_id, scopes FROM exact_rust_token_scope WHERE token_id = ANY($1)",
+    )
+    .bind(&ids)
+    .fetch_all(&s.pool)
+    .await
+    .map_err(db_err)?
+    .into_iter()
+    .collect();
     let now = Utc::now();
     Ok(rows
         .into_iter()
@@ -181,7 +182,9 @@ async fn create(
     let scopes = match b.scopes {
         None => None,
         Some(_) if b.read_only => {
-            return Err(bad("A read-only token cannot have scopes: it may only look."))
+            return Err(bad(
+                "A read-only token cannot have scopes: it may only look.",
+            ))
         }
         Some(mut v) => {
             v.sort();
@@ -205,7 +208,9 @@ async fn create(
         .await
         .map_err(db_err)?;
         if mine.len() != teams.len() {
-            return Err(bad("A token can only be restricted to teams you belong to."));
+            return Err(bad(
+                "A token can only be restricted to teams you belong to.",
+            ));
         }
     }
     let (token, prefix) = generate_pat();
@@ -266,11 +271,13 @@ async fn revoke(s: &AppState, id: i64, owner: Option<i64>) -> ApiResult<StatusCo
             .await
             .map_err(db_err)?;
     } else {
-        sqlx::query("DELETE FROM users_personalaccesstoken_teams WHERE personalaccesstoken_id = $1")
-            .bind(id)
-            .execute(&s.pool)
-            .await
-            .map_err(db_err)?;
+        sqlx::query(
+            "DELETE FROM users_personalaccesstoken_teams WHERE personalaccesstoken_id = $1",
+        )
+        .bind(id)
+        .execute(&s.pool)
+        .await
+        .map_err(db_err)?;
         sqlx::query("DELETE FROM users_personalaccesstoken WHERE id = $1")
             .bind(id)
             .execute(&s.pool)

@@ -154,8 +154,16 @@ mod tests {
         assert!(validate(GLOBAL, 0, &mut json!({"frame": 3})));
         assert!(validate(GLOBAL, 0, &mut json!({"frame": "3"})));
         // the dummy box that EXACT's own check asks for is still accepted, with or without a frame
-        assert!(validate(GLOBAL, 0, &mut json!({"x1": 0, "y1": 0, "x2": 1, "y2": 1})));
-        assert!(validate(GLOBAL, 0, &mut json!({"x1": 0, "y1": 0, "x2": 1, "y2": 1, "frame": 2})));
+        assert!(validate(
+            GLOBAL,
+            0,
+            &mut json!({"x1": 0, "y1": 0, "x2": 1, "y2": 1})
+        ));
+        assert!(validate(
+            GLOBAL,
+            0,
+            &mut json!({"x1": 0, "y1": 0, "x2": 1, "y2": 1, "frame": 2})
+        ));
         // anything in between is not a vector of either kind
         assert!(!validate(GLOBAL, 0, &mut json!({"x1": 1, "y1": 2})));
         assert!(!validate(GLOBAL, 0, &mut json!({"frame": 2, "z": 1})));

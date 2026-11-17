@@ -89,7 +89,10 @@ pub async fn create_h(
     };
     // a global annotation exists once per image and type (and user in competitive sets), and per frame when it names one: it is
     // switched on again, not duplicated
-    let frame: Option<String> = vec_value.get("frame").and_then(Value::as_i64).map(|f| f.to_string());
+    let frame: Option<String> = vec_value
+        .get("frame")
+        .and_then(Value::as_i64)
+        .map(|f| f.to_string());
     let existing: Option<(i64, bool)> = if atype.vector_type == vector::GLOBAL {
         let competitive = sqlx::query_scalar::<_, i32>(
             "SELECT collaboration_type FROM images_imageset WHERE id = $1",

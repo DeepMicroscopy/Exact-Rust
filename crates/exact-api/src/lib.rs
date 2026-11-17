@@ -22,8 +22,8 @@ pub mod health;
 pub mod media;
 pub mod page;
 pub mod repair;
-pub mod slides;
 pub mod scope;
+pub mod slides;
 pub mod upload;
 pub mod v2;
 
@@ -97,7 +97,10 @@ pub fn router(state: AppState) -> Router {
         // request bodies with files (bitmaps, media files) are larger than axum's default 2 MB
         .layer(axum::extract::DefaultBodyLimit::max(1 << 30))
         // limited personal access tokens: refused before anything runs when they go beyond their scopes
-        .layer(axum::middleware::from_fn_with_state(state.clone(), scope::enforce))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            scope::enforce,
+        ))
         .with_state(state);
     // uploaded files (file fields); public like Django's `/media/`
     let r = r.nest_service("/media", tower_http::services::ServeDir::new(media_root));
