@@ -58,8 +58,27 @@ enum Cmd {
         #[arg(long)]
         confirm_db: Option<String>,
     },
-    /// Create the additive tables the Rust server needs (sessions). Safe to repeat; Django tables are untouched.
+    /// Create the additive tables the Rust server needs (sessions). Safe to repeat; Django tables are untouched. On an empty
+    /// database (a new installation) EXACT's own tables are created first, as Django's migrations would.
     Migrate {
+        /// Must equal the configured database name; guards against running against the wrong database.
+        #[arg(long)]
+        confirm_db: String,
+    },
+    /// Create a superuser (e.g. the first account of a new installation). The password is read from EXACT_ADMIN_PASSWORD or,
+    /// when that is not set, from the first line of standard input.
+    CreateSuperuser {
+        #[arg(long)]
+        username: String,
+        #[arg(long, default_value = "")]
+        email: String,
+        /// Also make the user admin of this team (created when it does not exist).
+        #[arg(long)]
+        team: Option<String>,
+        /// Do nothing (and succeed) when a superuser exists already: the container's first start creates the account from
+        /// EXACT_ADMIN_USER / EXACT_ADMIN_PASSWORD this way, and leaves imported EXACT databases alone.
+        #[arg(long)]
+        if_none: bool,
         /// Must equal the configured database name; guards against running against the wrong database.
         #[arg(long)]
         confirm_db: String,
@@ -268,8 +287,60 @@ async fn main() -> anyhow::Result<()> {
                 );
             }
             let pool = exact_db::connect(&cfg).await?;
+            if exact_db::bootstrap::database_is_empty(&pool).await? {
+                println!(
+                    "{} is empty: creating EXACT's tables (schema of EXACT {})",
+                    cfg.db_name,
+                    exact_db::bootstrap::base_schema_source()
+                );
+                exact_db::bootstrap::apply_base_schema(&pool).await?;
+            }
             exact_db::sessions::migrate(&pool).await?;
             println!("migrations applied");
+        }
+        Cmd::CreateSuperuser {
+            username,
+            email,
+            team,
+            if_none,
+            confirm_db,
+        } => {
+            if confirm_db != cfg.db_name {
+                bail!(
+                    "--confirm-db {confirm_db} does not match the configured database {}",
+                    cfg.db_name
+                );
+            }
+            let pool = exact_db::connect(&cfg).await?;
+            if if_none && exact_db::bootstrap::superuser_exists(&pool).await? {
+                println!("a superuser exists already: {username} not created");
+                return Ok(());
+            }
+            let password = match std::env::var("EXACT_ADMIN_PASSWORD") {
+                Ok(p) => p,
+                Err(_) => {
+                    use std::io::IsTerminal;
+                    if std::io::stdin().is_terminal() {
+                        eprint!("password for {username} (shown as you type): ");
+                    }
+                    let mut line = String::new();
+                    std::io::stdin().read_line(&mut line)?;
+                    line.trim_end_matches(['\r', '\n']).to_string()
+                }
+            };
+            if password.is_empty() {
+                bail!("empty password: set EXACT_ADMIN_PASSWORD or pass it on standard input");
+            }
+            let hash = exact_auth::hashers::make_password(&password);
+            let id = exact_db::bootstrap::create_superuser(
+                &pool,
+                &username,
+                &email,
+                &hash,
+                team.as_deref(),
+            )
+            .await?;
+            println!("superuser {username} created (id {id})");
         }
         Cmd::SchemaCheck { baseline } => {
             let pool = exact_db::connect(&cfg).await?;

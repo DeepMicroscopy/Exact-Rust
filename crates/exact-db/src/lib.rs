@@ -1,6 +1,7 @@
 //! Database access. The Rust server runs against the *existing Django schema* (no migrations of
 //! its own until cutover); `schema` verifies that the live schema is what we were built for.
 
+pub mod bootstrap;
 pub mod challenges;
 pub mod invitations;
 pub mod passkeys;

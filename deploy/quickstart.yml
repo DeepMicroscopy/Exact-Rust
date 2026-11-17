@@ -1,0 +1,77 @@
+# A new EXACT-Rust installation on one machine: PostgreSQL and the server, no GPU needed. Guide: docs/quickstart.md.
+#   cp deploy/quickstart.env.example deploy/.env     # set the two passwords
+#   docker compose -f deploy/quickstart.yml up -d --build
+#   -> http://localhost:8002, log in as EXACT_ADMIN_USER
+# deploy/.env is read automatically (it is next to this file). On the first start the server creates the database tables and the admin account.
+# Slides, exports and thumbnails are kept in Docker volumes (exact-rust_images, _media, _cache) unless IMAGE_PATH / MEDIA_ROOT /
+# EXACT_CACHE_DIR in .env name host folders. `docker compose -f deploy/quickstart.yml down -v` deletes the volumes, i.e. everything.
+# The registration worker is optional: create its account in the web interface (Administration → Users → New worker account…), put it
+# into .env (WORKER_USER / WORKER_PASSWORD) and start it with `docker compose -f deploy/quickstart.yml --profile worker up -d`.
+# For an existing EXACT (Django) installation see docs/from-exact.md (deploy/docker-compose.yml).
+name: exact-rust
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: exact
+      POSTGRES_PASSWORD: ${SQL_PASSWORD:?set SQL_PASSWORD in deploy/.env (copy deploy/quickstart.env.example)}
+      POSTGRES_DB: exact
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exact -d exact"]
+      interval: 5s
+      retries: 12
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        WITH_DEEPERHISTREG: ${WITH_DEEPERHISTREG:-0}   # 1: the DeeperHistReg registration plugin (PyTorch, image 2-3 GB larger)
+        TORCH_INDEX: https://download.pytorch.org/whl/cpu
+    image: exact-rust
+    user: "${CONTAINER_USER:-exact}"
+    env_file: .env
+    environment:
+      SQL_HOST: db
+      SQL_PORT: "5432"
+      SQL_DATABASE: exact
+      SQL_USER: exact
+      EXACT_LISTEN: 0.0.0.0:8002
+      IMAGE_PATH: /data/images
+      MEDIA_ROOT: /data/media
+      EXACT_CACHE_DIR: /data/cache
+      EXACT_NIFTI_CACHE: /data/cache/nifti
+      EXACT_COOKIE_SECURE: ${EXACT_COOKIE_SECURE:-0}   # 1 once it runs behind https
+      FIDO_SERVER_ID: ${FIDO_SERVER_ID:-localhost}     # the host name in the browser (passkeys)
+    depends_on:
+      db: { condition: service_healthy }
+    ports: ["${EXACT_BIND:-127.0.0.1}:${EXACT_PORT:-8002}:8002"]
+    volumes:
+      - ${IMAGE_PATH:-images}:/data/images
+      - ${MEDIA_ROOT:-media}:/data/media
+      - ${EXACT_CACHE_DIR:-cache}:/data/cache
+    restart: unless-stopped
+
+  worker:
+    image: exact-rust
+    profiles: ["worker"]
+    user: "${CONTAINER_USER:-exact}"
+    depends_on: [server]
+    healthcheck: { disable: true }
+    env_file: .env
+    environment:
+      IMAGE_PATH: /data/images
+    volumes:
+      - ${IMAGE_PATH:-images}:/data/images:ro
+    command: ["sh", "-c", "python /app/helpers/queue_worker.py --url http://server:8002 --user \"$$WORKER_USER\" --password \"$$WORKER_PASSWORD\" --exact-dir /opt/exact/exact"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  images:
+  media:
+  cache:

@@ -50,6 +50,26 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
+/// The generic `GET`/`HEAD`/`OPTIONS` of a v1 list, for paths that have a route of their own (`upload.rs`).
+pub(crate) async fn list_response(
+    s: &AppState,
+    headers: &HeaderMap,
+    method: &Method,
+    uri: &Uri,
+    group: &str,
+    name: &str,
+) -> Response {
+    respond(
+        list_impl(s, headers, method, uri, group, name).await,
+        LIST_ALLOW,
+    )
+}
+
+/// A v1 list-level answer (with the list's `Allow` header).
+pub(crate) fn respond_list(r: ApiResult<Value>) -> Response {
+    respond(r, LIST_ALLOW)
+}
+
 fn respond(r: ApiResult<Value>, allow: &'static str) -> Response {
     match r {
         Ok(v) => with_allow(Json(v).into_response(), allow),
@@ -299,7 +319,7 @@ async fn annotation_multiple_delete(
     r.unwrap_or_else(|e| with_allow(e.into_response(), "DELETE, OPTIONS"))
 }
 
-fn ctx<'a>(s: &'a AppState, p: &crate::auth::Principal, headers: &HeaderMap) -> Ctx<'a> {
+pub(crate) fn ctx<'a>(s: &'a AppState, p: &crate::auth::Principal, headers: &HeaderMap) -> Ctx<'a> {
     Ctx {
         s,
         viewer: p.viewer(),

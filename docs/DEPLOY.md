@@ -1,9 +1,13 @@
 ---
-title: Installation
-nav_order: 12
+title: "Reference: beta and production"
+parent: Installation
+nav_order: 3
 ---
 
 # Beta installation on a copy of the production data
+
+This is the detailed reference. For a first installation follow [Start from scratch](quickstart) (no earlier EXACT) or
+[Moving from EXACT](from-exact) (an existing EXACT); both point here for the details.
 
 Goal: the Rust server on a **copy** of the production database and image files, next to (never instead of) the running
 Django. Nothing here touches production. Rollback is "stop the beta": Django keeps working on its own database, and the
@@ -20,14 +24,23 @@ additive tables/columns the beta adds exist only in the copy.
 
 ## 1. Files: a copy, or the real store mounted read-only
 The server **writes** to the image store (uploads, moving and deleting images, pyramid repair, crops) and only then. Two safe ways:
-* **A copy** that costs no extra disk where the file system can: `cp -cR` (macOS/APFS), `cp -a --reflink=auto` (btrfs/XFS), or `rsync -a`. Compose with `IMAGE_MODE=rw`.
-* **The real store, read-only** (when it is too big to copy): compose mounts it `:ro` into the server (the default, `IMAGE_MODE=ro`) and the worker.
+* **A copy** that costs no extra disk where the file system can: `cp -cR` (macOS/APFS), `cp -a --reflink=auto` (btrfs/XFS), or `rsync -a`. Compose mounts
+  it writable (the default, `IMAGE_MODE=rw`, which is also what a new installation needs).
+* **The real store, read-only** (when it is too big to copy): **set `IMAGE_MODE=ro` in `exact.env`**; compose then mounts it `:ro` into the server (the worker always has it read-only).
   Viewing, annotating (annotations are database rows), registration and exports work; uploads, moving, deleting, crops and repair fail with an error and
   leave the files untouched. Deleting an image or set in the beta removes only its row in the beta's database copy.
 `MEDIA_ROOT` (aux files, registration files, exports) is written to: use a copy of it, it is small. Keep `EXACT_CACHE_DIR` (thumbnails, can be deleted)
 and `EXACT_NIFTI_CACHE` (inflated `.nii.gz` volumes, grows) on their own folders.
 
 ## 2. Database
+**A new installation without existing EXACT data** needs none of the dump steps below: see [Start from scratch](quickstart)
+(`deploy/quickstart.yml`). On an empty database `exact-cli migrate` (and so the container's first start) creates EXACT's tables itself
+(`crates/exact-db/bootstrap/exact_base_schema.sql`: what EXACT's Django migrations create, including their migration records, so the
+original EXACT can still be pointed at the database later), then exact-rust's own; with `EXACT_ADMIN_USER` / `EXACT_ADMIN_PASSWORD` in
+the env file the first start also creates the first superuser (`exact-cli create-superuser --if-none`: nothing happens once any
+superuser exists, so a restored EXACT database is left alone). The server container checks on start that it can write to
+`IMAGE_PATH`, `MEDIA_ROOT` and `EXACT_CACHE_DIR` (uid 1000) and refuses to start with an explanation otherwise.
+
 **With Docker** (`deploy/docker-compose.yml`): `dc up -d db` creates the empty database in the volume `pgdata` (name, user, password from `exact.env`), then
 ```
 dc exec -T db pg_restore --no-owner --role="$SQL_USER" -U "$SQL_USER" -d "$SQL_DATABASE" < production.dump

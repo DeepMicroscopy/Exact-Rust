@@ -66,7 +66,8 @@ ENV EXACT_LISTEN=0.0.0.0:8002 \
     EXACT_STATIC_DIR=/app/frontend/dist \
     SLIDEIO_PYTHON=/usr/local/bin/python SLIDEIO_HELPER=/app/helpers/slideio_helper.py \
     REGISTRATION_PYTHON=/usr/local/bin/python REGISTRATION_HELPER=/app/helpers/registration_helper.py REGISTRATION_EXACT_DIR=/opt/exact/exact
-RUN useradd --system --create-home --uid 1000 exact && mkdir -p /data/cache && chown -R exact /data
+# (all three folders exist owned by `exact`, so that empty named volumes mounted there, as in deploy/quickstart.yml, are writable)
+RUN useradd --system --create-home --uid 1000 exact && mkdir -p /data/images /data/media /data/cache && chown -R exact /data
 USER exact
 WORKDIR /app
 EXPOSE 8002

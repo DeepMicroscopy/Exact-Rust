@@ -67,7 +67,8 @@ These are deliberate or known, and none breaks exact-sync:
 * **Personal access tokens cannot be created or revoked** on the Rust server (it validates them): make them in Django's UI.
 * **Deactivated users:** Django still accepts the token of a deactivated user; Rust refuses it, on purpose.
 * **`PUT` on the REST annotation endpoint:** Django insists on `annotationversion_set` and `uploaded_media_files` in the body; Rust does not (a client that works on Django works on Rust).
-* **Deletion of teams** over v1 answers 501; use `DELETE /api/v2/teams/{id}`. Image sets can be created over v1 (`POST /api/v1/images/image_sets/`: `name` and `team` required, `description`, `location`, `product_set`, `main_annotation_type`, `collaboration_type` optional; the caller is always the creator, and has to be a member of the team); changing or deleting them over v1 is not implemented, use `PATCH` / `DELETE /api/v2/image-sets/{id}`. The old URL `GET /images/api/image/delete/<id>/` does not exist (`DELETE /api/v2/images/<id>`). **Images can be deleted over v1** (`DELETE /api/v1/images/images/<id>/`, exact-sync's `destroy_image`; 204 without a body, the same as the v2 call): it also needs the permission to delete images in the image set, and a locked image set refuses it (403), where Django asks only the model permission and deletes any image that exists. exact-sync uses no other of these.
+* **Deletion of teams** over v1 answers 501; use `DELETE /api/v2/teams/{id}`. Image sets can be created over v1 (`POST /api/v1/images/image_sets/`: `name` and `team` required, `description`, `location`, `product_set`, `main_annotation_type`, `collaboration_type` optional; the caller is always the creator, and has to be a member of the team); changing or deleting them over v1 is not implemented, use `PATCH` / `DELETE /api/v2/image-sets/{id}`. The old URL `GET /images/api/image/delete/<id>/` does not exist (`DELETE /api/v2/images/<id>`). exact-sync uses none of them.
+* **Image upload over v1** (`POST /api/v1/images/images/`, exact-sync's `create_image`): Django only checks the model permission `add_image` and the team scope of a token, so it accepts uploads into image sets the caller cannot edit and into locked sets; Rust requires the right to edit the unlocked set, as for its other uploads (403). A non-numeric `image_set` is a 400 `{"image_set": ["A valid integer is required."]}` (Django: 500). Auxiliary files (PDF, DOCX, ...) are stored, but are not in the answer (Django filters images by their ids and can list an unrelated image).
 * **`register_images`** (exact-sync) queues a job and waits for the worker (`REGISTRATION_WAIT_SECONDS`, default 900) instead of computing inside the request; it answers 201 / 202 like Django, and 202 with the job when the wait ran out.
 * **Unknown URLs** answer with the web app's start page (status 200) when the web app is served, not a 404.
 * **Six simultaneous uploads of one file:** Django creates six images (it checks, then inserts, with no unique constraint); with both servers fewer. Not a coexistence problem.
@@ -80,6 +81,8 @@ These are deliberate or known, and none breaks exact-sync:
 How all of this is tested: [Running next to Django](coexistence).
 
 ## Moving over: a suggestion
+
+The step-by-step guide is [Moving from EXACT](from-exact); in short:
 
 1. Read [Running next to Django](coexistence) and run `scripts/coexistence-preflight.sh` (read-only).
 2. Take a `pg_dump`. Run `exact-cli migrate --confirm-db <name>` once. Give the Rust server its own host name and `FIDO_SERVER_ID`.

@@ -53,7 +53,7 @@ the Django version, most for the lists that exact-sync and workers ask for (Djan
 | **set up a project with my colleagues** | [How to create a team and manage your images](howto-team) |
 | **align two stains** | [How to use image registration](howto-registration) (with a short explanation of what registration is) |
 | **run a team** | [Administration](administration) |
-| **install it** | [Installation](DEPLOY), then [running next to the Django EXACT](coexistence) |
+| **install it** | [Start from scratch](quickstart) (new), or [move from an existing EXACT](from-exact) |
 | **script it** | [API](api) with examples, the [QueueRunner claim](queuerunner-v2) |
 | **add my own analysis** | [How to write a plugin](howto-plugin), [Plugins and workers](plugins) |
 | **understand how it is built** | [Architecture](architecture), [file formats](file-formats) |

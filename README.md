@@ -4,8 +4,9 @@ A Rust port of [EXACT](https://github.com/DeepMicroscopy/Exact) (annotation tool
 PostgreSQL, a new React front end, and the same REST interface for [exact-sync](https://github.com/DeepMicroscopy/EXACT-Sync)
 and ML workers. **Work in progress.**
 
-The server runs against the *existing EXACT (Django) database*: no schema change except additive tables, so Django can
-be rolled back at any time. The plan, decisions, measurements and the status of every phase are in [PLAN.md](PLAN.md).
+You can **start from scratch** (no earlier EXACT needed, see [Get started](#get-started)) or run it on an **existing EXACT (Django)
+database**: no schema change except additive tables, so Django can be rolled back at any time. The plan, decisions, measurements and the
+status of every phase are in [PLAN.md](PLAN.md).
 
 ![The viewer with annotations on a whole-slide image](docs/assets/screenshots/viewer.png)
 
@@ -18,6 +19,63 @@ be rolled back at any time. The plan, decisions, measurements and the status of 
 </p>
 
 Documentation: `docs/` (published with GitHub Pages: user guide, shortcuts, administration, API, installation).
+
+## Get started
+
+| Do you already run EXACT (the Django version)? | |
+|---|---|
+| **No**, I want to start using EXACT-Rust | follow the six steps below (about 30 minutes, most of it waiting) |
+| **Yes**, I want to move my EXACT with its users and data | read [Moving from EXACT](docs/from-exact.md): try it on a copy first, then run both side by side |
+
+### A new installation in six steps
+You need a computer with Windows, macOS or Linux, about 10 GB of free disk and an internet connection. No programming, no database
+and no graphics card are needed: everything runs inside Docker.
+
+**1. Install Docker Desktop** from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) and start it
+(on Windows it may ask to install WSL and to restart). On Linux install Docker Engine instead. Docker has to be running whenever
+EXACT-Rust should be reachable.
+
+**2. Download EXACT-Rust:** on this page click the green **Code** button → **Download ZIP**, and unpack it, for example into
+your Documents folder. (With git: `git clone https://github.com/DeepMicroscopy/Exact-Rust.git`.)
+
+**3. Open a terminal in that folder** (the one that contains `README.md` and the folder `deploy`):
+* Windows 11: right-click the folder → **Open in Terminal** (Windows 10: Shift + right-click → *Open PowerShell window here*)
+* macOS: right-click the folder → **Services** → **New Terminal at Folder** (or open Terminal, type `cd ` and drag the folder into its window, then press Enter)
+* Linux: open a terminal and `cd` into the folder
+
+**4. Create your settings file** and open it in a text editor; type the line for your system into the terminal and press Enter:
+
+| | |
+|---|---|
+| Windows | `copy deploy\quickstart.env.example deploy\.env` and then `notepad deploy\.env` |
+| macOS | `cp deploy/quickstart.env.example deploy/.env` and then `open -e deploy/.env` |
+| Linux | `cp deploy/quickstart.env.example deploy/.env` and then `nano deploy/.env` |
+
+In the file, replace both `change-me` with passwords of your own: `SQL_PASSWORD` (for the database; you never type it again, make it
+long) and `EXACT_ADMIN_PASSWORD` (to log in). `EXACT_ADMIN_USER` is your login name, `EXACT_ADMIN_TEAM` the name of your first team.
+Save and close the file.
+
+**5. Start EXACT-Rust:**
+```
+docker compose -f deploy/quickstart.yml up -d --build
+```
+The first time this takes 20 to 40 minutes (it builds everything); you can follow it in the terminal. It is done when the prompt
+comes back; give the server another minute to prepare the database on its very first start. Later starts take seconds.
+
+**6. Open [http://localhost:8002](http://localhost:8002)** in your browser and log in with `EXACT_ADMIN_USER` and
+`EXACT_ADMIN_PASSWORD`. Change the password under your user name (top right) → **Preferences**.
+
+Then [create your first image set and upload slides](docs/howto-team.md); invite colleagues under **Administration → Users**.
+
+**Good to know**
+* EXACT-Rust starts by itself whenever Docker Desktop is running (also after a restart of the computer).
+* Stop it: `docker compose -f deploy/quickstart.yml stop` (start again with `... start`).
+* Update: download the new version, copy your `deploy/.env` into it and run the command of step 5 again in the new folder.
+  Your slides, annotations and accounts are kept (they live in Docker, not in the downloaded folder).
+* Something does not work? The [troubleshooting table](docs/quickstart.md#when-something-goes-wrong) lists the usual messages and
+  their fix; `docker compose -f deploy/quickstart.yml logs server` shows what the server says.
+* More options (another port, slides in a folder of your own, access from other computers with https, the registration worker):
+  [Start from scratch](docs/quickstart.md).
 
 ## Speed
 <p align="center">
@@ -60,7 +118,7 @@ Not in the picture: loading all 45,000 annotations of one image at once (the cal
 | Slides: OpenSlide formats, TIFF/BigTIFF, OME-TIFF z-stacks, NIfTI/DICOM (three-plane view), MKT, MP4/AVI, CZI/VSI (helper) | done; iSyntax dropped |
 | Pyramid repair, level registration, image registration (manual and by worker plugins), job queue | done |
 | Front end: image sets, uploads, viewer with annotation tools and polygon operations, crops, export, registration, jobs, administration | done |
-| Deployment: Dockerfile, compose, systemd units, runbook ([docs/DEPLOY.md](docs/DEPLOY.md)) | beta on a copy of production in progress |
+| Deployment: Dockerfile, compose, systemd units, runbook ([docs/DEPLOY.md](docs/DEPLOY.md)); [new installations without Django](docs/quickstart.md) | beta on a copy of production in progress |
 
 ## Layout
 - `crates/exact-core` config, errors - `exact-db` queries and additive migrations - `exact-auth` hashes, tokens, WebAuthn
@@ -69,11 +127,15 @@ Not in the picture: loading all 45,000 annotations of one image at once (the cal
 - `frontend/` React + TypeScript + Vite; `helpers/slideio_helper.py` reads CZI/VSI/DICOM through slideio
 - `tests/conformance` replays recorded responses of the reference EXACT against this server; `tests/perf`, `reference/` (reference Django setup)
 
-## Run
+## Run from source (development)
+To install and use EXACT-Rust see [Get started](#get-started); this is for working on the code.
 ```
 make ui                       # build the front end (frontend/dist, served by the binary)
-cargo build -p exact-server   # needs libopenslide, ffmpeg (libav*) and libclang to build
-SQL_DATABASE=exact SQL_USER=... SQL_PASSWORD=... IMAGE_PATH=/path/to/images EXACT_LISTEN=127.0.0.1:8002 target/debug/exact-server
+cargo build -p exact-server -p exact-cli   # needs libopenslide, ffmpeg (libav*) and libclang to build
+export SQL_DATABASE=exact SQL_USER=... SQL_PASSWORD=... IMAGE_PATH=/path/to/images EXACT_LISTEN=127.0.0.1:8002
+target/debug/exact-cli migrate --confirm-db exact      # an empty database gets EXACT's tables first: no Django needed for a new instance
+target/debug/exact-cli create-superuser --username admin --team mylab --confirm-db exact   # new instance only; password on stdin
+target/debug/exact-server
 ```
 Configuration uses EXACT's environment variable names (`SQL_*`, `IMAGE_PATH`, `FIDO_SERVER_ID`, ...); `EXACT_CACHE_DIR` holds
 thumbnails, `SLIDEIO_PYTHON` / `SLIDEIO_HELPER` select the slideio helper, `EXACT_STATIC_DIR` the front end.
