@@ -208,7 +208,11 @@ mod tests {
         band.put_pixel(1, 0, image::Rgba([0, 0, 0, 128])); // half transparent black
         let t = rgb_tile(&band, 0, 4);
         assert_eq!(&t[0..3], &[255, 255, 255]);
-        assert!(t[3..6].iter().all(|&v| (126..=129).contains(&v)), "{:?}", &t[3..6]);
+        assert!(
+            t[3..6].iter().all(|&v| (126..=129).contains(&v)),
+            "{:?}",
+            &t[3..6]
+        );
         assert_eq!(&t[6..9], &[10, 20, 30]);
         // outside the band (rows 4.. and the columns past 300) is white
         let t2 = rgb_tile(&band, 256, 4);

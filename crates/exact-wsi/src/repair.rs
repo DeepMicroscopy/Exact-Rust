@@ -42,7 +42,7 @@ pub(crate) fn reduce(src: &RgbaImage, samples: usize) -> Vec<u8> {
             let o = ((oy as u64 * TILE + ox as u64) as usize) * samples;
             if let Some(div) = std::num::NonZeroU32::new(n) {
                 for c in 0..3 {
-                    out[o + c] = ((sum[c] + n / 2) / div.get()) as u8;
+                    out[o + c] = ((sum[c] + n / 2) / div) as u8;
                 }
             }
             if samples == 4 {

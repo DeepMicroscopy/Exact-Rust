@@ -80,7 +80,9 @@ pub(crate) const CONNECTED_SQL: &str = "GREATEST((SELECT ps.seen_at FROM exact_r
      (SELECT max(cq.updated_time) FROM processing_pluginjob cq WHERE cq.plugin_id = pl.id AND cq.attached_worker IS NOT NULL AND cq.attached_worker <> '')) \
      > now() - interval '7 days'";
 
-static TOUCHED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<i64, std::time::Instant>>> = std::sync::OnceLock::new();
+static TOUCHED: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<i64, std::time::Instant>>,
+> = std::sync::OnceLock::new();
 
 /// Records that a worker is serving these plugins now (at most one write a minute per plugin).
 pub(crate) async fn touch_plugins(pool: &sqlx::PgPool, ids: &[i64]) {
@@ -263,7 +265,12 @@ async fn heartbeat_h(
     let kinds: Vec<&str> = d
         .get("kinds")
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).filter(|k| KINDS.contains(k)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .filter(|k| KINDS.contains(k))
+                .collect()
+        })
         .unwrap_or_default();
     let plugins: Vec<i64> = d
         .get("plugins")

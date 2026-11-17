@@ -553,8 +553,15 @@ fn type_fields(d: &Map<String, Value>) -> ApiResult<TypeFields> {
         None => None,
         Some(Value::Null) => Some(None),
         Some(Value::String(t)) if t.trim().is_empty() => Some(None),
-        Some(Value::String(t)) if t.trim().chars().count() <= 50 => Some(Some(t.trim().to_string())),
-        Some(_) => return Err(field_err("seg_group", "A group name of up to 50 characters, or empty for none.")),
+        Some(Value::String(t)) if t.trim().chars().count() <= 50 => {
+            Some(Some(t.trim().to_string()))
+        }
+        Some(_) => {
+            return Err(field_err(
+                "seg_group",
+                "A group name of up to 50 characters, or empty for none.",
+            ))
+        }
     };
     let w = float(d.get("default_width"))
         .map_err(|_| field_err("default_width", "A number is required."))?;
@@ -722,7 +729,11 @@ async fn usage_report(s: &AppState, id: i64) -> ApiResult<String> {
         ("plugin results", "SELECT i.id, i.name, i.image_set_id FROM processing_pluginresultannotation a JOIN images_image i ON i.id = a.image_id WHERE a.annotation_type_id = $1"),
     ];
     for (what, sql) in kinds {
-        let rows: Vec<(i64, String, i64)> = sqlx::query_as(sql).bind(id).fetch_all(&s.pool).await.map_err(db_err)?;
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(sql)
+            .bind(id)
+            .fetch_all(&s.pool)
+            .await
+            .map_err(db_err)?;
         if rows.is_empty() {
             continue;
         }
@@ -738,8 +749,16 @@ async fn usage_report(s: &AppState, id: i64) -> ApiResult<String> {
             .take(8)
             .map(|((iid, name, set), n)| format!("{name} (image {iid}, image set {set}): {n}"))
             .collect();
-        let more = if per.len() > 8 { format!(", and {} more images", per.len() - 8) } else { String::new() };
-        parts.push(format!("{} {what} in {}{more}", rows.len(), shown.join("; ")));
+        let more = if per.len() > 8 {
+            format!(", and {} more images", per.len() - 8)
+        } else {
+            String::new()
+        };
+        parts.push(format!(
+            "{} {what} in {}{more}",
+            rows.len(),
+            shown.join("; ")
+        ));
     }
     Ok(parts.join(". "))
 }
@@ -759,11 +778,12 @@ pub async fn type_usage_h(
         "annotationtype",
     )
     .await?;
-    let name: Option<String> = sqlx::query_scalar("SELECT name FROM annotations_annotationtype WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&s.pool)
-        .await
-        .map_err(db_err)?;
+    let name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM annotations_annotationtype WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?;
     let Some(name) = name else {
         return Err(ApiError::not_found("Not found."));
     };
@@ -789,7 +809,12 @@ pub async fn type_usage_h(
         results += x;
         let image: i64 = r.get(0);
         if let Some(last) = places.last_mut().filter(|p| p["image"] == json!(image)) {
-            for (k, n) in [("annotations", l), ("deleted", g), ("versions", v), ("results", x)] {
+            for (k, n) in [
+                ("annotations", l),
+                ("deleted", g),
+                ("versions", v),
+                ("results", x),
+            ] {
                 last[k] = json!(last[k].as_i64().unwrap_or(0) + n);
             }
             continue;
@@ -987,11 +1012,12 @@ pub async fn type_patch_h(
     }
     set_group(&s, id, &f.seg_group).await?;
     // the vector type of a type in use cannot change: annotations hold vectors of that shape
-    let current_shape: Option<i32> = sqlx::query_scalar("SELECT vector_type FROM annotations_annotationtype WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&s.pool)
-        .await
-        .map_err(db_err)?;
+    let current_shape: Option<i32> =
+        sqlx::query_scalar("SELECT vector_type FROM annotations_annotationtype WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?;
     if f.vector_type.is_some() && f.vector_type == current_shape {
         // the same shape again (the administration screen sends the whole type): nothing to change, also when annotations use it
     } else if f.vector_type.is_some() && type_usage(&s, id).await? == 0 {
@@ -1036,7 +1062,9 @@ pub async fn type_delete_h(
     }
     // `?purge_deleted=true`: the annotations that were deleted (and can still be restored) go for good with the type, and with them what
     // hangs on them (versions of image sets). Live annotations and plugin results still stop the deletion.
-    let purge = q.get("purge_deleted").is_some_and(|v| v == "true" || v == "1");
+    let purge = q
+        .get("purge_deleted")
+        .is_some_and(|v| v == "true" || v == "1");
     let used = type_usage(&s, id).await?;
     if used > 0 {
         let blockers: i64 = sqlx::query_scalar(
@@ -1055,16 +1083,22 @@ pub async fn type_delete_h(
                 format!(
                     "The annotation type is used by {used} annotations, versions or results. {}.{}",
                     usage_report(&s, id).await?,
-                    if blockers == 0 { " Delete with the deleted annotations to remove them for good." } else { "" }
+                    if blockers == 0 {
+                        " Delete with the deleted annotations to remove them for good."
+                    } else {
+                        ""
+                    }
                 ),
             ));
         }
         let mut tx = s.pool.begin().await.map_err(db_err)?;
-        let gone: Vec<i64> = sqlx::query_scalar("SELECT id FROM annotations_annotation WHERE annotation_type_id = $1 AND deleted")
-            .bind(id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(db_err)?;
+        let gone: Vec<i64> = sqlx::query_scalar(
+            "SELECT id FROM annotations_annotation WHERE annotation_type_id = $1 AND deleted",
+        )
+        .bind(id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db_err)?;
         cascade::delete_rows(&mut tx, "annotations_annotation", &gone).await?;
         cascade::delete_rows(&mut tx, "annotations_annotationtype", &[id]).await?;
         tx.commit().await.map_err(db_err)?;

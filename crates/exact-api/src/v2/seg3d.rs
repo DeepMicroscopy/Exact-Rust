@@ -96,7 +96,11 @@ async fn group_lock(
 ) -> ApiResult<(Vec<i64>, Option<tokio::sync::MutexGuard<'static, ()>>)> {
     static GROUPS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let mates = group_mates(s, annotation).await?;
-    let guard = if mates.is_empty() { None } else { Some(GROUPS.lock().await) };
+    let guard = if mates.is_empty() {
+        None
+    } else {
+        Some(GROUPS.lock().await)
+    };
     Ok((mates, guard))
 }
 
@@ -136,7 +140,12 @@ async fn touch_mate(
     let open = load_entry(s, mate, &Target { image }).await?;
     let mut e = open.lock().await;
     let cur = e.vol.tile(key).cloned();
-    let mut next = cur.clone().unwrap_or_else(|| vec![0u8; T * T].into_boxed_slice().try_into().expect("tile"));
+    let mut next = cur.clone().unwrap_or_else(|| {
+        vec![0u8; T * T]
+            .into_boxed_slice()
+            .try_into()
+            .expect("tile")
+    });
     let mut moved = vec![0u8; T * T];
     let mut any = false;
     for i in 0..T * T {
@@ -748,7 +757,11 @@ async fn commit(
     let want_bits = !mates.is_empty();
     let (before, after, bits) = tokio::task::spawn_blocking(move || {
         let before_tiles = j.into_before();
-        let bits = if want_bits { gained(&before_tiles, &settled) } else { Vec::new() };
+        let bits = if want_bits {
+            gained(&before_tiles, &settled)
+        } else {
+            Vec::new()
+        };
         let before: Vec<(Key, Option<Vec<u8>>)> = before_tiles
             .into_iter()
             .map(|(k, t)| (k, t.map(|t| png_of(&t))))
@@ -779,7 +792,11 @@ async fn commit(
     let mut others: Vec<i64> = linked.iter().map(|l| l.0).collect();
     others.dedup();
     if changed {
-        guard.undo.push(Step { before, after, linked });
+        guard.undo.push(Step {
+            before,
+            after,
+            linked,
+        });
         if guard.undo.len() > MAX_UNDO {
             guard.undo.remove(0);
         }
@@ -871,7 +888,10 @@ async fn step_h(s: AppState, headers: HeaderMap, annotation: i64, dir: Dir) -> A
     // the voxels the step took from the other masks of the group: back on undo, taken again on redo
     let mut others: Vec<i64> = Vec::new();
     for (mate, key, bits) in &step.linked {
-        if touch_mate(&s, *mate, t.image, *key, bits, matches!(dir, Dir::Redo)).await?.is_some() {
+        if touch_mate(&s, *mate, t.image, *key, bits, matches!(dir, Dir::Redo))
+            .await?
+            .is_some()
+        {
             others.push(*mate);
         }
     }

@@ -50,7 +50,9 @@ pub fn needed(method: &Method, path: &str) -> Option<&'static str> {
         | ["images", "api", ..]
         | ["images", "image", ..] => "images",
         // products and annotation types
-        ["api", "v2", "products", ..] | ["api", "v2", "annotation-types", ..] | ["administration", "api", "annotation_type", ..] => "catalog",
+        ["api", "v2", "products", ..]
+        | ["api", "v2", "annotation-types", ..]
+        | ["administration", "api", "annotation_type", ..] => "catalog",
         _ => return None,
     })
 }
@@ -75,7 +77,8 @@ pub async fn enforce(State(s): State<AppState>, req: Request, next: Next) -> Res
         .and_then(|v| v.to_str().ok())
         .and_then(|v| {
             let (kind, t) = v.split_once(' ')?;
-            kind.eq_ignore_ascii_case("bearer").then(|| t.trim().to_string())
+            kind.eq_ignore_ascii_case("bearer")
+                .then(|| t.trim().to_string())
         });
     let Some(prefix) = token.as_deref().and_then(tokens::pat_prefix) else {
         return next.run(req).await;
@@ -106,7 +109,11 @@ mod tests {
     use super::*;
 
     fn ok(scopes: &[&str], m: Method, p: &str) -> bool {
-        allows(&scopes.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &m, p)
+        allows(
+            &scopes.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            &m,
+            p,
+        )
     }
 
     #[test]
@@ -124,13 +131,26 @@ mod tests {
         assert!(ok(&j, Method::POST, "/api/v2/jobs/plugin/9/restart"));
         assert!(ok(&j, Method::DELETE, "/api/v2/jobs/plugin/9"));
         assert!(ok(&j, Method::POST, "/api/v2/registrations/manual"));
-        assert!(ok(&j, Method::POST, "/api/v1/images/images/5/register_images/"));
+        assert!(ok(
+            &j,
+            Method::POST,
+            "/api/v1/images/images/5/register_images/"
+        ));
         assert!(!ok(&j, Method::POST, "/api/v2/annotations"));
         assert!(!ok(&j, Method::PATCH, "/api/v2/images/5"));
         assert!(!ok(&j, Method::POST, "/api/v2/image-sets/3/images"));
         // worker routes, accounts, tokens and configuration are for nobody who is limited
-        for p in ["/api/v2/jobs/claim", "/api/v2/plugin-jobs/3/complete", "/api/v2/registration-jobs/3/fail", "/api/v2/plugins/register",
-                  "/api/v2/users/3", "/api/v2/teams/1/members/4", "/api/v2/me/tokens", "/api/v2/me/preferences", "/api/v2/admin/users"] {
+        for p in [
+            "/api/v2/jobs/claim",
+            "/api/v2/plugin-jobs/3/complete",
+            "/api/v2/registration-jobs/3/fail",
+            "/api/v2/plugins/register",
+            "/api/v2/users/3",
+            "/api/v2/teams/1/members/4",
+            "/api/v2/me/tokens",
+            "/api/v2/me/preferences",
+            "/api/v2/admin/users",
+        ] {
             assert!(!ok(&SCOPES, Method::POST, p), "{p}");
             assert!(!ok(&SCOPES, Method::DELETE, p), "{p}");
         }
@@ -139,12 +159,21 @@ mod tests {
     #[test]
     fn catalog_covers_products_and_annotation_types_and_nothing_else() {
         let c = ["catalog"];
-        for (m, p) in [(Method::POST, "/api/v2/products"), (Method::PATCH, "/api/v2/products/4"), (Method::DELETE, "/api/v2/products/4"),
-                       (Method::POST, "/api/v2/products/4/annotation-types"), (Method::POST, "/api/v2/annotation-types"),
-                       (Method::PATCH, "/api/v2/annotation-types/9"), (Method::DELETE, "/api/v2/annotation-types/9"),
-                       (Method::POST, "/administration/api/annotation_type/create/")] {
+        for (m, p) in [
+            (Method::POST, "/api/v2/products"),
+            (Method::PATCH, "/api/v2/products/4"),
+            (Method::DELETE, "/api/v2/products/4"),
+            (Method::POST, "/api/v2/products/4/annotation-types"),
+            (Method::POST, "/api/v2/annotation-types"),
+            (Method::PATCH, "/api/v2/annotation-types/9"),
+            (Method::DELETE, "/api/v2/annotation-types/9"),
+            (Method::POST, "/administration/api/annotation_type/create/"),
+        ] {
             assert!(ok(&c, m.clone(), p), "{m} {p}");
-            assert!(!ok(&["annotate", "images", "jobs"], m.clone(), p), "{m} {p}");
+            assert!(
+                !ok(&["annotate", "images", "jobs"], m.clone(), p),
+                "{m} {p}"
+            );
         }
         assert!(!ok(&c, Method::POST, "/api/v2/annotations"));
         assert!(!ok(&c, Method::POST, "/api/v2/image-sets/3/images"));
@@ -155,9 +184,21 @@ mod tests {
     fn annotate_and_images_are_separate() {
         assert!(ok(&["annotate"], Method::POST, "/api/v2/annotations"));
         assert!(ok(&["annotate"], Method::PATCH, "/api/v2/annotations/7"));
-        assert!(ok(&["annotate"], Method::POST, "/api/v1/annotations/annotations/"));
-        assert!(ok(&["annotate"], Method::POST, "/annotations/api/annotation/create/"));
-        assert!(!ok(&["annotate"], Method::POST, "/api/v2/image-sets/3/images"));
+        assert!(ok(
+            &["annotate"],
+            Method::POST,
+            "/api/v1/annotations/annotations/"
+        ));
+        assert!(ok(
+            &["annotate"],
+            Method::POST,
+            "/annotations/api/annotation/create/"
+        ));
+        assert!(!ok(
+            &["annotate"],
+            Method::POST,
+            "/api/v2/image-sets/3/images"
+        ));
         assert!(ok(&["images"], Method::POST, "/api/v2/image-sets/3/images"));
         assert!(ok(&["images"], Method::POST, "/images/image/upload/3/"));
         assert!(ok(&["images"], Method::DELETE, "/api/v2/images/5"));
