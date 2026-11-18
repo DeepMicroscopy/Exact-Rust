@@ -37,6 +37,8 @@ This is a port of EXACT's `getSlideHandler`. Two details matter in practice:
 * **TIFF is checked by magic number in both byte orders** (and BigTIFF). Big-endian files exist in the wild (a Bio-Formats OME-TIFF in the test data) and were once served from a single level, decoding the whole image for every thumbnail.
 * **NDPI is never treated as a plain TIFF**, even though it is one: it goes to OpenSlide.
 
+**Label and macro photos:** the OpenSlide and slideio readers also expose the pictures the scanner stored next to the pyramid (`associated_images()` / `associated_image(name)`); the viewer shows them from the top bar, `GET /api/v2/images/{id}/associated-images/{name}` serves them. OME-TIFF, generic TIFF, NIfTI, movies and plain images have none.
+
 All readers implement the same small interface (`Slide`): levels and their downsamples, `read_region(x, y, level, w, h, frame)`, the number of frames, labels for the frames, pixel size and objective power. Everything above it (tiles, thumbnails, crops, screenshots, workers' patches) is written once.
 
 ## What happens on upload

@@ -146,6 +146,7 @@ pub struct SlideIo {
     pub frame_descriptors: Vec<String>,
     kind: crate::FrameKind,
     z_positions: Option<(Vec<f64>, String)>,
+    aux: Vec<String>,
 }
 
 impl SlideIo {
@@ -191,6 +192,14 @@ impl SlideIo {
             levels,
             props,
             frames: h["frames"].as_u64().unwrap_or(1) as u32,
+            aux: h["aux"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default(),
             kind: match h["kind"].as_str() {
                 Some("zstack") => crate::FrameKind::ZStack,
                 Some("volume") => crate::FrameKind::Volume,
@@ -253,6 +262,25 @@ impl Slide for SlideIo {
     }
     fn z_positions(&self) -> Option<(Vec<f64>, String)> {
         self.z_positions.clone()
+    }
+    fn associated_images(&self) -> Vec<String> {
+        self.aux.clone()
+    }
+    fn associated_image(&self, name: &str) -> Result<image::RgbImage> {
+        if !self.aux.iter().any(|n| n == name) {
+            return err("no such associated image");
+        }
+        let (head, payload) = self
+            .pool
+            .call(&serde_json::json!({"op": "aux", "path": self.path, "name": name}))?;
+        if head["ok"] != true {
+            return err(head["error"].as_str().unwrap_or("read failed"));
+        }
+        let (w, h) = (
+            head["w"].as_u64().unwrap_or(0) as u32,
+            head["h"].as_u64().unwrap_or(0) as u32,
+        );
+        image::RgbImage::from_raw(w, h, payload).ok_or_else(|| WsiError("bad image size".into()))
     }
     fn frame_count(&self) -> u32 {
         self.frames

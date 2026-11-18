@@ -185,6 +185,10 @@ pub fn routes() -> Router<AppState> {
     .route("/api/v2/images/{pk}/download", get(download))
     .route("/api/v2/images/download", get(download_many))
     .route("/api/v2/images/{pk}/metadata", get(metadata))
+    .route(
+        "/api/v2/images/{pk}/associated-images/{name}",
+        get(associated_image),
+    )
 }
 
 fn slash(base: &str) -> &'static str {
@@ -730,6 +734,7 @@ async fn metadata(
             "mpp_x": num("openslide.mpp-x"), "mpp_y": num("openslide.mpp-y"), "mpp_z": num("openslide.mpp-z"),
             "objective_power": num("openslide.objective-power"), "planes": planes,
             "issues": slide.issues(),
+            "associated_images": slide.associated_images(),
             "frame_kind": slide.frame_kind().as_str(),
             "frame_labels": slide.frame_labels(),
             "frame_rate": slide.frame_rate(),
@@ -740,6 +745,34 @@ async fn metadata(
     .map_err(blocking_err)?
     .map_err(|e| slide_err_at(img.id, &at, e))?;
     Ok(Json(out))
+}
+
+/// A picture the scanner stored in the slide file next to the pyramid (`label`, `macro`, ...), as PNG; the names are in `metadata`.
+async fn associated_image(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path((pk, name)): Path<(String, String)>,
+) -> ApiResult<Response> {
+    let img = viewer_image(&s, &headers, &pk).await?;
+    let path = img.path(&s, 1, 1).to_string_lossy().into_owned();
+    let at = path.clone();
+    let st = s.slides.clone();
+    let png = tokio::task::spawn_blocking(move || -> exact_wsi::Result<Vec<u8>> {
+        let slide = st.slides.get_light(&path)?;
+        if !slide.associated_images().contains(&name) {
+            return exact_wsi::err("no such associated image");
+        }
+        Ok(png(&slide.associated_image(&name)?))
+    })
+    .await
+    .map_err(blocking_err)?
+    .map_err(|e| match e.0.as_str() {
+        "no such associated image" => {
+            ApiError::not_found("This image has no such associated image.")
+        }
+        _ => slide_err_at(img.id, &at, e),
+    })?;
+    Ok(browser_cached("image/png", png))
 }
 
 /// (size, mtime in seconds) of a file: identifies the version of an image file stored offsets were measured on.

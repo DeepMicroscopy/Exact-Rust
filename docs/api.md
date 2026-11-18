@@ -86,7 +86,7 @@ Pass `next_cursor` as `cursor` to get the next page; the last page has no `next_
 | Catalogue | `GET /image-sets`, `/images`, `/annotation-types`, `/products`, `/teams`, `/annotations`, `/verifications`, `/action-logs`, and the generic `/{resource}` lists |
 | Teams | `POST /teams`, `PATCH`/`DELETE /teams/{id}`, `PUT`/`DELETE /teams/{id}/members/{user}`, `GET /teams/{id}/statistics`, `/invitations` |
 | Image sets | `POST /image-sets`, `PATCH`/`DELETE /image-sets/{id}`, `/image-sets/{id}/images` (upload), `/tags`, `/products/{pid}`, `/settings`, `/exports`, `/export-formats`, `/auxiliary-files`, `/annotation-counts` |
-| Images | `GET /images/{id}`, `DELETE`, `/images/{id}/crop`, `/move`, `/rename`, `/repair`, `/metadata`, `/download`, `/related`, `/screening`, `/register` |
+| Images | `GET /images/{id}`, `DELETE`, `/images/{id}/crop`, `/move`, `/rename`, `/repair`, `/metadata` (also lists `associated_images`), `/associated-images/{name}` (a label or macro photo stored in the slide file, PNG), `/download`, `/related`, `/screening`, `/register` |
 | Annotations | `POST /annotations`, `PATCH`/`DELETE /annotations/{id}`, `/annotations/{id}/verify`, `/annotations/{id}/media-files` |
 | Registration | `POST /registrations/manual`, `GET`/`DELETE /registrations/{id}`, `/registrations/{id}/convert`, `/inverse`, `/points`, `GET /registration-plugins` |
 | Volumes | `/images/{id}/voxels`, `/render-volume`, `/auto-segment`, `/segmentation/{annotation}/...`, `/linked-volumes/...` |

@@ -23,6 +23,9 @@ struct Api {
     read_region: unsafe extern "C" fn(*mut c_void, *mut u32, i64, i64, i32, i64, i64),
     property_names: unsafe extern "C" fn(*mut c_void) -> *const *const c_char,
     property_value: unsafe extern "C" fn(*mut c_void, *const c_char) -> *const c_char,
+    assoc_names: unsafe extern "C" fn(*mut c_void) -> *const *const c_char,
+    assoc_dimensions: unsafe extern "C" fn(*mut c_void, *const c_char, *mut i64, *mut i64),
+    assoc_read: unsafe extern "C" fn(*mut c_void, *const c_char, *mut u32),
 }
 
 static API: OnceLock<Option<Api>> = OnceLock::new();
@@ -62,6 +65,9 @@ fn load() -> Option<Api> {
             read_region: sym!(b"openslide_read_region\0"),
             property_names: sym!(b"openslide_get_property_names\0"),
             property_value: sym!(b"openslide_get_property_value\0"),
+            assoc_names: sym!(b"openslide_get_associated_image_names\0"),
+            assoc_dimensions: sym!(b"openslide_get_associated_image_dimensions\0"),
+            assoc_read: sym!(b"openslide_read_associated_image\0"),
             _lib: lib,
         })
     }
@@ -91,6 +97,7 @@ pub struct OpenSlide {
     dims: Vec<(u64, u64)>,
     downs: Vec<f64>,
     props: HashMap<String, String>,
+    assoc: Vec<String>,
 }
 
 // libopenslide handles are documented thread-safe for reading.
@@ -136,12 +143,20 @@ impl OpenSlide {
                 }
                 i += 1;
             }
+            let mut assoc = Vec::new();
+            let names = (api.assoc_names)(osr);
+            let mut i = 0;
+            while !names.is_null() && !(*names.add(i)).is_null() {
+                assoc.push(CStr::from_ptr(*names.add(i)).to_string_lossy().into_owned());
+                i += 1;
+            }
             Ok(Self {
                 api,
                 osr,
                 dims,
                 downs,
                 props,
+                assoc,
             })
         }
     }
@@ -165,6 +180,36 @@ impl Slide for OpenSlide {
     }
     fn properties(&self) -> HashMap<String, String> {
         self.props.clone()
+    }
+    fn associated_images(&self) -> Vec<String> {
+        self.assoc.clone()
+    }
+    fn associated_image(&self, name: &str) -> Result<image::RgbImage> {
+        if !self.assoc.iter().any(|n| n == name) {
+            return err("no such associated image");
+        }
+        let c = CString::new(name).map_err(|e| crate::WsiError(e.to_string()))?;
+        let (mut w, mut h) = (0i64, 0i64);
+        unsafe { (self.api.assoc_dimensions)(self.osr, c.as_ptr(), &mut w, &mut h) };
+        if w <= 0 || h <= 0 || w * h > 100_000_000 {
+            return err("associated image has no usable size");
+        }
+        let mut buf = vec![0u32; (w * h) as usize];
+        unsafe {
+            (self.api.assoc_read)(self.osr, c.as_ptr(), buf.as_mut_ptr());
+            let msg = (self.api.get_error)(self.osr);
+            if !msg.is_null() {
+                return err(CStr::from_ptr(msg).to_string_lossy().into_owned());
+            }
+        }
+        // premultiplied ARGB over white
+        let mut out = image::RgbImage::new(w as u32, h as u32);
+        for (o, p) in out.pixels_mut().zip(buf) {
+            let (a, r, g, b) = ((p >> 24) & 255, (p >> 16) & 255, (p >> 8) & 255, p & 255);
+            let over = |c: u32| (c + (255 - a)).min(255) as u8;
+            *o = image::Rgb([over(r), over(g), over(b)]);
+        }
+        Ok(out)
     }
     fn read_region(
         &self,
@@ -257,6 +302,12 @@ impl Slide for OpenSlidePool {
     }
     fn properties(&self) -> HashMap<String, String> {
         self.first().properties()
+    }
+    fn associated_images(&self) -> Vec<String> {
+        self.first().associated_images()
+    }
+    fn associated_image(&self, name: &str) -> Result<image::RgbImage> {
+        self.first().associated_image(name)
     }
     fn read_region(
         &self,

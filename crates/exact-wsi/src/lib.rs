@@ -83,6 +83,14 @@ pub trait Slide: Send + Sync {
     fn frame_count(&self) -> u32 {
         1
     }
+    /// Names of the pictures the scanner stored next to the pyramid (`label`, `macro`, `thumbnail`, ...); empty for formats that have none.
+    fn associated_images(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// One of `associated_images`, composited on white.
+    fn associated_image(&self, _name: &str) -> Result<image::RgbImage> {
+        err("this format has no associated images")
+    }
     fn frame_kind(&self) -> FrameKind {
         FrameKind::None
     }

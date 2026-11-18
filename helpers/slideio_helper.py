@@ -7,6 +7,7 @@ Protocol on stdin/stdout, one request per line (JSON), one answer per request:
                                 "frames","frame_descriptors":[...],"kind":"none|zstack|volume|timeseries","z_positions":[..]|null,"z_unit",
                                 "bgr":bool,"meta":{...}}
   {"op":"read","path":P,"x","y","w","h","level","frame"[,"ds"]} -> {"ok":true,"w","h","payload_len"} + RGBA bytes
+  {"op":"aux","path":P,"name":N} -> {"ok":true,"w","h","payload_len"} + RGB bytes (a label / macro picture; `open` lists the names as "aux")
   {"op":"ping"} -> {"ok":true}
 Errors: {"ok":false,"error":"..."}.  The Rust side (exact-wsi/src/slideio.rs) owns lifecycle and restarts.
 Ported from exact/util/slideio.py; keep the semantics identical.
@@ -66,6 +67,28 @@ def open_slide(path):
     return slides[path]
 
 
+def aux_names(fh):
+    """Label, macro and other pictures stored next to the pyramid (empty where the driver has none)."""
+    try:
+        return list(fh.get_aux_image_names())
+    except Exception:  # noqa: BLE001 - not every driver implements it
+        return []
+
+
+def aux(req):
+    fh, _ = open_slide(req["path"])
+    img = np.asarray(fh.get_aux_image_raster(req["name"]))
+    if img.ndim == 2:
+        img = np.stack([img] * 3, axis=-1)
+    img = img[:, :, :3]
+    if os.path.splitext(req["path"].upper())[-1] == ".CZI":
+        img = img[:, :, ::-1]
+    if img.dtype != np.uint8:
+        img = (img.astype(np.float64) * 255.0 / max(float(img.max()), 1.0)).astype(np.uint8)
+    img = np.ascontiguousarray(img)
+    return img.shape[1], img.shape[0], img.tobytes()
+
+
 def describe(path):
     fh, scene = open_slide(path)
     n = scene.num_zoom_levels
@@ -115,6 +138,7 @@ def describe(path):
         "magnification": scene.magnification,
         "frames": frames,
         "frame_descriptors": desc,
+        "aux": aux_names(fh),
         "bgr": os.path.splitext(path.upper())[-1] == ".CZI",
         "meta": meta,
     }
@@ -153,6 +177,9 @@ def main():
                 head, payload = {"ok": True}, b""
             elif op == "open":
                 head, payload = describe(req["path"]), b""
+            elif op == "aux":
+                w, h, payload = aux(req)
+                head = {"ok": True, "w": w, "h": h, "payload_len": len(payload)}
             elif op == "read":
                 payload = read(req)
                 head = {"ok": True, "w": req["w"], "h": req["h"], "payload_len": len(payload)}

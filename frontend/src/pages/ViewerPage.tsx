@@ -52,6 +52,7 @@ import { usePreferences } from "../hooks/usePreferences";
 import { CropDialog } from "../components/CropDialog";
 import { AnalysisButton, AnalysisLayers, AnalysisPanel, type ShownEntries } from "../components/AnalysisPanel";
 import { useAnalysis } from "../hooks/useAnalysis";
+import { SlidePictures } from "../components/SlidePictures";
 import { PluginResultLayer } from "../viewer-core/pluginResultLayer";
 import { VectorType, type Shape, type TypeStyle } from "../viewer-core/types";
 
@@ -64,6 +65,8 @@ type FrameKind = "none" | "zstack" | "volume" | "timeseries";
 interface Meta {
   frames: number;
   issues?: string[];
+  /** label, macro photo, ... stored in the slide file */
+  associated_images?: string[];
   frame_kind?: FrameKind;
   frame_labels?: string[];
   /** frames per second of a movie, when the file says */
@@ -170,6 +173,7 @@ export function ViewerPage() {
   });
   // an NRRD that was uploaded as an image: the viewer cannot show it, the dialog offers the segmentation file instead
   const nrrd = isNrrdName(image.data?.name);
+  const [pictures, setPictures] = useState(false);
   const meta = useQuery({ queryKey: ["image-meta", id], queryFn: () => api<Meta>(`/api/v2/images/${id}/metadata`), retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2 });
   // the slide itself cannot be read (file or data folder missing, damaged): nothing is ever loaded, so this must be said, not shown as a spinner
   const unreadable = meta.isError && !image.isError && !nrrd;
@@ -1143,6 +1147,14 @@ export function ViewerPage() {
         >
           ▣
         </button>
+        {(meta.data?.associated_images?.length ?? 0) > 0 && (
+          <button className="btn icon-btn" aria-label="Slide label" onClick={() => setPictures(true)} title="The label and photos of the slide that the scanner stored in the file" data-testid="slide-pictures">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="7" width="18" height="10" rx="1.5" />
+              <path d="M8 7v10M11 11h6M11 14h4" />
+            </svg>
+          </button>
+        )}
         <button
           className="btn icon-btn"
           aria-label="Screenshot"
@@ -1172,6 +1184,7 @@ export function ViewerPage() {
           Image sets
         </button>
       </header>
+      {pictures && meta.data?.associated_images && <SlidePictures imageId={id} names={meta.data.associated_images} onClose={() => setPictures(false)} />}
       <GammaFilter gamma={adjust.gamma} />
       <AnalysisLayers shown={shownResults} layerRef={resultLayerRef} />
       {analysisOpen && <AnalysisPanel imageId={id} shown={shownResults} setShown={setShownResults} onClose={() => setAnalysisOpen(false)} />}
