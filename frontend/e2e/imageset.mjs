@@ -243,7 +243,7 @@ try {
   await page.locator(".reg .btn", { hasText: "Review" }).click();
   await page.waitForSelector(".reg-full .reg-full-actions");
   await page.waitForTimeout(500);
-  check((await page.locator(".reg-full .btn", { hasText: "Edit the points" }).count()) === 0 && (await page.locator(".reg-full .btn", { hasText: "Pick points" }).count()) === 0, "reviewing an automatic registration offers no points");
+  check((await page.locator(".reg-full .btn", { hasText: "Edit the points" }).count()) === 0 && (await page.locator(".reg-full .btn", { hasText: "Register manually" }).count()) === 1, "reviewing an automatic registration has no points to edit, but offers to register manually instead");
   await page.locator('.reg-full [aria-label="Close"]').click();
   await page.locator(".reg .btn", { hasText: "Add inverse" }).click();
   await waitFor(async () => (await page.locator(".reg").count()) === 2, "Add inverse creates the registration the other way");
