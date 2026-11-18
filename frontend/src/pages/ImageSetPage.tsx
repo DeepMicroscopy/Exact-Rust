@@ -139,6 +139,17 @@ export function ImageSetPage() {
       setParams({}, { replace: true });
     }
   }, [params, setParams]);
+  // `?review=<source>-<target>` opens the check of that registration, `?register=<source>-<target>` the manual registration of the pair
+  // (links from other tools, e.g. the muROMI dataset manager)
+  useEffect(() => {
+    const m = /^(\d+)-(\d+)$/.exec(params.get("review") ?? params.get("register") ?? "");
+    if (!m || !images.data) return;
+    const [source, target] = [Number(m[1]), Number(m[2])];
+    const name = (i: number) => images.data?.find((x) => x.id === i)?.name ?? `image ${i}`;
+    setTab("registration");
+    setManual({ source, target, review: params.has("review"), names: [name(source), name(target)] });
+    setParams({}, { replace: true });
+  }, [params, setParams, images.data]);
   const volumeNames = useMemo(() => new Map((images.data ?? []).map((i) => [i.id, i.name])), [images.data]);
   const segChanged = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ["linked-set", id] });
