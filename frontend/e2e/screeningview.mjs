@@ -1,4 +1,4 @@
-// End-to-end test: a screening window is shown above the toolbox, so that the lower edge of the window is not hidden by it.
+// End-to-end test: a screening window is shown completely, where nothing covers it (toolbox, side panel, screening panel, overview), and the panel can be minimized.
 // Makes its own image set. Usage: node e2e/screeningview.mjs [baseUrl]
 import { chromium } from "playwright-core";
 import fs from "node:fs";
@@ -112,6 +112,7 @@ try {
   await page.locator('[data-testid="screening-overlap"]').fill("0");
   await page.locator('[data-testid="screening-start"]').click();
   await page.waitForSelector('[data-testid="screening-map"]');
+  /** The screen rectangle of the current window and the panels that lie over the slide. */
   const state = () => page.evaluate(async (id) => {
     const m = await (await fetch(`/api/v2/images/${id}/screening`)).json();
     const t = m.screening_tiles[String(m.current_index)];
@@ -119,15 +120,41 @@ try {
     const r = window.__viewer.canvas.getBoundingClientRect();
     const br = item.imageToViewerElementCoordinates(new window.__osd.Point(t.x_max, t.y_max));
     const tr = item.imageToViewerElementCoordinates(new window.__osd.Point(t.x_min, t.y_min));
-    return { bottom: r.top + br.y, top: r.top + tr.y, tool: document.querySelector(".toolbox").getBoundingClientRect().top, idx: m.current_index };
+    const win = { left: r.left + tr.x, top: r.top + tr.y, right: r.left + br.x, bottom: r.top + br.y };
+    const covers = [...document.querySelectorAll(".viewer-side, .toolbox, .float-panel, .openseadragon-container .navigator")]
+      .map((e) => ({ name: e.className.toString().split(" ")[0], r: e.getBoundingClientRect() }))
+      .filter((c) => c.r.width > 0 && c.r.height > 0);
+    const hit = covers.filter((c) => c.r.left < win.right - 1 && c.r.right > win.left + 1 && c.r.top < win.bottom - 1 && c.r.bottom > win.top + 1).map((c) => c.name);
+    return { win, hit, idx: m.current_index };
   }, IMAGE);
-  for (const [label, key] of [["the first window", null], ["the window below", "s"], ["the window to the right", "d"]]) {
-    if (key) await page.keyboard.press(key);
+  const seen = async (label) => {
     await page.waitForTimeout(1500);
     const st = await state();
     console.log("  ", label, JSON.stringify(st));
-    check(st.bottom <= st.tool + 1, `${label}: its lower edge (${Math.round(st.bottom)}) is above the toolbox (${Math.round(st.tool)})`);
+    check(st.hit.length === 0, `${label}: the whole window is visible, nothing covers it (${st.hit.join(", ") || "free"})`);
+    return st;
+  };
+  for (const [label, key] of [["the first window", null], ["the window below", "s"], ["the window to the right", "d"]]) {
+    if (key) await page.keyboard.press(key);
+    await seen(label);
   }
+  if (shots) await page.screenshot({ path: `${shots}/screening-full.png` });
+  // minimized: only a small strip stays, the keys still step, and the window is fitted next to the strip
+  await page.locator('[data-testid="screening-minimize"]').click();
+  await page.waitForSelector('[data-testid="screening-mini"]');
+  const panel = await page.locator(".float-panel").boundingBox();
+  check(panel.height < 80 && panel.width < 320, `the minimized panel is a small strip (${Math.round(panel.width)} x ${Math.round(panel.height)})`);
+  await seen("minimized, same window");
+  const before = (await state()).idx;
+  await page.keyboard.press("a"); // the last window is the current one: step back
+  await seen("minimized, the previous window by key");
+  check((await state()).idx !== before, "the keys still step while minimized");
+  await page.locator('[data-testid="screening-mini"] button[aria-label="Up"]').click();
+  await seen("minimized, a window by the strip's button");
+  if (shots) await page.screenshot({ path: `${shots}/screening-mini.png` });
+  await page.locator('[data-testid="screening-minimize"]').click();
+  await page.waitForSelector('[data-testid="screening-map"]');
+  await seen("expanded again");
   check(!errors.length, "no page errors: " + errors.join(" / "));
   console.log("screeningview: all ok");
 } finally {

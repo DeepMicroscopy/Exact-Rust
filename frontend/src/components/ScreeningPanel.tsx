@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import type OpenSeadragon from "openseadragon";
+import OpenSeadragon from "openseadragon";
 import { api } from "../api/client";
-import { coverage, createMode, DEFAULT_OVERLAP, keyMove, moved, overlapOf, tileAt, type Move, type ScreeningMode } from "../viewer-core/screening";
+import { coverage, createMode, DEFAULT_OVERLAP, fitView, freeBox, keyMove, moved, overlapOf, tileAt, type Move, type ScreeningMode } from "../viewer-core/screening";
 import { isTypingTarget } from "../viewer-core/shortcuts";
 import { FloatingPanel } from "./FloatingPanel";
 
 const MAX_WINDOWS = 40_000; // a mode is stored as one JSON document: this keeps it to a few MB
 const MAP_W = 240;
 const MIN_WINDOW = 16;
+/** What lies over the slide: the panels, the toolbox, the overview. */
+const COVERS = ".viewer-side, .toolbox, .float-panel, .openseadragon-container .navigator";
+const GAP = 8;
+
+/** Size of the viewer and the part of it that nothing covers (pixels, relative to the viewer). */
+function freeArea(v: OpenSeadragon.Viewer) {
+  const view = (v.container as HTMLElement).getBoundingClientRect();
+  const covers = [...document.querySelectorAll<HTMLElement>(COVERS)]
+    .filter((e) => getComputedStyle(e).visibility !== "hidden")
+    .map((e) => e.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0)
+    .map((r) => ({ left: r.left - view.left - GAP, top: r.top - view.top - GAP, right: r.right - view.left + GAP, bottom: r.bottom - view.top + GAP }));
+  return { cw: view.width, ch: view.height, free: freeBox({ left: 0, top: 0, right: view.width, bottom: view.height }, covers) };
+}
 
 interface Props {
   viewerRef: MutableRefObject<OpenSeadragon.Viewer | null>;
@@ -37,6 +51,14 @@ export function ScreeningPanel({ viewerRef, imageId, width, height, onClose }: P
   const [overlap, setOverlap] = useState(() => Math.round(remembered().overlap * 100));
   const [plain, setPlain] = useState(false); // step without counting the window as screened (the I J K L keys of the old EXACT)
   const [version, setVersion] = useState(0);
+  // minimized: a small strip with the progress and the steps; the keys work as before and the window is fitted next to it
+  const [mini, setMini] = useState(() => {
+    try {
+      return localStorage.getItem("exact.screening.mini") === "1";
+    } catch {
+      return false;
+    }
+  });
   const modeRef = useRef<ScreeningMode | null>(null);
   modeRef.current = mode;
   const dirty = useRef<number | null>(null);
@@ -72,6 +94,12 @@ export function ScreeningPanel({ viewerRef, imageId, width, height, onClose }: P
     const item = v?.world.getItemCount() ? v.world.getItemAt(0) : null;
     if (!v || !item) return;
     const r = item.viewportToImageRectangle(v.viewport.getBounds(true));
+    // only what no panel covers counts as the screen of the window
+    const { cw, ch, free } = freeArea(v);
+    if (cw > 0 && ch > 0) {
+      r.width *= (free.right - free.left) / cw;
+      r.height *= (free.bottom - free.top) / ch;
+    }
     const round = (n: number) => Math.max(MIN_WINDOW, Math.min(Math.round(n / 50) * 50 || Math.round(n), 100_000));
     // zoomed in: the window is what is on the screen; the whole slide in view says nothing about the size wanted, so a usual screen of 2000 x 1200 px
     const zoomed = r.width < width * 0.6;
@@ -115,15 +143,34 @@ export function ScreeningPanel({ viewerRef, imageId, width, height, onClose }: P
       const item = v?.world.getItemCount() ? v.world.getItemAt(0) : null;
       if (!v || !t || !item) return;
       const r = item.imageToViewportRectangle(t.x_min, t.y_min, t.x_max - t.x_min, t.y_max - t.y_min);
-      // the toolbox lies over the lower part of the slide: the window is fitted into what is above it, so that nothing of it is hidden
-      const view = (v.container as HTMLElement).getBoundingClientRect();
-      const tool = document.querySelector<HTMLElement>(".toolbox")?.getBoundingClientRect();
-      const covered = tool && tool.height > 0 && tool.top < view.bottom && tool.bottom > view.top ? Math.min(view.height * 0.45, Math.max(0, view.bottom - tool.top + 8)) : 0;
-      if (covered > 0 && view.height > covered) r.height = (r.height * view.height) / (view.height - covered);
-      v.viewport.fitBounds(r);
+      // the window is fitted into what no panel (this one, the toolbox, the side panel, the overview) covers, so that none of it is hidden
+      const { cw, ch, free } = freeArea(v);
+      const b = fitView(r, cw, ch, free);
+      v.viewport.fitBounds(new OpenSeadragon.Rect(b.x, b.y, b.width, b.height));
     },
     [viewerRef],
   );
+
+  const toggleMini = () => {
+    setMini((m) => {
+      try {
+        localStorage.setItem("exact.screening.mini", m ? "0" : "1");
+      } catch {
+        /* not remembered */
+      }
+      return !m;
+    });
+  };
+  // after the panel changed its size the current window is fitted again
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const t = window.setTimeout(() => modeRef.current && show(modeRef.current.current_index), 60);
+    return () => window.clearTimeout(t);
+  }, [mini, setup, show]);
 
   /** Step in a direction; the window left counts as screened unless `mark` is false. */
   const step = useCallback(
@@ -234,7 +281,33 @@ export function ScreeningPanel({ viewerRef, imageId, width, height, onClose }: P
   const tooMany = windows > MAX_WINDOWS;
 
   return (
-    <FloatingPanel title="Screening" onClose={close} storageKey="exact.screening.pos" initial={{ right: 16, top: 70 }}>
+    <FloatingPanel
+      title="Screening"
+      onClose={close}
+      storageKey="exact.screening.pos"
+      initial={{ right: 16, top: 70 }}
+      className={mini && mode && !setup ? "mini" : ""}
+      bare={mini && !!mode && !setup}
+      actions={
+        mode && !setup ? (
+          <>
+            {mini && (
+              <span className="screening-mini" data-testid="screening-mini">
+                <b>{Math.round(shown * 100)} %</b>
+                {(["left", "up", "down", "right"] as const).map((d) => (
+                  <button key={d} className="btn ghost small" onClick={() => step(d, !plain)} aria-label={d[0].toUpperCase() + d.slice(1)} title={d}>
+                    {{ left: "◀", up: "▲", down: "▼", right: "▶" }[d]}
+                  </button>
+                ))}
+              </span>
+            )}
+            <button className="btn ghost" onClick={toggleMini} aria-label={mini ? "Expand" : "Minimize"} aria-pressed={mini} title={mini ? "Show the whole panel" : "Minimize: only a small strip stays, the keys still step through the slide"} data-testid="screening-minimize">
+              {mini ? "▢" : "–"}
+            </button>
+          </>
+        ) : undefined
+      }
+    >
       <div className="screening" data-testid="screening-panel">
         {!loaded && <p className="muted">Loading…</p>}
         {error && <p className="error" role="alert">{error}</p>}

@@ -116,3 +116,48 @@ export function coverage(m: ScreeningMode, width: number, height: number, cell =
   for (const v of seen) n += v;
   return seen.length ? n / seen.length : 0;
 }
+
+/** A rectangle in screen pixels relative to the viewer: `left`/`top` inclusive. */
+export interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+const area = (b: Box) => Math.max(0, b.right - b.left) * Math.max(0, b.bottom - b.top);
+
+/**
+ * The largest part of the viewer that no panel covers: each cover that reaches into it takes the side (left, right, top or bottom
+ * strip) that costs the least area. What is left is a rectangle in which a window is seen completely.
+ */
+export function freeBox(view: Box, covers: Box[]): Box {
+  let free = { ...view };
+  for (const c of [...covers].sort((a, b) => area(b) - area(a))) {
+    if (c.right <= free.left || c.left >= free.right || c.bottom <= free.top || c.top >= free.bottom) continue;
+    const cuts: Box[] = [
+      { ...free, left: Math.max(free.left, c.right) },
+      { ...free, right: Math.min(free.right, c.left) },
+      { ...free, top: Math.max(free.top, c.bottom) },
+      { ...free, bottom: Math.min(free.bottom, c.top) },
+    ];
+    free = cuts.reduce((best, x) => (area(x) > area(best) ? x : best));
+  }
+  return area(free) > 0 ? free : view;
+}
+
+/**
+ * The viewport bounds (viewport units) that show the window `win` completely and centred inside `free`, the part of a viewer of
+ * `cw` x `ch` pixels that is not covered. The window is as large as it can be there, the rest of the viewer shows its surroundings.
+ */
+export function fitView(win: { x: number; y: number; width: number; height: number }, cw: number, ch: number, free: Box): { x: number; y: number; width: number; height: number } {
+  const fw = Math.max(1, free.right - free.left);
+  const fh = Math.max(1, free.bottom - free.top);
+  const scale = Math.min(fw / win.width, fh / win.height); // screen pixels per viewport unit
+  return {
+    x: win.x + win.width / 2 - (free.left + fw / 2) / scale,
+    y: win.y + win.height / 2 - (free.top + fh / 2) / scale,
+    width: cw / scale,
+    height: ch / scale,
+  };
+}

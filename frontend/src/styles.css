@@ -900,3 +900,6 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 
 .slide-picture { display: flex; justify-content: center; margin: 0.5rem 0; }
 .slide-picture img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 6px; background: #fff; }
+.float-panel.mini .float-body { display: none; }
+.screening-mini { display: inline-flex; align-items: center; gap: 2px; font-size: 0.85rem; }
+.screening-mini b { margin-right: 4px; }
