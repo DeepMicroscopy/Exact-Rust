@@ -751,7 +751,8 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 @media (max-width: 600px) { .shortcut-help dl > div { grid-template-columns: 1fr; gap: 0; } }
 
 /* find an image of the set (viewer) */
-.finder { display: flex; flex-direction: column; gap: 8px; min-width: min(480px, 80vw); }
+.finder { display: flex; flex-direction: column; gap: 8px; min-width: 0; width: 100%; box-sizing: border-box; }
+.finder-list, .finder-item { min-width: 0; }
 .finder .search { max-width: none; width: 100%; }
 .finder-head { display: flex; align-items: center; gap: 6px; }
 .finder-head .search { flex: 1; min-width: 0; }
@@ -903,8 +904,10 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .float-panel.mini .float-body { display: none; }
 .screening-mini { display: inline-flex; align-items: center; gap: 2px; font-size: 0.85rem; }
 .screening-mini b { margin-right: 4px; }
-.finder-list { scrollbar-width: thin; scrollbar-color: rgba(150, 110, 255, 0.55) transparent; padding-right: 4px; }
-.finder-list::-webkit-scrollbar { width: 8px; }
+.finder-list { padding-right: 4px; }
+/* ::-webkit-scrollbar (not scrollbar-width / scrollbar-color, which win over it) keeps the bar visible on macOS too, where the system hides overlay bars until one scrolls */
+.finder-list::-webkit-scrollbar { width: 9px; }
 .finder-list::-webkit-scrollbar-track { background: transparent; }
-.finder-list::-webkit-scrollbar-thumb { background: rgba(150, 110, 255, 0.45); border-radius: 4px; }
+.finder-list::-webkit-scrollbar-thumb { background: rgba(150, 110, 255, 0.55); border-radius: 4px; }
+@supports not selector(::-webkit-scrollbar) { .finder-list { scrollbar-width: thin; scrollbar-color: rgba(150, 110, 255, 0.55) transparent; } }
 .finder-list::-webkit-scrollbar-thumb:hover { background: rgba(150, 110, 255, 0.75); }
