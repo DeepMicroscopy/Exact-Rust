@@ -95,7 +95,7 @@ export function ImageFinder({
     >
       <div className="finder-head">
         <SearchInput
-          history="viewer-images"
+          // no remembered terms here: the browser would pop them up over the list every time the finder opens
           className="search"
           placeholder="Name of the image…"
           aria-label="Find an image"

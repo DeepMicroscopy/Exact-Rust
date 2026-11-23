@@ -12,13 +12,13 @@ function load(key: string): string[] {
 }
 
 /** A search field that remembers the last few terms entered (per field, in this browser) and offers them as suggestions. */
-export function SearchInput({ history, value, onChange, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "value" | "list"> & { history: string; value: string; onChange(v: string): void }) {
+export function SearchInput({ history, value, onChange, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "value" | "list"> & { /** where the last terms are remembered; without it the field offers no suggestions */ history?: string; value: string; onChange(v: string): void }) {
   const listId = useId();
-  const [terms, setTerms] = useState(() => load(history));
+  const [terms, setTerms] = useState(() => (history ? load(history) : []));
   // a term counts once it is finished: Enter, or leaving the field
   const remember = () => {
     const t = value.trim();
-    if (t.length < 2) return;
+    if (!history || t.length < 2) return;
     const next = [t, ...terms.filter((s) => s !== t)].slice(0, KEEP);
     setTerms(next);
     try {
@@ -29,7 +29,7 @@ export function SearchInput({ history, value, onChange, ...rest }: Omit<InputHTM
   };
   return (
     <>
-      <input {...rest} list={listId} autoComplete="off" value={value} onChange={(e) => onChange(e.target.value)} onBlur={remember} onKeyDown={(e) => {
+      <input {...rest} list={history ? listId : undefined} autoComplete="off" value={value} onChange={(e) => onChange(e.target.value)} onBlur={remember} onKeyDown={(e) => {
           rest.onKeyDown?.(e);
           if (e.key === "Enter") remember();
           // Esc empties the field, a second Esc leaves it
@@ -41,11 +41,13 @@ export function SearchInput({ history, value, onChange, ...rest }: Omit<InputHTM
         }}
         data-search
       />
+      {history && (
       <datalist id={listId}>
         {terms.map((t) => (
           <option key={t} value={t} />
         ))}
       </datalist>
+      )}
     </>
   );
 }
