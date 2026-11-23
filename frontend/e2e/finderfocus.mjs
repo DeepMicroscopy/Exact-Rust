@@ -116,7 +116,44 @@ try {
     await page.keyboard.press("Escape");
     await page.waitForSelector('[data-testid="image-finder"]', { state: "detached" });
   }
+  // the open image is the highlighted one, also far down a long list, and the arrow keys move from there
+  const ids = await page.evaluate(async (set) => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const out = [];
+    for (let i = 1; i <= 60; i++) {
+      c.getContext("2d").fillStyle = `hsl(${i * 6},60%,50%)`;
+      c.getContext("2d").fillRect(0, 0, 64, 64);
+      const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+      const fd = new FormData();
+      fd.append("file", blob, `zz-${String(i).padStart(3, "0")}.png`);
+      const up = await (await fetch(`/api/v2/image-sets/${set}/images`, { method: "POST", headers: { "x-csrf-token": csrf }, body: fd })).json();
+      out.push(up.items[0].id);
+    }
+    return out;
+  }, SET);
+  IMAGE = ids[54]; // zz-055
+  await openImage(page);
+  await page.keyboard.press("Control+f");
+  await page.waitForSelector('[data-testid="image-finder"]');
+  const on = () => page.locator(".finder-list li.on .finder-name").innerText();
+  await waitFor(async () => (await on().catch(() => "")) === "zz-055.png", "the open image is highlighted");
+  check(await page.evaluate(() => { const l = document.querySelector(".finder-list"), e = l.querySelector("li.on"); const a = l.getBoundingClientRect(), b = e.getBoundingClientRect(); return b.top >= a.top - 1 && b.bottom <= a.bottom + 1; }), "...and scrolled into view");
+  await page.keyboard.press("ArrowDown");
+  check((await on()) === "zz-056.png", "Arrow Down moves to the next image");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  check((await on()) === "zz-054.png", "Arrow Up moves to the previous one");
+  check(await page.evaluate(() => { const l = document.querySelector(".finder-list"); return l.scrollHeight > l.clientHeight && getComputedStyle(l).overflowY === "auto"; }), "the long list scrolls");
+  await page.keyboard.press("Enter");
+  await page.waitForURL(`**/images/${ids[53]}`);
+  check(true, "Enter opens the highlighted image");
   check(!errors.length, "no page errors: " + errors.join(" / "));
+  await page.evaluate(async (set) => {
+    const csrf = (await (await fetch("/api/v2/auth/me")).json()).csrf_token;
+    await fetch(`/api/v2/image-sets/${set}`, { method: "DELETE", headers: { "x-csrf-token": csrf } });
+  }, SET); // leaves nothing behind in the scratch database
   console.log("finderfocus: all ok");
 } finally {
   await browser.close();

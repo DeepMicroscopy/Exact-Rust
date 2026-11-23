@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listAll } from "../api/client";
 import { SearchInput } from "./SearchInput";
@@ -69,7 +69,8 @@ export function ImageFinder({
     window.addEventListener(FINDER_FOCUS, focusSearch);
     return () => window.removeEventListener(FINDER_FOCUS, focusSearch);
   }, []);
-  const [at, setAt] = useState(0);
+  // the highlighted image (by id); until something is chosen it is the open image, or the first match once a name is typed
+  const [sel, setSel] = useState<number | null>(null);
   const found = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return (images.data ?? [])
@@ -78,8 +79,15 @@ export function ImageFinder({
         a.name.localeCompare(b.name, undefined, { numeric: true }),
       );
   }, [images.data, q]);
-  const shown = found.slice(0, 50);
-  const cur = Math.min(at, Math.max(0, shown.length - 1));
+  const at = sel != null ? found.findIndex((i) => i.id === sel) : q.trim() === "" ? found.findIndex((i) => i.id === currentId) : 0;
+  const cur = Math.max(0, at);
+  // the list is cut at 50 entries, but always reaches past the highlighted one
+  const shown = found.slice(0, Math.max(50, cur + 26));
+  const list = useRef<HTMLUListElement>(null);
+  // the highlighted entry is kept in view (a long list scrolls)
+  useEffect(() => {
+    list.current?.querySelector<HTMLElement>("li.on")?.scrollIntoView({ block: "nearest" });
+  }, [cur, found.length]);
   const body = (
     <div
       className={`finder ${pinned ? "pinned" : ""}`}
@@ -94,17 +102,13 @@ export function ImageFinder({
           value={q}
           onChange={(v) => {
             setQ(v);
-            setAt(0);
+            setSel(null);
           }}
           onKeyDown={(e) => {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
-              setAt((n) =>
-                Math.min(
-                  Math.max(0, n + (e.key === "ArrowDown" ? 1 : -1)),
-                  shown.length - 1,
-                ),
-              );
+              const to = found[Math.min(Math.max(0, cur + (e.key === "ArrowDown" ? 1 : -1)), found.length - 1)];
+              if (to) setSel(to.id);
             } else if (e.key === "Enter" && shown[cur]) {
               onOpen(shown[cur].id);
             } else if (e.key === "Escape" && pinned) {
@@ -138,7 +142,7 @@ export function ImageFinder({
         )}
       </div>
       {images.isLoading && <p className="muted">Loading…</p>}
-      <ul className="finder-list" role="listbox" aria-label="Images">
+      <ul ref={list} className="finder-list" role="listbox" aria-label="Images">
         {shown.map((i, n) => (
           <li
             key={i.id}
@@ -149,7 +153,7 @@ export function ImageFinder({
             <button
               className="finder-item"
               onClick={() => onOpen(i.id)}
-              onMouseEnter={() => setAt(n)}
+              onMouseMove={() => sel !== i.id && setSel(i.id)}
             >
               <span className="finder-thumb">
                 <Thumb imageId={i.id} alt="" />

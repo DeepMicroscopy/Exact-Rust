@@ -903,3 +903,8 @@ body:has(.viewer-shell) { overscroll-behavior: none; }
 .float-panel.mini .float-body { display: none; }
 .screening-mini { display: inline-flex; align-items: center; gap: 2px; font-size: 0.85rem; }
 .screening-mini b { margin-right: 4px; }
+.finder-list { scrollbar-width: thin; scrollbar-color: rgba(150, 110, 255, 0.55) transparent; padding-right: 4px; }
+.finder-list::-webkit-scrollbar { width: 8px; }
+.finder-list::-webkit-scrollbar-track { background: transparent; }
+.finder-list::-webkit-scrollbar-thumb { background: rgba(150, 110, 255, 0.45); border-radius: 4px; }
+.finder-list::-webkit-scrollbar-thumb:hover { background: rgba(150, 110, 255, 0.75); }
