@@ -55,6 +55,7 @@ pub fn v2_routes() -> Router<AppState> {
         .route("/api/v2/registrations/{id}/inverse", post(v2_inverse))
         .route("/api/v2/registrations/manual", post(manual))
         .route("/api/v2/registrations/{id}/points", get(points_of))
+        .route("/api/v2/registration-warp", get(warp_get))
 }
 
 pub fn legacy_routes() -> Router<AppState> {
@@ -977,6 +978,22 @@ async fn helper_convert(
     file: &str,
     points: &[(f64, f64)],
 ) -> ApiResult<Vec<(f64, f64)>> {
+    let input = serde_json::to_vec(&points.iter().map(|(x, y)| [x, y]).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let out = run_helper(s, "convert", file, &[], input).await?;
+    let v: Vec<[f64; 2]> = serde_json::from_slice(&out)
+        .map_err(|e| ApiError::detail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(v.into_iter().map(|[x, y]| (x, y)).collect())
+}
+
+/// Runs `registration_helper.py <command> <file> <args>` and returns what it printed.
+async fn run_helper(
+    s: &AppState,
+    command: &str,
+    file: &str,
+    args: &[String],
+    input: Vec<u8>,
+) -> ApiResult<Vec<u8>> {
     let python = std::env::var("REGISTRATION_PYTHON").map_err(|_| {
         ApiError::detail(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -989,14 +1006,13 @@ async fn helper_convert(
         return Err(bad("invalid registration file"));
     }
     let path = s.media_root.join(file);
-    let input = serde_json::to_vec(&points.iter().map(|(x, y)| [x, y]).collect::<Vec<_>>())
-        .unwrap_or_default();
     use tokio::io::AsyncWriteExt;
     let mut child = tokio::process::Command::new(python)
         .arg("-I")
         .arg(script)
-        .arg("convert")
+        .arg(command)
         .arg(path)
+        .args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -1029,9 +1045,62 @@ async fn helper_convert(
             "The registration helper failed.",
         ));
     }
-    let v: Vec<[f64; 2]> = serde_json::from_slice(&out.stdout)
+    Ok(out.stdout)
+}
+
+/// `GET /api/v2/registration-warp?from=<image>&to=<image>`: the registration of image `from` onto image `to` as a grid, for
+/// the viewer to warp an overlay with: `{"xs", "ys", "dst"}` (for the grid points of `from` the points of `to`; both in
+/// pixels), or `null` when the registration is an affine map (the matrix does) or the pair has none. A registration that
+/// only exists in the other direction is inverted.
+async fn warp_get(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> ApiResult<Response> {
+    let p = require_user(authenticate(&s, &headers, &Method::GET).await?)?;
+    let q: std::collections::HashMap<String, String> =
+        form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+            .into_owned()
+            .collect();
+    let id = |k: &str| {
+        q.get(k)
+            .and_then(|v| v.parse::<i64>().ok())
+            .ok_or_else(|| bad(format!("{k} has to be an image id")))
+    };
+    let (from, to) = (id("from")?, id("to")?);
+    readable_image(&s, &p, from).await?;
+    readable_image(&s, &p, to).await?;
+    let file_of = |a: i64, b: i64| {
+        let pool = s.pool.clone();
+        async move {
+            sqlx::query_scalar::<_, Option<String>>(
+                "SELECT file FROM images_imageregistration WHERE source_image_id = $1 AND target_image_id = $2",
+            )
+            .bind(a)
+            .bind(b)
+            .fetch_optional(&pool)
+            .await
+            .map(|f| f.flatten().filter(|f| !f.is_empty()))
+            .map_err(db_err)
+        }
+    };
+    // the registration `from` -> `to` with a file is used as it is; else `to` -> `from` with a file, inverted
+    let (file, source, invert) = match file_of(from, to).await? {
+        Some(f) => (f, from, false),
+        None => match file_of(to, from).await? {
+            Some(f) => (f, to, true),
+            None => return Ok(Json(Value::Null).into_response()),
+        },
+    };
+    let (w, h): (i32, i32) = sqlx::query_as("SELECT width, height FROM images_image WHERE id = $1")
+        .bind(source)
+        .fetch_one(&s.pool)
+        .await
+        .map_err(db_err)?;
+    let mut args = vec![w.to_string(), h.to_string()];
+    if invert {
+        args.push("--invert".into());
+    }
+    let out = run_helper(&s, "grid", &file, &args, vec![]).await?;
+    let v: Value = serde_json::from_slice(&out)
         .map_err(|e| ApiError::detail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(v.into_iter().map(|[x, y]| (x, y)).collect())
+    Ok(Json(v).into_response())
 }
 
 fn vector_param(uri: &Uri) -> ApiResult<Map<String, Value>> {

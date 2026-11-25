@@ -76,7 +76,7 @@ Use it when the automatic result is wrong, the images are tiny, or you want to b
 
 ## Use it
 
-**Overlay in the viewer.** Open an image that has registrations: the **Overlay** drop-down in the viewer bar lists the images registered with it (in either direction; the other direction is computed through the inverse). Choose one and use the **opacity slider**; `O` switches the overlay off and on. Under *Preferences → Viewer* you can switch on *Auto-enable first overlay* and set the *default overlay opacity*.
+**Overlay in the viewer.** Open an image that has registrations: the **Overlay** drop-down in the viewer bar lists the images registered with it (in either direction; the other direction is computed through the inverse). Choose one and use the **opacity slider**; `O` switches the overlay off and on. A registration that **bends** (VALIS, or a deformable DeeperHistReg result) is drawn as it bends: the viewer asks the server for the registration as a grid of points and warps the other image through it, so the overlay agrees where a single matrix would be off. A registration that is a plain matrix is placed by the matrix. Under *Preferences → Viewer* you can switch on *Auto-enable first overlay* and set the *default overlay opacity*.
 
 **Crop the same region from every stain.** *Crop to new image* offers to crop the registered images **at the same place** (the region is carried over through the registration), each into an image set you choose. The crops keep a registration between them, so they overlay at once.
 

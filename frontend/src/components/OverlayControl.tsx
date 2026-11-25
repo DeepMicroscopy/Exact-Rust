@@ -5,11 +5,12 @@ import {
   useState,
   type MutableRefObject,
 } from "react";
-import { useRegisteredImages } from "../hooks/useRegisteredImages";
+import { useRegisteredImages, useWarp } from "../hooks/useRegisteredImages";
 import { usePreferences } from "../hooks/usePreferences";
 import type OpenSeadragon from "openseadragon";
 import { Ring } from "./UploadTile";
 import { overlayPlacement, RegistrationOverlay } from "../viewer-core/overlay";
+import { WarpedOverlay } from "../viewer-core/warpOverlay";
 
 /**
  * The images registered with the current one (in either direction), one of which can be shown on top of it. Renders
@@ -38,7 +39,7 @@ export function OverlayControl({
   }, [start]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const overlay = useRef<RegistrationOverlay | null>(null);
+  const overlay = useRef<{ setOpacity(v: number): void; destroy(): void } | null>(null);
   const lastOpacity = useRef(start);
   const live = useRef({ picked, opacity });
   live.current = { picked, opacity };
@@ -72,28 +73,34 @@ export function OverlayControl({
 
   const opacityRef = useRef(opacity);
   opacityRef.current = opacity;
+  // a registration that bends (VALIS, a deformable one) is drawn through its grid; the overlay waits for the answer
+  const warpQuery = useWarp(chosen?.id ?? null, imageId);
+  const warp = warpQuery.data ?? null;
+  const warpPending = !!chosen && warpQuery.isPending;
   useEffect(() => {
     const viewer = viewerRef.current;
-    if (!viewer || !chosen) return;
+    if (!viewer || !chosen || warpPending) return;
     setError(null);
-    const o = new RegistrationOverlay(
-      viewer,
-      chosen.id,
-      overlayPlacement(chosen.map, chosen.width, chosen.height, width),
-      opacityRef.current,
-      (e) => setError(e.message),
-      setLoading,
-    );
+    const o = warp
+      ? new WarpedOverlay(viewer, chosen.id, chosen, warp, width, opacityRef.current, (e) => setError(e.message), setLoading)
+      : new RegistrationOverlay(
+          viewer,
+          chosen.id,
+          overlayPlacement(chosen.map, chosen.width, chosen.height, width),
+          opacityRef.current,
+          (e) => setError(e.message),
+          setLoading,
+        );
     overlay.current = o;
     (
-      window as unknown as { __overlay?: RegistrationOverlay | null }
+      window as unknown as { __overlay?: unknown }
     ).__overlay = o; // used by the e2e tests
     return () => {
       setLoading(false);
       o.destroy();
       overlay.current = null;
     };
-  }, [chosen, viewerRef, width]);
+  }, [chosen, viewerRef, width, warp, warpPending]);
   useEffect(() => overlay.current?.setOpacity(opacity), [opacity]);
 
   if (!candidates?.length) return null;

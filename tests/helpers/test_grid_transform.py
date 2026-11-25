@@ -47,3 +47,29 @@ def test_pickle_and_the_call_of_the_registration_helper():
     out = t.transform_boxes([[300.0, 200.0, 0, 0], [800.0, 600.0, 5, 7]])
     assert out.shape == (2, 4) and np.allclose(out[1, 2:], [5, 7])
     assert np.allclose(out[:, :2], t.convert(np.array([[300.0, 200.0], [800.0, 600.0]])))
+
+
+def test_the_viewer_grid_follows_the_warp_and_its_inverse_goes_back():
+    import registration_helper as h
+
+    t = make(bend=30.0)
+    g = h.grid(t, 1000, 700, invert=False)
+    xs, ys, dst = np.array(g["xs"]), np.array(g["ys"]), np.array(g["dst"])
+    assert dst.shape == (len(ys), len(xs), 2)
+    probe = np.array([[500.0, 300.0]])
+    mine = GridTransform(xs, ys, dst).convert(probe)
+    assert np.abs(mine - t.convert(probe)).max() < 1.0  # the grid is the registration
+
+    back = h.grid(t, 1000, 700, invert=True)
+    inv = GridTransform(np.array(back["xs"]), np.array(back["ys"]), np.array(back["dst"]))
+    assert np.abs(inv.convert(t.convert(probe)) - probe).max() < 1.0  # target -> source
+
+
+def test_an_affine_registration_needs_no_warp():
+    import registration_helper as h
+
+    xs, ys = np.linspace(0, 1000, 5), np.linspace(0, 700, 5)
+    gx, gy = np.meshgrid(xs, ys)
+    t = GridTransform(xs, ys, affine(np.stack([gx, gy], axis=-1)))
+    assert h.grid(t, 1000, 700, invert=False) is None
+    assert h.grid(t, 1000, 700, invert=True) is None

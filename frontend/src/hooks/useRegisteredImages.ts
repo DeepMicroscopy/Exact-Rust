@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { Page } from "../api/client";
 import type { Registration } from "../api/types";
 import { affineOf, invertAffine, type Affine } from "../viewer-core/overlay";
+import type { Warp } from "../viewer-core/warpOverlay";
 
 export interface RegisteredImage {
   id: number;
@@ -54,6 +55,26 @@ export function useRegisteredImages(imageId: number) {
         out.set(other.id, { ...other, map });
       }
       return [...out.values()].sort((x, y) => x.name.localeCompare(y.name));
+    },
+  });
+}
+
+/**
+ * How the registration of `other` onto the current image bends, when it is more than an affine map (null when it is not, or
+ * when the server cannot tell: the overlay then uses the matrix). Only asked for once an overlay is chosen.
+ */
+export function useWarp(other: number | null, current: number) {
+  return useQuery({
+    queryKey: ["registration-warp", other, current],
+    enabled: other != null,
+    staleTime: 10 * 60_000,
+    retry: false,
+    queryFn: async (): Promise<Warp | null> => {
+      try {
+        return await api<Warp | null>(`/api/v2/registration-warp?from=${other}&to=${current}`);
+      } catch {
+        return null;
+      }
     },
   });
 }

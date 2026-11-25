@@ -88,7 +88,7 @@ Pass `next_cursor` as `cursor` to get the next page; the last page has no `next_
 | Image sets | `POST /image-sets`, `PATCH`/`DELETE /image-sets/{id}`, `/image-sets/{id}/images` (upload), `/tags`, `/products/{pid}`, `/settings`, `/exports`, `/export-formats`, `/auxiliary-files`, `/annotation-counts` |
 | Images | `GET /images/{id}`, `DELETE`, `/images/{id}/crop`, `/move`, `/rename`, `/repair`, `/metadata` (also lists `associated_images`), `/associated-images/{name}` (a label or macro photo stored in the slide file, PNG), `/download`, `/related`, `/screening`, `/register` |
 | Annotations | `POST /annotations`, `PATCH`/`DELETE /annotations/{id}`, `/annotations/{id}/verify`, `/annotations/{id}/media-files` |
-| Registration | `POST /registrations/manual`, `GET`/`DELETE /registrations/{id}`, `/registrations/{id}/convert`, `/inverse`, `/points`, `GET /registration-plugins` |
+| Registration | `POST /registrations/manual`, `GET`/`DELETE /registrations/{id}`, `/registrations/{id}/convert`, `/inverse`, `/points`, `GET /registration-plugins`, `GET /registration-warp?from=&to=` (v2: the registration of one image onto another as a grid `{xs, ys, dst}` of points, for drawing an overlay that bends; `null` for a matrix) |
 | Volumes | `/images/{id}/voxels`, `/render-volume`, `/auto-segment`, `/segmentation/{annotation}/...`, `/linked-volumes/...` |
 | Jobs and workers | `GET /jobs`, `POST /jobs/claim`, `/jobs/{kind}/{id}/restart`, `/plugins/register`, `/plugin-jobs/{id}/progress\|complete\|fail`, `/registration-jobs/...`, `/segmentation-jobs/...`, `/segmenters/register` |
 | Administration | `/admin/users`, `/admin/permissions`, `/admin/roles`, `/admin/plugins`, `/admin/log`, `/admin/users/{id}/impersonate`, `/health` |
