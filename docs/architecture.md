@@ -126,7 +126,7 @@ one server are served by the other, concurrent writes from both leave no orphans
 * tokio's multi-threaded runtime, one worker thread per core; slide decoding on the blocking pool. No other thread pools.
 * Database connections: a pool of ten per server.
 * Uploads are streamed to disk (hashing on the way); no format conversion is needed.
-* Slides that only slideio reads go through at most `SLIDEIO_WORKERS` helper processes (about 0.5 GB each). Opening a slide is what costs there (0.2 s to over a second for a VSI with its many stack folders, against 10 ms for a tile), so a request goes to a helper that has the slide open already, and only when that one has so many requests queued that opening it elsewhere would be quicker (measured while running) to another. Each helper keeps its last `SLIDEIO_MAX_OPEN` (12) slides open.
+* VSI slides are read by the server itself (`exact-wsi/src/vsi.rs`: the tag tree of the `.vsi`, the tile tables of the `.ets` files, JPEG tiles decoded in the process, a decoded-tile cache of `EXACT_VSI_CACHE_MB`, 256); only what that reader does not know (other compressions, 16-bit or multi-channel data, time series) goes to slideio, as does `EXACT_VSI_NATIVE=0`. Slides that only slideio reads go through at most `SLIDEIO_WORKERS` helper processes (about 0.5 GB each). Opening a slide is what costs there (0.2 s to over a second for a VSI with its many stack folders, against 10 ms for a tile), so a request goes to a helper that has the slide open already, and only when that one has so many requests queued that opening it elsewhere would be quicker (measured while running) to another. Each helper keeps its last `SLIDEIO_MAX_OPEN` (12) slides open.
 
 ## How compatibility is tested
 

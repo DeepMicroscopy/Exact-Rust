@@ -1040,6 +1040,8 @@ pub(crate) async fn get_dz(
     let (dz, measured) = tokio::task::spawn_blocking(move || -> exact_wsi::Result<_> {
         let slide = st.open_slide(&path)?;
         let (offsets, measured) = match stored {
+            // offsets stored for a reader that needed them (slideio's) do not apply to one whose levels are exact
+            _ if !slide.needs_registration() => (Vec::new(), None),
             Some(o) => (o, None),
             None if slide.needs_registration() => {
                 let o = exact_wsi::registration::estimate_level_offsets(slide.as_ref());

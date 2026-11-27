@@ -132,6 +132,13 @@ fn open_with(path: &str, light: bool) -> Result<Arc<dyn Slide>> {
             return Ok(Arc::new(d));
         }
     }
+    // Olympus VSI natively (JPEG slide scanner files); anything the reader does not know falls through to slideio
+    if ext == "vsi" && std::env::var("EXACT_VSI_NATIVE").map_or(true, |v| v != "0") {
+        match crate::vsi::Vsi::open(path) {
+            Ok(v) => return Ok(Arc::new(v)),
+            Err(e) => tracing::info!("VSI {path}: not read natively ({e}), using slideio"),
+        }
+    }
     // formats only slideio reads: Zeiss CZI, Olympus VSI, DICOM (decided by magic number or extension like Django)
     let dicom = dicom_file;
     if (head == *b"ZISR" || ext == "czi" || ext == "vsi" || ext == "dcm" || dicom)

@@ -19,6 +19,7 @@ pub mod tiff;
 pub mod tiff_write;
 #[cfg(feature = "video")]
 pub mod video;
+pub mod vsi;
 
 use image::RgbaImage;
 use std::collections::HashMap;

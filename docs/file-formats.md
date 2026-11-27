@@ -16,7 +16,8 @@ The server decides by **content** (magic numbers) and extension, never by extens
 | **Pyramidal TIFF / BigTIFF** | files from libvips, ImageMagick, converters; classic TIFF and BigTIFF, little and big endian | own reader (`generic_tiff.rs`) | pyramid |
 | **OME-TIFF** | single series and multi-series **z-stacks** (one series per plane, SubIFD levels); label and thumbnail series are ignored | own reader (`ome.rs`) | pyramid + **frame slider** |
 | **Plain images** | JPEG, PNG, TIFF without scanner metadata | decoded once, one level | single level |
-| **Zeiss CZI**, **Olympus VSI** | `.czi`, `.vsi` (with its `_name_` data folder) | **slideio**, in a helper process | pyramid |
+| **Zeiss CZI** | `.czi` | **slideio**, in a helper process | pyramid |
+| **Olympus VSI** | `.vsi` (with its `_name_` data folder) | **own reader** (JPEG slide-scanner files, z-stacks, label and macro photos); **slideio** for what it does not know | pyramid |
 | **DICOM** | whole-slide and compressed images through slideio; **uncompressed volumes** natively | slideio / own reader | pyramid, or **three-plane view** for CT, MR, PET, NM volumes |
 | **NIfTI** | `.nii`, `.nii.gz` | own reader (inflated copies are cached) | **three-plane view**, 3D render |
 | **Movies** | MP4, AVI | ffmpeg (libav*) | frame slider, play button |
@@ -60,7 +61,7 @@ A `.nii.gz` volume is inflated once into the folder `EXACT_NIFTI_CACHE` (it can 
 ## Damaged pyramids
 
 TIFFs whose zoom pyramid is not a copy of level 0 show up as tiles that "wobble" when you zoom. The viewer then offers a **one-time repair**: the pyramid is rebuilt from level 0 and the original is kept as `<name>.orig.<ext>`, restorable. On the command line: `exact-cli check-images <folder>` finds them, `exact-cli repair-image <file>` repairs one.
-Formats whose levels are shifted against each other (CZI, VSI, DICOM, OME and generic TIFF) get their shift measured once and stored (`exact-cli precompute-offsets`), so that the first opening does not wait for the measurement.
+Formats whose levels are shifted against each other (CZI, DICOM, OME and generic TIFF; the levels of a VSI read natively are exact) get their shift measured once and stored (`exact-cli precompute-offsets`), so that the first opening does not wait for the measurement.
 
 ## Resolution and units
 
