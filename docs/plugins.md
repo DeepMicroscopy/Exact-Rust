@@ -26,6 +26,16 @@ A worker bundles one or more **plugins**. This page explains the roles, the prot
 
 The first two share one worker program and one plugin interface (`helpers/queue_plugin.py`); the segmenter has its own, smaller one because it never touches image files.
 
+## A job runs in a process of its own
+
+The queue worker runs every job in a **child process**, and watches its memory (the child and everything it started). A job that runs out
+of memory, is killed by the system or crashes in a C library (libjpeg ends the process on a damaged tile) then **fails that job with a
+message** and the worker goes on; before, the whole worker was lost, restarted, and took the same job again when its 30 minutes were
+over. The limit is `EXACT_WORKER_MAX_GB` (default: 45 % of the memory of the machine); above it the job is stopped and fails with the
+amount it had reached. While a job runs, the worker renews its lease every 20 seconds (the heartbeat names the running jobs), so a
+registration of more than 30 minutes is not given to a second worker. The overviews that the registration plugins render are read in
+pieces of 2048 x 2048 pixels when the level is large, so a slide **without a pyramid** is no longer read whole at full resolution.
+
 ## What a worker needs
 
 * **An account** that logs in like a user. The permissions: `processing.add_plugin` (to announce), `processing.change_pluginjob` (to claim and report), and for registration plugins `images.change_imageregistration`. *Administration → Users → New worker account…* creates one with the right set and shows the two env lines (`WORKER_USER`, `WORKER_PASSWORD`) once.

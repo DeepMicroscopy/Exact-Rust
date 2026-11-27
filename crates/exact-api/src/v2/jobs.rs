@@ -245,7 +245,7 @@ fn object(body: &[u8]) -> ApiResult<Map<String, Value>> {
     }
 }
 
-/// `POST /api/v2/jobs/heartbeat {"worker", "kinds", "plugins"}`: "I am here", sent by a worker that is busy with a long job and so
+/// `POST /api/v2/jobs/heartbeat {"worker", "kinds", "plugins", "jobs"}`: "I am here", sent by a worker that is busy with a long job and so
 /// does not claim. Without it the plugins it serves would show as not served while it computes. Answers 204.
 async fn heartbeat_h(
     State(s): State<AppState>,
@@ -279,6 +279,23 @@ async fn heartbeat_h(
         .unwrap_or_default();
     seen(worker, &kinds, &plugins);
     touch_plugins(&s.pool, &plugins).await;
+    // the jobs the worker is busy with: their lease is renewed, or a registration of more than 30 minutes would be taken
+    // by another worker while it still runs
+    let jobs: Vec<i64> = d
+        .get("jobs")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_i64).take(100).collect())
+        .unwrap_or_default();
+    if !jobs.is_empty() {
+        let _ = sqlx::query(
+            "UPDATE processing_pluginjob SET updated_time = now() WHERE id::bigint = ANY($1) AND attached_worker = $2 \
+             AND error_message IS NULL AND processing_complete < 100",
+        )
+        .bind(&jobs)
+        .bind(worker)
+        .execute(&s.pool)
+        .await;
+    }
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 

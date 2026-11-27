@@ -129,7 +129,7 @@ class SlideReader:
     def render(self, box, scale):
         """The region `box` = (x, y, w, h) (slide pixels) as an RGB uint8 array, `scale` slide pixels per image pixel. Returns the
         array and the exact scale (x, y), which differs slightly from `scale` by the rounding of the size."""
-        from PIL import Image
+        from plugins_common import read_scaled
 
         x, y, w, h = box
         level = 0
@@ -137,12 +137,9 @@ class SlideReader:
             if down <= scale:
                 level = i
         down = self.slide.level_downsamples[level]
-        region = self.slide.read_region((int(x), int(y)), level, (max(1, round(w / down)), max(1, round(h / down))))
-        rgb = Image.new("RGB", region.size, (255, 255, 255))
-        rgb.paste(region, mask=region.split()[3] if region.mode == "RGBA" else None)
         size = (max(1, round(w / scale)), max(1, round(h / scale)))
-        if rgb.size != size:
-            rgb = rgb.resize(size, Image.LANCZOS)
+        # in pieces when the level is big: a slide without a pyramid would be read whole at full resolution
+        rgb = read_scaled(self.slide, level, x, y, max(1, round(w / down)), max(1, round(h / down)), size)
         return np.asarray(rgb), (w / size[0], h / size[1])
 
 

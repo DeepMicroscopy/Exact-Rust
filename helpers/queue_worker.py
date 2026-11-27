@@ -17,8 +17,10 @@ import base64
 import contextlib
 import importlib.util
 import json
+import multiprocessing
 import os
 import pathlib
+import signal
 import socket
 import sys
 import threading
@@ -63,6 +65,117 @@ class Api:
             return e.code, e.read().decode(errors="replace")
 
 
+# ---------------------------------------------------------------------------------------------------------------------------------
+# a job runs in a process of its own
+# ---------------------------------------------------------------------------------------------------------------------------------
+
+class JobFailed(RuntimeError):
+    """The job's process failed in a way a plugin cannot report itself (no memory left, killed, crashed)."""
+
+
+def memory_limit():
+    """Bytes the processes of one job may use together: EXACT_WORKER_MAX_GB, else 45 % of the memory of the machine; None when neither is
+    known. A runaway job (a slide read whole at full resolution is tens of gigabytes) is stopped at this, and fails, before the system
+    kills the worker."""
+    gb = os.environ.get("EXACT_WORKER_MAX_GB")
+    if gb:
+        return float(gb) * 2**30
+    try:
+        return 0.45 * os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def tree_rss(pid):
+    """Resident memory in bytes of the process and all that it started (Linux: /proc); None where that cannot be read."""
+    try:
+        page = os.sysconf("SC_PAGE_SIZE")
+        parent_of, resident = {}, {}
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat") as f:
+                    stat = f.read()
+                parent_of[int(entry)] = int(stat[stat.rindex(")") + 2 :].split()[1])
+                with open(f"/proc/{entry}/statm") as f:
+                    resident[int(entry)] = int(f.read().split()[1]) * page
+            except (OSError, ValueError):
+                continue  # gone meanwhile
+        family, grew = {pid}, True
+        while grew:
+            grew = False
+            for child, parent in parent_of.items():
+                if parent in family and child not in family:
+                    family.add(child)
+                    grew = True
+        return sum(resident.get(p, 0) for p in family)
+    except (OSError, ValueError):
+        return None
+
+
+def _child(conn, fn):
+    try:
+        os.setsid()  # its own process group: the whole group can be stopped, with whatever the plugin started
+    except OSError:
+        pass
+    try:
+        conn.send(("ok", fn()))
+    except BaseException:  # noqa: BLE001 - everything is reported to the worker
+        conn.send(("error", traceback.format_exc()))
+
+
+def run_isolated(fn, limit=None, poll=1.0):
+    """Runs `fn()` in a child process and returns its result (or raises what failed there). A job that runs out of memory, is killed by
+    the system or crashes in a C library (libjpeg ends the process on a damaged tile) then fails the job only, and the worker lives on.
+    The memory of the child and what it started is watched; above `limit` bytes it is stopped. Without fork (Windows) `fn` runs here."""
+    try:
+        ctx = multiprocessing.get_context("fork")
+    except ValueError:
+        return fn()
+    receive, send = ctx.Pipe(duplex=False)
+    child = ctx.Process(target=_child, args=(send, fn), daemon=True)
+    child.start()
+    send.close()
+
+    def stop():
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            child.kill()
+        child.join()
+
+    message = None
+    while message is None:
+        if receive.poll(poll):
+            try:
+                message = receive.recv()
+            except EOFError:
+                break
+            continue
+        if not child.is_alive():
+            if receive.poll(0.2):
+                continue
+            break
+        used = tree_rss(child.pid) if limit else None
+        if used is not None and used > limit:
+            stop()
+            raise JobFailed(f"The job needed more than {limit / 2**30:.0f} GB of memory and was stopped (worker limit EXACT_WORKER_MAX_GB). "
+                            f"It had reached {used / 2**30:.0f} GB: the images are probably too large for this plugin's settings.")
+    child.join(5)
+    if child.is_alive():
+        stop()
+    if message is None:
+        code = child.exitcode
+        how = f"was killed by signal {-code} ({signal.Signals(-code).name})" if code is not None and code < 0 else f"ended with exit code {code}"
+        raise JobFailed(f"The process that ran the job {how} without a result: most likely it ran out of memory (killed by the system) "
+                        "or crashed in a library while reading a damaged image.")
+    kind, payload = message
+    if kind == "error":
+        raise JobFailed(payload)
+    return payload
+
+
 def load_plugins(folder, only=None):
     """Every plugin of the modules in `folder` (each lists them in `PLUGINS`); `only` keeps those whose name contains it."""
     found = []
@@ -96,16 +209,17 @@ def announce(api, plugins):
 
 
 @contextlib.contextmanager
-def heartbeat(api, name, plugins, every=20.0):
+def heartbeat(api, name, plugins, running=None, every=20.0):
     """Tells the server now and then that this worker is alive. While a long job runs the worker does not claim, and the server
-    would otherwise stop listing its plugins as served after a minute or so."""
+    would otherwise stop listing its plugins as served after a minute or so. `running` (a list that the job handlers keep) names the jobs
+    in progress: the server renews their lease, or a job of more than 30 minutes would be taken by another worker."""
     kinds = sorted({"registration" if p.plugin_type == REGISTRATION else "plugin" for p in plugins.values()})
     done = threading.Event()
 
     def beat():
         while not done.wait(every):
             try:
-                api.call("/api/v2/jobs/heartbeat", {"worker": name, "kinds": kinds, "plugins": list(plugins)})
+                api.call("/api/v2/jobs/heartbeat", {"worker": name, "kinds": kinds, "plugins": list(plugins), "jobs": list(running or [])})
             except Exception:  # noqa: BLE001 - a missed beat is not worth stopping the job
                 pass
 
@@ -117,33 +231,35 @@ def heartbeat(api, name, plugins, every=20.0):
         done.set()
 
 
-def work(api, name, plugins, ctx):
+def work(api, name, plugins, ctx, running=None):
     """One job, if there is one. Returns whether a job was handled."""
     registration = {i: p for i, p in plugins.items() if p.plugin_type == REGISTRATION}
     analysis = {i: p for i, p in plugins.items() if p.plugin_type == IMAGE_ANALYSIS}
     if registration:
         status, claimed = api.call("/api/v2/jobs/claim", {"worker": name, "kinds": ["registration"], "plugins": list(registration)})
         if status == 200:
-            return work_registration(api, name, registration, claimed["job"], ctx)
+            return work_registration(api, name, registration, claimed["job"], ctx, running)
         if status != 204:
             raise RuntimeError(f"claim failed: {status} {claimed}")
     for plugin_id, plugin in analysis.items():  # a claim names one plugin: the jobs of the others wait for their own worker
         status, claimed = api.call("/api/v2/jobs/claim", {"worker": name, "kinds": ["plugin"], "plugin": plugin_id})
         if status == 200:
-            return work_analysis(api, name, plugin, claimed["job"], ctx)
+            return work_analysis(api, name, plugin, claimed["job"], ctx, running)
         if status != 204:
             raise RuntimeError(f"claim failed: {status} {claimed}")
     return False
 
 
-def work_analysis(api, name, plugin, job, ctx):
+def work_analysis(api, name, plugin, job, ctx, running=None):
     """An image analysis job: run the plugin, store its detections in one request."""
     path = f"/api/v2/plugin-jobs/{job['id']}"
     print(f"job {job['id']}: {plugin.name}: image {job['image']}", flush=True)
     ctx.progress = lambda percent: api.call(f"{path}/progress", {"worker": name, "progress": percent})
     started = time.time()
     try:
-        result = plugin.run(job, ctx)
+        if running is not None:
+            running.append(job["id"])
+        result = run_isolated(lambda: plugin.run(job, ctx), memory_limit())
         wanted = result.annotation_type.lower()
         atype = next((t for t in job.get("annotation_types", []) if wanted in t["name"].lower()), None)
         if atype is None:  # as QueueRunner: the type has to exist, and to belong to the product the plugin is applied under
@@ -166,12 +282,14 @@ def work_analysis(api, name, plugin, job, ctx):
     return True
 
 
-def work_registration(api, name, registration, job, ctx):
+def work_registration(api, name, registration, job, ctx, running=None):
     named = (job.get("plugin") or {}).get("id")
     plugin = registration.get(named) or next(iter(registration.values()))  # a job without plugin: the first one we serve
     print(f"job {job['id']}: {plugin.name}: registering image {job['source_image']} onto {job['target_image']}", flush=True)
     try:
-        result = plugin.run(job, ctx)
+        if running is not None:
+            running.append(job["id"])
+        result = run_isolated(lambda: plugin.run(job, ctx), memory_limit())
     except Exception:  # noqa: BLE001 - every failure is reported to the server
         msg = traceback.format_exc()[-3500:]
         print(msg, file=sys.stderr, flush=True)
@@ -222,8 +340,9 @@ def main(argv=None):
                         return 1
                     time.sleep(a.interval)
                     continue
-            with heartbeat(api, a.name, served):
-                busy = work(api, a.name, served, ctx)
+            running = []
+            with heartbeat(api, a.name, served, running):
+                busy = work(api, a.name, served, ctx, running)
         except Exception as e:  # noqa: BLE001 - keep polling when the server is unreachable
             print(f"worker error: {e}", file=sys.stderr, flush=True)
             busy = False
