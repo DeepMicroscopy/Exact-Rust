@@ -5,13 +5,15 @@ use crate::{err, Result, Slide, WsiError};
 use image::RgbaImage;
 use std::{
     collections::HashMap,
+    collections::VecDeque,
     io::{BufRead, BufReader, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Mutex, OnceLock,
     },
+    time::{Duration, Instant},
 };
 
 struct Proc {
@@ -20,11 +22,68 @@ struct Proc {
     stdout: BufReader<ChildStdout>,
 }
 
+/// One helper process and what is known about it from here: the slides it has open (the helper keeps the last `MAX_OPEN`,
+/// see `SLIDEIO_MAX_OPEN` there) and how many requests are on their way to it.
+struct Slot {
+    proc: Mutex<Option<Proc>>,
+    open: Mutex<VecDeque<String>>,
+    waiting: AtomicUsize,
+}
+
 struct Pool {
     python: String,
     script: PathBuf,
-    procs: Vec<Mutex<Option<Proc>>>,
+    procs: Vec<Slot>,
     next: AtomicUsize,
+    max_open: usize,
+    timing: Timing,
+}
+
+/// How long a request takes at a helper, as a moving average (microseconds): a first request for a slide, which has the helper open it
+/// (0.2 s to over a second for a VSI with many stack folders), and one for a slide it has open (some milliseconds per tile).
+struct Timing {
+    open_us: AtomicU64,
+    read_us: AtomicU64,
+}
+
+impl Timing {
+    fn average(of: &AtomicU64, took: Duration) {
+        let old = of.load(Ordering::Relaxed);
+        let new = took.as_micros().min(60_000_000) as u64;
+        of.store(
+            if old == 0 { new } else { (old * 7 + new) / 8 },
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Queued requests at a helper from which on another helper, which has to open the slide first, is the quicker one.
+    fn overflow(&self) -> usize {
+        let open = self.open_us.load(Ordering::Relaxed).max(1);
+        let read = self.read_us.load(Ordering::Relaxed);
+        // not measured yet: a read is some ms, an open about a second
+        let (open, read) = if read == 0 {
+            (1_000_000, 10_000)
+        } else {
+            (open, read)
+        };
+        ((open / read.max(1)) as usize).clamp(2, 256)
+    }
+}
+
+/// The helper for a request: one that has the slide open (the least busy of them) as opening a slide costs far more than a
+/// read; only when that one is swamped, or none has it open, the least busy of the others (ties go to `start` and on).
+fn route(loads: &[usize], has: &[bool], start: usize, overflow: usize) -> usize {
+    let n = loads.len();
+    let order = (0..n).map(|i| (start + i) % n);
+    let least = |of: &mut dyn Iterator<Item = usize>| of.min_by_key(|&i| loads[i]);
+    let owner = least(&mut order.clone().filter(|&i| has[i]));
+    let other = least(&mut order.clone().filter(|&i| !has[i]));
+    match (owner, other) {
+        (Some(o), Some(x)) if loads[o] >= overflow && loads[x] < loads[o] => x,
+        (Some(o), _) => o,
+        (None, Some(x)) => x,
+        (None, None) => start % n.max(1),
+    }
 }
 
 static POOL: OnceLock<Option<Pool>> = OnceLock::new();
@@ -54,8 +113,23 @@ fn pool() -> Option<&'static Pool> {
         Some(Pool {
             python,
             script,
-            procs: (0..n).map(|_| Mutex::new(None)).collect(),
+            procs: (0..n)
+                .map(|_| Slot {
+                    proc: Mutex::new(None),
+                    open: Mutex::new(VecDeque::new()),
+                    waiting: AtomicUsize::new(0),
+                })
+                .collect(),
             next: AtomicUsize::new(0),
+            timing: Timing {
+                open_us: AtomicU64::new(0),
+                read_us: AtomicU64::new(0),
+            },
+            max_open: std::env::var("SLIDEIO_MAX_OPEN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(12usize)
+                .max(1),
         })
     })
     .as_ref()
@@ -93,25 +167,82 @@ impl Pool {
     }
 
     /// Sends one request; returns the answer header and payload. A broken helper is replaced and the call retried once.
+    /// The helper is the one that has the slide of the request open already (see `route`).
     fn call(&self, req: &serde_json::Value) -> Result<(serde_json::Value, Vec<u8>)> {
-        let slot = &self.procs[self.next.fetch_add(1, Ordering::Relaxed) % self.procs.len()];
-        let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+        let path = req["path"].as_str().unwrap_or("");
+        let has: Vec<bool> = self
+            .procs
+            .iter()
+            .map(|s| {
+                s.open
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .iter()
+                    .any(|p| p == path)
+            })
+            .collect();
+        let loads: Vec<usize> = self
+            .procs
+            .iter()
+            .map(|s| s.waiting.load(Ordering::Relaxed))
+            .collect();
+        let slot = &self.procs[route(
+            &loads,
+            &has,
+            self.next.fetch_add(1, Ordering::Relaxed),
+            self.timing.overflow(),
+        )];
+        slot.waiting.fetch_add(1, Ordering::Relaxed);
+        let done = Waiting(&slot.waiting);
+        let mut guard = slot.proc.lock().unwrap_or_else(|e| e.into_inner());
+        let mut result = err("slideio helper failed");
         for attempt in 0..2 {
             if guard.is_none() {
                 *guard = Some(self.spawn()?);
+                slot.open.lock().unwrap_or_else(|e| e.into_inner()).clear();
             }
             let p = guard.as_mut().expect("spawned");
+            let started = Instant::now();
             match Self::exchange(p, req) {
-                Ok(v) => return Ok(v),
-                Err(e) if attempt == 1 => return Err(e),
+                Ok(v) => {
+                    // only requests that were not delayed by a failed first try tell how long a read or an open takes
+                    if attempt == 0 && v.0["ok"] == true {
+                        let had = has_open(slot, path);
+                        Timing::average(
+                            if had {
+                                &self.timing.read_us
+                            } else {
+                                &self.timing.open_us
+                            },
+                            started.elapsed(),
+                        );
+                    }
+                    result = Ok(v);
+                    break;
+                }
+                Err(e) if attempt == 1 => {
+                    result = Err(e);
+                    break;
+                }
                 Err(_) => {
                     if let Some(mut dead) = guard.take() {
                         let _ = dead.child.kill();
                     }
+                    slot.open.lock().unwrap_or_else(|e| e.into_inner()).clear();
                 }
             }
         }
-        err("slideio helper failed")
+        drop(done);
+        // the helper has the slide open now, and keeps only its last `max_open`
+        if !path.is_empty() && result.as_ref().is_ok_and(|(h, _)| h["ok"] == true) {
+            let mut open = slot.open.lock().unwrap_or_else(|e| e.into_inner());
+            open.retain(|p| p != path);
+            open.push_back(path.to_string());
+            while open.len() > self.max_open {
+                open.pop_front();
+            }
+        }
+        result
     }
 
     fn exchange(p: &mut Proc, req: &serde_json::Value) -> Result<(serde_json::Value, Vec<u8>)> {
@@ -128,6 +259,22 @@ impl Pool {
         let mut payload = vec![0u8; len];
         p.stdout.read_exact(&mut payload).map_err(io)?;
         Ok((head, payload))
+    }
+}
+
+fn has_open(slot: &Slot, path: &str) -> bool {
+    slot.open
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .any(|p| p == path)
+}
+
+/// Counts a request as waiting at a helper until it is answered.
+struct Waiting<'a>(&'a AtomicUsize);
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -316,5 +463,59 @@ impl Slide for SlideIo {
             return err(head["error"].as_str().unwrap_or("read failed"));
         }
         RgbaImage::from_raw(w, h, payload).ok_or_else(|| WsiError("bad region size".into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{route, Timing};
+    const OVERFLOW: usize = 12;
+
+    #[test]
+    fn a_slide_stays_with_the_helper_that_has_it_open() {
+        // helper 2 has it: it is used although the others are idle
+        assert_eq!(
+            route(&[0, 0, 3, 0], &[false, false, true, false], 0, OVERFLOW),
+            2
+        );
+        // two have it: the less busy one
+        assert_eq!(
+            route(&[0, 5, 2, 0], &[false, true, true, false], 0, OVERFLOW),
+            2
+        );
+    }
+
+    #[test]
+    fn a_new_slide_goes_to_the_least_busy_helper_starting_at_the_turn() {
+        assert_eq!(route(&[1, 0, 0, 1], &[false; 4], 0, OVERFLOW), 1);
+        assert_eq!(route(&[1, 0, 0, 1], &[false; 4], 2, OVERFLOW), 2);
+        assert_eq!(route(&[0, 0, 0, 0], &[false; 4], 7, OVERFLOW), 3);
+    }
+
+    #[test]
+    fn a_swamped_owner_hands_over_to_an_idle_helper() {
+        assert_eq!(route(&[OVERFLOW, 0], &[true, false], 0, OVERFLOW), 1);
+        // below the limit the owner keeps it, and a helper that is not less busy does not take over
+        assert_eq!(route(&[OVERFLOW - 1, 0], &[true, false], 0, OVERFLOW), 0);
+        assert_eq!(route(&[OVERFLOW, OVERFLOW], &[true, false], 0, OVERFLOW), 0);
+    }
+
+    #[test]
+    fn the_overflow_follows_what_an_open_costs_against_a_read() {
+        use std::{sync::atomic::AtomicU64, time::Duration};
+        let t = Timing {
+            open_us: AtomicU64::new(0),
+            read_us: AtomicU64::new(0),
+        };
+        assert_eq!(t.overflow(), 100); // nothing measured: 1 s against 10 ms
+        Timing::average(&t.read_us, Duration::from_millis(10));
+        Timing::average(&t.open_us, Duration::from_millis(500));
+        assert_eq!(t.overflow(), 50);
+        // heavy reads (a 100 ms decode): hand over after a few
+        let slow = Timing {
+            open_us: AtomicU64::new(500_000),
+            read_us: AtomicU64::new(100_000),
+        };
+        assert_eq!(slow.overflow(), 5);
     }
 }
