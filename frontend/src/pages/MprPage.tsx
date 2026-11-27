@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import OpenSeadragon from "openseadragon";
+import "../viewer-core/osd";
 import { api, listAll } from "../api/client";
 import { ANNOTATION_FIELDS, createAnnotation } from "../api/annotations";
 import { useAuth } from "../auth/AuthContext";

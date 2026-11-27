@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { installGestures, POINTER_GESTURES } from "../viewer-core/gestures";
 import OpenSeadragon from "openseadragon";
+import "../viewer-core/osd";
 import { useQuery } from "@tanstack/react-query";
 import type { SetImage } from "../api/types";
 import { api } from "../api/client";

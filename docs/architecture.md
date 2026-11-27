@@ -79,7 +79,7 @@ A worker on the same machine reads the same paths: the server puts the absolute 
 
 <figure class="diagram"><img src="assets/diagrams/tile-pipeline.svg" alt="A tile request passes authentication, the slide cache, region read, DeepZoom generator and encoder"><figcaption>A tile on its way from OpenSeadragon to the pixels and back. The dashed route is the case where the browser already holds the tile.</figcaption></figure>
 
-1. OpenSeadragon asks for `.../tile_files/{level}/{col}_{row}.jpeg` of a DeepZoom pyramid that the server described in a small XML or JSON document before.
+1. OpenSeadragon asks for `.../tile_files/{level}/{col}_{row}.jpeg` of a DeepZoom pyramid that the server described in a small XML or JSON document before. OpenSeadragon 4.1 starts one tile download per animation frame, so a large screen of tiles was filled in over seconds however fast the server answered; the viewer patches that (`viewer-core/tileLoading.ts`) to start the best nine missing tiles per frame, at most 16 in flight.
 2. The request is **authenticated** (session cookie, HTTP Basic or a token) and the image must belong to a team of the caller.
 3. The **slide handle** comes from a bounded cache (moka). When it is not there, the file is opened and the reader is chosen by **magic number and extension** (details on the [formats page](file-formats)). OpenSlide handles are never shared between threads: there are two to four per open slide.
 4. The region is read from the **best pyramid level** on tokio's blocking pool, so decoding never stalls the event loop.

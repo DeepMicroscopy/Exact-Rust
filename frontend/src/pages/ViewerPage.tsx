@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ConvertSegmentationDialog, isNrrdName } from "../components/ConvertSegmentationDialog";
 import OpenSeadragon from "openseadragon";
+import "../viewer-core/osd";
 import { api, ApiError, listAll } from "../api/client";
 import type { Page } from "../api/client";
 import { ANNOTATION_FIELDS, createAnnotation } from "../api/annotations";
