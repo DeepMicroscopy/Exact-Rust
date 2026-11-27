@@ -8,7 +8,7 @@ import type { Page } from "../api/client";
 import { NewSetDialog } from "../components/SetDialogs";
 import type { ImageSet, Team } from "../api/types";
 import { StatisticsDialog } from "../components/StatisticsDialog";
-import { Thumb } from "../components/Thumb";
+import { AnnotationPreview, Thumb } from "../components/Thumb";
 import { useAuth } from "../auth/AuthContext";
 
 const LAST_TEAM = "exact.team";
@@ -25,6 +25,30 @@ function ScrollEnd({ onReach }: { onReach(): void }) {
     return () => io.disconnect();
   }, []);
   return <div ref={el} className="scroll-end" data-testid="scroll-end" aria-hidden="true" />;
+}
+
+/** An annotation's unique identifier typed into the search (with or without dashes). */
+const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+function asUuid(q: string): string | null {
+  if (!UUID.test(q)) return null;
+  const h = q.replace(/-/g, "").toLowerCase();
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+/** The viewer's address for the place of an annotation: its box with some surroundings, marked. */
+function annotationLink(a: { image: number; vector: Record<string, number> | null }): string {
+  const v = a.vector;
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let i = 1; v && Number.isFinite(v[`x${i}`]) && Number.isFinite(v[`y${i}`]); i++) {
+    xs.push(v[`x${i}`]);
+    ys.push(v[`y${i}`]);
+  }
+  if (!xs.length) return `/images/${a.image}`;
+  const [x, y] = [Math.min(...xs), Math.min(...ys)];
+  const [w, h] = [Math.max(Math.max(...xs) - x, 40), Math.max(Math.max(...ys) - y, 40)];
+  const frame = v?.frame && v.frame > 1 ? `&frame=${v.frame}` : "";
+  return `/images/${a.image}?region=${[x, y, w, h].map(Math.round).join(",")}${frame}`;
 }
 
 const PAGE = 48; // cards drawn at first (each is a thumbnail that may have to be rendered); scrolling to the end of the list adds this many
@@ -77,6 +101,18 @@ export function Index() {
     enabled: debounced.length >= 2,
     queryFn: () => api<Page<{ id: number; name: string; image_set: number }>>(`/api/v2/images?name__icontains=${encodeURIComponent(debounced)}&fields=id,name,image_set&limit=60&count=true`),
   });
+  // the unique identifier of an annotation finds that annotation
+  const uid = asUuid(debounced);
+  const annotationHits = useQuery({
+    queryKey: ["search-annotation", uid],
+    enabled: uid !== null,
+    queryFn: async () => {
+      const items = (await api<Page<{ id: number; image: number; vector: Record<string, number> | null }>>(`/api/v2/annotations?unique_identifier=${uid}&fields=id,image,vector&limit=20`)).items;
+      const ids = [...new Set(items.map((a) => a.image))];
+      const images = ids.length ? (await api<Page<{ id: number; name: string; image_set: number }>>(`/api/v2/images?id__in=${ids.join(",")}&fields=id,name,image_set&limit=20`)).items : [];
+      return items.map((a) => ({ ...a, imageName: images.find((i) => i.id === a.image)?.name ?? `image ${a.image}`, imageSet: images.find((i) => i.id === a.image)?.image_set }));
+    },
+  });
   const matches = useMemo(() => {
     const lq = q.toLowerCase();
     return lq ? (index.data ?? []).filter((s) => s.name.toLowerCase().includes(lq) || (s.description ?? "").toLowerCase().includes(lq)) : [];
@@ -99,6 +135,8 @@ export function Index() {
   const setName = (id: number) => index.data?.find((s) => s.id === id)?.name ?? `set ${id}`;
   const hits = q.length >= 2 ? (found.data?.items ?? []) : [];
   const teamName = (id: number) => teams.data?.find((t) => t.id === id)?.name ?? "";
+  const setOf = (id: number | undefined) => index.data?.find((x) => x.id === id);
+  const annotations = uid !== null && uid === asUuid(q) ? (annotationHits.data ?? []) : [];
 
   return (
     <div className="two-col">
@@ -146,7 +184,25 @@ export function Index() {
           ))}
         </div>
         {(q ? matches.length : visible.length) > shown && <ScrollEnd key={shown} onReach={() => setShown((n) => n + PAGE)} />}
-        {cards.data && !cards.isFetching && visible.length === 0 && hits.length === 0 && !found.isFetching && <p className="muted">{q ? "Nothing found." : "This team has no image sets yet."}</p>}
+        {cards.data && !cards.isFetching && visible.length === 0 && hits.length === 0 && annotations.length === 0 && !found.isFetching && !annotationHits.isFetching && <p className="muted">{q ? "Nothing found." : "This team has no image sets yet."}</p>}
+        {annotations.length > 0 && (
+          <>
+            <h3>Annotation</h3>
+            <div className="cards" data-testid="annotation-hits">
+              {annotations.map((a) => (
+                <Link key={a.id} to={annotationLink(a)} className="card glass">
+                  <AnnotationPreview id={a.id} />
+                  <div className="card-body">
+                    <div className="card-title">Annotation in {a.imageName}</div>
+                    <div className="muted small">
+                      {setOf(a.imageSet) ? `imageset ${setOf(a.imageSet)!.name}, team ${teamName(setOf(a.imageSet)!.team)}` : ""}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
+        )}
         {q.length >= 2 && hits.length > 0 && (
           <>
             <h3>Images</h3>

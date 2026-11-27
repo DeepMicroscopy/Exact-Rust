@@ -181,6 +181,7 @@ pub fn routes() -> Router<AppState> {
         "/images/image/centered_snapshot/{pk}/{cx}/{cy}/{w}/{h}",
         get(centered_snapshot),
     )
+    .route("/api/v2/annotations/{id}/preview", get(annotation_preview))
     .route("/images/api/image/download/{pk}/", get(download))
     .route("/api/v2/images/{pk}/download", get(download))
     .route("/api/v2/images/download", get(download_many))
@@ -585,6 +586,220 @@ async fn centered_snapshot(
         HeaderValue::from_static(if jpeg { "image/jpeg" } else { "image/png" }),
     );
     Ok(r)
+}
+
+/// The points `(x1, y1), (x2, y2), ...` of an annotation's vector.
+fn vector_points(v: &Value) -> Vec<(f64, f64)> {
+    let Some(o) = v.as_object() else {
+        return vec![];
+    };
+    (1..)
+        .map_while(|i| {
+            Some((
+                o.get(&format!("x{i}"))?.as_f64()?,
+                o.get(&format!("y{i}"))?.as_f64()?,
+            ))
+        })
+        .collect()
+}
+
+/// The square window (level 0 pixels: x, y, side) that shows an annotation with some of its surroundings: the box of its points
+/// plus half of its larger side on every side, at least `min_side` wide.
+fn preview_window(points: &[(f64, f64)], min_side: f64) -> Option<(f64, f64, f64)> {
+    let first = points.first()?;
+    let (mut x1, mut y1, mut x2, mut y2) = (first.0, first.1, first.0, first.1);
+    for &(x, y) in points {
+        (x1, y1, x2, y2) = (x1.min(x), y1.min(y), x2.max(x), y2.max(y));
+    }
+    let side = ((x2 - x1).max(y2 - y1) * 2.0).max(min_side);
+    Some((
+        (x1 + x2) / 2.0 - side / 2.0,
+        (y1 + y2) / 2.0 - side / 2.0,
+        side,
+    ))
+}
+
+fn hex_colour(code: &str) -> image::Rgb<u8> {
+    let c = code.trim_start_matches('#');
+    let n = |i: usize| u8::from_str_radix(c.get(i..i + 2).unwrap_or("ff"), 16).unwrap_or(255);
+    image::Rgb([n(0), n(2), n(4)])
+}
+
+/// A line of about `width` pixels between two points of the image.
+fn draw_line(
+    img: &mut image::RgbImage,
+    a: (f64, f64),
+    b: (f64, f64),
+    width: f64,
+    c: image::Rgb<u8>,
+) {
+    let steps = ((b.0 - a.0).abs().max((b.1 - a.1).abs()).ceil() as usize).max(1);
+    let r = (width / 2.0).max(0.5);
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let (cx, cy) = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+        for y in (cy - r).floor() as i64..=(cy + r).ceil() as i64 {
+            for x in (cx - r).floor() as i64..=(cx + r).ceil() as i64 {
+                if x >= 0
+                    && y >= 0
+                    && (x as u32) < img.width()
+                    && (y as u32) < img.height()
+                    && ((x as f64 - cx).powi(2) + (y as f64 - cy).powi(2)) <= r * r
+                {
+                    img.put_pixel(x as u32, y as u32, c);
+                }
+            }
+        }
+    }
+}
+
+/// `GET /api/v2/annotations/{id}/preview[?size=256]`: a small JPEG of the place an annotation marks, with its outline in the
+/// colour of its type (a box, the polygon or line, a ring for a point). 404 when the annotation has no position (outside of the
+/// image, a label of the whole image) or the caller may not see the image.
+async fn annotation_preview(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Response> {
+    let p = principal(&s, &headers).await?;
+    let row = sqlx::query(
+        "SELECT a.image_id, a.vector, t.color_code, t.vector_type FROM annotations_annotation a \
+         JOIN annotations_annotationtype t ON t.id = a.annotation_type_id WHERE a.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(db_err)?
+    .ok_or_else(|| ApiError::not_found("No Annotation matches the given query."))?;
+    let (image_id, vector, colour, vector_type): (i64, Option<Value>, String, i32) =
+        (row.get(0), row.get(1), row.get(2), row.get(3));
+    let img = image_of(&s, &p, &image_id.to_string()).await?;
+    let points = vector.as_ref().map(vector_points).unwrap_or_default();
+    // a global annotation (type 7) belongs to the whole image: there is no place to show
+    let Some((wx, wy, side)) = (vector_type != 7)
+        .then(|| preview_window(&points, 256.0))
+        .flatten()
+    else {
+        return Err(ApiError::not_found("This annotation has no position."));
+    };
+    let size = q
+        .get("size")
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(256)
+        .clamp(64, 512);
+    let frame = vector
+        .as_ref()
+        .and_then(|v| v.get("frame"))
+        .and_then(Value::as_i64)
+        .filter(|f| *f >= 1)
+        .map(|f| f as u32 - 1);
+    let default_frame: i32 =
+        sqlx::query_scalar("SELECT \"defaultFrame\" FROM images_image WHERE id = $1")
+            .bind(img.id)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(db_err)?
+            .unwrap_or(0);
+    let path = img.path(&s, 1, 1).to_string_lossy().into_owned();
+    let st = s.slides.clone();
+    let bytes = tokio::task::spawn_blocking(move || -> exact_wsi::Result<Vec<u8>> {
+        let slide = st.slides.get(&path)?;
+        let (sw, sh) = slide.level_dimensions().first().copied().unwrap_or((0, 0));
+        let (sw, sh) = (sw as f64, sh as f64);
+        let level = slide.best_level_for_downsample(side / size as f64);
+        let ds = slide.level_downsamples().get(level).copied().unwrap_or(1.0);
+        let canvas_side = (side / ds).ceil().max(1.0) as u32;
+        let mut canvas =
+            image::RgbImage::from_pixel(canvas_side, canvas_side, image::Rgb([255, 255, 255]));
+        // the part of the window that lies inside the slide
+        let (ix0, iy0) = (wx.max(0.0).floor(), wy.max(0.0).floor());
+        let (ix1, iy1) = ((wx + side).min(sw).ceil(), (wy + side).min(sh).ceil());
+        if ix1 > ix0 && iy1 > iy0 {
+            let nframes = slide.frame_count();
+            let f = if nframes > 1 {
+                frame
+                    .unwrap_or(default_frame.max(0) as u32)
+                    .min(nframes - 1)
+            } else {
+                0
+            };
+            let (w, h) = (
+                (((ix1 - ix0) / ds).ceil() as u32).max(1),
+                (((iy1 - iy0) / ds).ceil() as u32).max(1),
+            );
+            let part = slide.read_region(ix0 as i64, iy0 as i64, level, w, h, f)?;
+            for (px, py, c) in part.enumerate_pixels() {
+                let (cx, cy) = (
+                    ((ix0 - wx) / ds) as i64 + px as i64,
+                    ((iy0 - wy) / ds) as i64 + py as i64,
+                );
+                if cx < 0 || cy < 0 || cx >= canvas_side as i64 || cy >= canvas_side as i64 {
+                    continue;
+                }
+                // transparent pixels (a slide with no data there) are white
+                let a = c[3] as u32;
+                let mix = |v: u8| ((v as u32 * a + 255 * (255 - a) + 127) / 255) as u8;
+                canvas.put_pixel(
+                    cx as u32,
+                    cy as u32,
+                    image::Rgb([mix(c[0]), mix(c[1]), mix(c[2])]),
+                );
+            }
+        }
+        let mut out =
+            image::imageops::resize(&canvas, size, size, image::imageops::FilterType::Triangle);
+        // the outline, in the pixels of the preview
+        let k = size as f64 / side;
+        let at = |(x, y): (f64, f64)| ((x - wx) * k, (y - wy) * k);
+        let c = hex_colour(&colour);
+        let pts: Vec<(f64, f64)> = points.iter().map(|&p| at(p)).collect();
+        match vector_type {
+            // a box: the four corners of x1..x2, y1..y2
+            1 | 6 if pts.len() >= 2 => {
+                let ((a, b), (d, e)) = (pts[0], pts[1]);
+                for (u, v) in [
+                    ((a, b), (d, b)),
+                    ((d, b), (d, e)),
+                    ((d, e), (a, e)),
+                    ((a, e), (a, b)),
+                ] {
+                    draw_line(&mut out, u, v, 2.0, c);
+                }
+            }
+            2 if !pts.is_empty() => {
+                // a ring around the point
+                let (cx, cy) = pts[0];
+                let n = 48;
+                for i in 0..n {
+                    let (t0, t1) = (
+                        i as f64 / n as f64 * std::f64::consts::TAU,
+                        (i + 1) as f64 / n as f64 * std::f64::consts::TAU,
+                    );
+                    draw_line(
+                        &mut out,
+                        (cx + 12.0 * t0.cos(), cy + 12.0 * t0.sin()),
+                        (cx + 12.0 * t1.cos(), cy + 12.0 * t1.sin()),
+                        2.0,
+                        c,
+                    );
+                }
+            }
+            _ => {
+                for w in pts.windows(2) {
+                    draw_line(&mut out, w[0], w[1], 2.0, c);
+                }
+                if vector_type == 5 && pts.len() > 2 {
+                    draw_line(&mut out, pts[pts.len() - 1], pts[0], 2.0, c);
+                }
+            }
+        }
+        Ok(encode(&out, "jpeg"))
+    })
+    .await
+    .map_err(blocking_err)?
+    .map_err(slide_err)?;
+    Ok(browser_cached("image/jpeg", bytes))
 }
 
 async fn get_patch(
@@ -1406,7 +1621,21 @@ fn add_companions(
 
 #[cfg(test)]
 mod tests {
-    use super::{zip_companions, zip_files};
+    use super::{preview_window, vector_points, zip_companions, zip_files};
+    use serde_json::json;
+
+    #[test]
+    fn the_preview_window_is_a_square_around_the_annotation() {
+        let pts =
+            vector_points(&json!({"x1": 1000, "y1": 2000, "x2": 1400, "y2": 2100, "frame": 2}));
+        assert_eq!(pts, vec![(1000.0, 2000.0), (1400.0, 2100.0)]);
+        // twice the larger side (800), centred on the box
+        assert_eq!(preview_window(&pts, 256.0), Some((800.0, 1650.0, 800.0)));
+        // a point still gets a window of the minimum size
+        let point = vector_points(&json!({"x1": 500, "y1": 500, "x2": 500, "y2": 500}));
+        assert_eq!(preview_window(&point, 256.0), Some((372.0, 372.0, 256.0)));
+        assert_eq!(preview_window(&[], 256.0), None);
+    }
 
     #[test]
     fn an_unreadable_slide_says_what_is_missing() {
