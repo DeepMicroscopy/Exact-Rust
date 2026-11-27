@@ -90,6 +90,10 @@ export function Index() {
 
   const q = search.trim();
   useEffect(() => setShown(PAGE), [q]);
+  // a search term shows its results from the top: the list may have been scrolled far down before
+  useEffect(() => {
+    if (q) window.scrollTo({ top: 0 });
+  }, [q]);
   // the search covers images as well (after a pause in typing)
   const [debounced, setDebounced] = useState("");
   useEffect(() => {
