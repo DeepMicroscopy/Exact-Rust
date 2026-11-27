@@ -18,7 +18,7 @@ This page lists what changed, what is new, what was dropped and what behaves dif
 | **API** | `/api/v1` (DRF) + legacy `/annotations/api`, `/images/api` | `/api/v1` and legacy **byte-compatible**, plus a new `/api/v2` |
 | **Web interface** | server-rendered templates, jQuery, jCanvas | **React single-page app**, OpenSeadragon, touch and pen support |
 | **Sessions, caches** | Redis | PostgreSQL sessions; in-memory and on-disk caches |
-| **Slide reading** | Python: OpenSlide, tifffile, slideio, pydicom, nibabel, OpenCV | Rust readers + OpenSlide; a **helper process** only for CZI, VSI and DICOM |
+| **Slide reading** | Python: OpenSlide, tifffile, slideio, pydicom, nibabel, OpenCV | Rust readers + OpenSlide; a **helper process** only for DICOM and for the CZI / VSI files the own readers do not know |
 | **Plugins** | in-process server plugins **and** external workers (QueueRunner) | external workers only, with a new worker program |
 | **Speed** | baseline | 1.3 to 16 times faster median response times on production-size data (24,169 images, 1.4 million annotations); most for the lists exact-sync asks for |
 

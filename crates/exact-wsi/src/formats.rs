@@ -139,6 +139,15 @@ fn open_with(path: &str, light: bool) -> Result<Arc<dyn Slide>> {
             Err(e) => tracing::info!("VSI {path}: not read natively ({e}), using slideio"),
         }
     }
+    // Zeiss CZI natively (slide scanner mosaics of JPEG XR tiles); anything the reader does not know falls through to slideio
+    if (head == *b"ZISR" || ext == "czi")
+        && std::env::var("EXACT_CZI_NATIVE").map_or(true, |v| v != "0")
+    {
+        match crate::czi::Czi::open(path) {
+            Ok(c) => return Ok(Arc::new(c)),
+            Err(e) => tracing::info!("CZI {path}: not read natively ({e}), using slideio"),
+        }
+    }
     // formats only slideio reads: Zeiss CZI, Olympus VSI, DICOM (decided by magic number or extension like Django)
     let dicom = dicom_file;
     if (head == *b"ZISR" || ext == "czi" || ext == "vsi" || ext == "dcm" || dicom)

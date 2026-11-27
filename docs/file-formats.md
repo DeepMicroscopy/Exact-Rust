@@ -16,7 +16,7 @@ The server decides by **content** (magic numbers) and extension, never by extens
 | **Pyramidal TIFF / BigTIFF** | files from libvips, ImageMagick, converters; classic TIFF and BigTIFF, little and big endian | own reader (`generic_tiff.rs`) | pyramid |
 | **OME-TIFF** | single series and multi-series **z-stacks** (one series per plane, SubIFD levels); label and thumbnail series are ignored | own reader (`ome.rs`) | pyramid + **frame slider** |
 | **Plain images** | JPEG, PNG, TIFF without scanner metadata | decoded once, one level | single level |
-| **Zeiss CZI** | `.czi` | **slideio**, in a helper process | pyramid |
+| **Zeiss CZI** | `.czi` | **own reader** (slide-scanner mosaics of JPEG XR tiles, with label, slide preview and thumbnail); **slideio** for what it does not know (z-stacks, channels, 16-bit, other compressions) | pyramid |
 | **Olympus VSI** | `.vsi` (with its `_name_` data folder) | **own reader** (JPEG slide-scanner files, z-stacks, label and macro photos); **slideio** for what it does not know | pyramid |
 | **DICOM** | whole-slide and compressed images through slideio; **uncompressed volumes** natively | slideio / own reader | pyramid, or **three-plane view** for CT, MR, PET, NM volumes |
 | **NIfTI** | `.nii`, `.nii.gz` | own reader (inflated copies are cached) | **three-plane view**, 3D render |

@@ -16,6 +16,7 @@ ffmpeg-next = { version = "7", optional = true }
 weezl = "0.2.1"
 quick-xml = "0.42.0"
 fast_image_resize = "6.1.0"
+openreadout-jpegxr = "0.4"
 
 [features]
 default = ["video"]

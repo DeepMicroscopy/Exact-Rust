@@ -21,7 +21,7 @@ await page.waitForSelector(".cards .card");
 await page.goto(`${base}/images/${TO}`);
 await page.waitForSelector("#overlay-pick");
 await page.selectOption("#overlay-pick", FROM);
-await page.locator('input[aria-label="Overlay opacity"]').fill("1");
+await page.locator('input[aria-label="Overlay opacity"]').fill(process.env.OPACITY ?? "1");
 const warped = await page
   .waitForSelector('[data-testid="warped-overlay"]', { timeout: 8000 })
   .then(() => true)

@@ -2,6 +2,7 @@
 //! (port of `openslide.deepzoom.DeepZoomGenerator` incl. `limit_bounds`) and a slide handle cache.
 
 pub mod crop;
+pub mod czi;
 pub mod deepzoom;
 pub mod dicom;
 pub mod formats;
